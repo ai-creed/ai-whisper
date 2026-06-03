@@ -5,6 +5,29 @@ All notable changes to the `ai-whisper` package are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] - 2026-06-03
+
+### Fixed
+
+- **Long autonomous workflow steps no longer halt on a single transient
+  empty capture (Mode C).** On heavy `execute`/`fix` steps, the relay's
+  auto-handback fired exactly once when the agent pane went idle; if that
+  single `/copy` came back empty (clipboard *and* PTY both empty — a
+  transient miss), it delivered an empty handback and the orchestrator
+  escalated to a permanent halt (`"No handbackText provided"`), even though
+  the agent had really completed the work. The auto-handback now retries an
+  empty `no_response_captured` capture across later idle ticks — bounded
+  (`AI_WHISPER_AUTO_HANDBACK_MAX_ATTEMPTS`, default 3) and spaced
+  (`AI_WHISPER_AUTO_HANDBACK_RETRY_MS`, default 10 s) — and only delivers an
+  empty handback (the genuine-failure escalate floor) after the budget is
+  exhausted. A confidently-rejected reply (`no_response_captured_confidently`,
+  i.e. the agent did reply) is delivered immediately, not retried.
+- **Concurrent capture overlap guard.** The 1 s idle timer could start a
+  second `/copy` for the same handoff while the first capture (up to ~5 s
+  with the clipboard poll and lease wait) was still in flight, risking a
+  duplicate handback. A synchronous in-flight reservation now serializes
+  auto-handback attempts per handoff, released on every exit.
+
 ## [0.4.3] - 2026-05-30
 
 ### Changed
@@ -310,6 +333,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Claude + Codex) driven by structured workflows, with npm metadata
   (description, repository, homepage).
 
+[0.4.4]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.4.4
 [0.4.3]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.4.3
 [0.4.2]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.4.2
 [0.4.1]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.4.1
