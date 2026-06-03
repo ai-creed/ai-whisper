@@ -258,6 +258,13 @@ export function createMountedTurnOwnedRelay(input: {
 		string,
 		{ attempts: number; nextEligibleAt: number }
 	>();
+	// Synchronous reservation guarding the awaited capture. The mount fires
+	// checkIdleActions() on a 1s timer while a capture can take several seconds
+	// (clipboard poll + lease wait), so an overlapping tick must not start a second
+	// /copy for the same in-flight handoff. (The pre-2026-06-03 one-shot guard, set
+	// before the await, used to provide this; the retry ladder records its state
+	// only after the await, so it needs an explicit in-flight flag.)
+	let autoHandbackInFlight = false;
 	let disconnectHandled = false;
 	let lastOwnerCardKey: string | null = null;
 	let renderedOwnerCardLines = 0;
@@ -628,6 +635,15 @@ export function createMountedTurnOwnedRelay(input: {
 				return; // within spacing window — don't hammer /copy on the 1s poll
 			}
 
+			// Reserve synchronously BEFORE the awaited capture so a concurrent 1s
+			// timer tick cannot start a second /copy for this in-flight handoff.
+			// (retryState is only updated after the await, so the checks above do not
+			// protect against overlap on their own.) try/finally guarantees release
+			// on every exit — retry return, race-guard abort, delivery, or a throw.
+			if (autoHandbackInFlight) return;
+			autoHandbackInFlight = true;
+			try {
+
 			// Always extract turn text before attempting clipboard capture — must run even if clipboard throws.
 			// finishAssistantTurn clears the streaming flag so extractLatestAssistantTurn
 			// can return high-confidence text; without this call it always returns low/null.
@@ -786,6 +802,9 @@ export function createMountedTurnOwnedRelay(input: {
 				now,
 			});
 			input.turnCapture?.reset();
+			} finally {
+				autoHandbackInFlight = false;
+			}
 		},
 
 		handleOwnerDisconnect() {

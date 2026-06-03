@@ -80,6 +80,8 @@ Why this fixes **both** transients:
 
 **No readiness-gate change.** `hasVisibleAssistantTurn()` is unsafe here: `checkIdleActions` calls `finishAssistantTurn()` (which clears `current` and may set `latestCompleted=null`), so a gate on it would block all retries once `current` is empty. Retry-on-empty alone is sufficient.
 
+**Concurrency reservation (required).** The old code set the one-shot guard *before* the awaited capture, which incidentally serialized the mount's 1s-timer ticks. The retry ladder records its state only *after* the await (which can take ~1.3s clipboard poll + up to 4s lease wait), so a later tick could pass the spacing check and start an overlapping `/copy` for the same handoff — and even double-deliver on success. The fix adds a synchronous `autoHandbackInFlight` flag set before the await and cleared in a `try/finally` on every exit (retry return, race-guard abort, delivery, or throw); a leaked reservation would wedge auto-handback for the whole session, so the `finally` is mandatory. (Alternative, not taken: gate the mount timer against concurrent `checkIdleActions()` — the relay-level reservation is unit-testable and local to the state it protects.)
+
 Defaults (env-overridable): `MAX≈3`, `RETRY_MS≈10000`. Worst case adds ~`(MAX-1)·RETRY_MS` before a genuine empty escalates.
 
 ## Tests

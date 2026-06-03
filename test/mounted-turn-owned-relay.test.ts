@@ -1526,6 +1526,51 @@ describe("auto-handback retry on empty capture (Mode C)", () => {
 		);
 	});
 
+	it("does not start a second capture while the first is still in flight (timer overlap)", async () => {
+		// The mount timer fires a fresh async checkIdleActions() every 1s. A capture
+		// can take ~1.3s + up to 4s lease wait, so a later tick must not start an
+		// overlapping /copy for the same handoff before the first attempt records its
+		// retry/terminal state. (Sequential-only tests miss this.)
+		const broker = makeAcceptedBroker();
+		let resolveCapture: ((v: string | null) => void) | undefined;
+		const capture = vi.fn(
+			() =>
+				new Promise<string | null>((resolve) => {
+					resolveCapture = resolve;
+				}),
+		);
+		const relay = createMountedTurnOwnedRelay({
+			broker,
+			collabId: "collab_turn",
+			currentAgent: "claude",
+			writeLocalMessage() {},
+			writeUserInput() {},
+			openComposer: () => Promise.resolve(null),
+			turnCapture: claudeTurnCapture(),
+			autoHandbackRetryMs: 0,
+			autoHandbackMaxAttempts: 3,
+			captureHandbackText: capture,
+		});
+
+		// First tick: enters, reserves, blocks on the pending capture promise.
+		// (checkIdleActions runs synchronously up to `await captureHandbackText`, so
+		// captureHandbackText is invoked before the function first suspends.)
+		const first = relay.checkIdleActions();
+		await Promise.resolve();
+		// Second tick while the first is still awaiting capture. Not awaited: in the
+		// unfixed code it would suspend on a second never-resolved capture promise.
+		// The bug shows synchronously as a second captureHandbackText invocation.
+		void relay.checkIdleActions();
+		expect(capture).toHaveBeenCalledTimes(1);
+		expect(broker.control.handoffBackRelay).not.toHaveBeenCalled();
+
+		// Let the first attempt complete with a real handback.
+		resolveCapture?.(longReply);
+		await first;
+		expect(capture).toHaveBeenCalledTimes(1);
+		expect(broker.control.handoffBackRelay).toHaveBeenCalledTimes(1);
+	});
+
 	it("does not re-attempt /copy within the retry spacing window", async () => {
 		const broker = makeAcceptedBroker();
 		const capture = vi.fn(() => Promise.resolve(null));
