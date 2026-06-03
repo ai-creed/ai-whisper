@@ -173,6 +173,7 @@ function makeRelayForIdle(opts: {
 	};
 	autonomous?: boolean;
 	handoffAgeMs?: number;
+	autoHandbackMaxAttempts?: number;
 }) {
 	const { handoffStatus } = opts;
 	const handoffId = "handoff_idle_1";
@@ -233,6 +234,9 @@ function makeRelayForIdle(opts: {
 		...(opts.isPausedInput !== undefined ? { isPausedInput: opts.isPausedInput } : {}),
 		...(opts.captureHandbackText !== undefined ? { captureHandbackText: opts.captureHandbackText } : {}),
 		...(opts.turnCapture !== undefined ? { turnCapture: opts.turnCapture } : {}),
+		...(opts.autoHandbackMaxAttempts !== undefined
+			? { autoHandbackMaxAttempts: opts.autoHandbackMaxAttempts }
+			: {}),
 	});
 
 	return { relay, broker };
@@ -355,8 +359,11 @@ describe("checkIdleActions: auto-handback captureStatus", () => {
 	});
 
 	it("calls handoffBackRelay with no_response_captured when both signals empty", async () => {
+		// maxAttempts:1 = terminal on the first capture (no Mode-C retry ladder);
+		// this test asserts the classification→handback mapping, not the retry.
 		const { relay, broker } = makeRelayForIdle({
 			handoffStatus: "accepted",
+			autoHandbackMaxAttempts: 1,
 			captureHandbackText: async () => null,
 			turnCapture: {
 				reset: vi.fn(),
@@ -426,6 +433,7 @@ describe("checkIdleActions: auto-handback captureStatus", () => {
 	it("treats captureHandbackText exception as null clipboard and still calls handoffBackRelay", async () => {
 		const { relay, broker } = makeRelayForIdle({
 			handoffStatus: "accepted",
+			autoHandbackMaxAttempts: 1, // terminal on first capture; assert the swallow→handback mapping
 			captureHandbackText: async () => {
 				throw new Error("clipboard timeout");
 			},
@@ -676,6 +684,7 @@ describe("checkIdleActions: auto-handback diagnostics", () => {
 		const { relay, broker } = makeRelayForIdle({
 			handoffStatus: "accepted",
 			handoffAgeMs: 60_000,
+			autoHandbackMaxAttempts: 1, // terminal on first capture; assert the degrade→empty mapping
 			captureHandbackText: async () => ({
 				status: "degraded_pty_only" as const,
 				text: null,
