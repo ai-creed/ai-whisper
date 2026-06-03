@@ -1412,6 +1412,189 @@ describe("mounted turn-owned relay", () => {
 	});
 });
 
+// Bug 2026-06-03 — Mode C: a single empty auto-handback capture is terminal.
+// See docs/superpowers/bugs/2026-06-03-auto-handback-empty-capture-permanent-halt.md.
+// checkIdleActions fired the auto-handback exactly once (autoHandbackFiredFor set
+// before the capture result was known) and handed back empty on the first miss,
+// halting long claude steps on a single transient empty /copy. The fix makes the
+// auto path retry on empty (bounded + spaced) instead of giving up after one shot.
+describe("auto-handback retry on empty capture (Mode C)", () => {
+	function makeAcceptedBroker() {
+		return {
+			control: {
+				getRelayTurnState: vi.fn(() => ({
+					collabId: "collab_turn",
+					turnOwner: "claude" as const,
+					waitingAgent: "codex" as const,
+					unresolvedHandoffId: "handoff_1",
+					handoffState: "accepted" as const,
+					handoffAgeMs: 35_000,
+				})),
+				getRelayHandoff: vi.fn(() => ({
+					handoffId: "handoff_1",
+					collabId: "collab_turn",
+					senderAgent: "codex" as const,
+					targetAgent: "claude" as const,
+					requestText: "Do the work",
+					status: "accepted" as const,
+				})),
+				acceptRelayHandoff: vi.fn(),
+				declineRelayHandoff: vi.fn(),
+				deferRelayHandoff: vi.fn(),
+				handoffBackRelay: vi.fn(),
+				recordCaptureDiagnostic: vi.fn(() => ({ captureId: "cap_1" })),
+				getHandoffWithWorkflowMeta: vi.fn(() => ({
+					workflowId: "wf_test",
+					chainId: "ch_test",
+				})),
+			},
+		};
+	}
+
+	// claude full-screen TUI → PTY turn normalizes to empty/low-confidence.
+	const claudeTurnCapture = () => ({
+		reset: vi.fn(),
+		finishAssistantTurn: vi.fn(),
+		hasVisibleAssistantTurn: () => true,
+		extractLatestAssistantTurn: () => ({ confidence: "low" as const, text: null }),
+	});
+
+	const longReply =
+		"Executed the plan: ran the failing test, implemented the fix, all green. " +
+		"Committed at abc1234. Verified pnpm test passes with 0 failures.";
+
+	it("does not hand back on the first empty capture, then hands back once a later capture lands", async () => {
+		const broker = makeAcceptedBroker();
+		let calls = 0;
+		const relay = createMountedTurnOwnedRelay({
+			broker,
+			collabId: "collab_turn",
+			currentAgent: "claude",
+			writeLocalMessage() {},
+			writeUserInput() {},
+			openComposer: () => Promise.resolve(null),
+			turnCapture: claudeTurnCapture(),
+			autoHandbackRetryMs: 0,
+			autoHandbackMaxAttempts: 3,
+			captureHandbackText: () => {
+				calls += 1;
+				return Promise.resolve(calls === 1 ? null : longReply);
+			},
+		});
+
+		await relay.checkIdleActions();
+		expect(broker.control.handoffBackRelay).not.toHaveBeenCalled();
+
+		await relay.checkIdleActions();
+		expect(broker.control.handoffBackRelay).toHaveBeenCalledTimes(1);
+		expect(broker.control.handoffBackRelay).toHaveBeenCalledWith(
+			expect.objectContaining({
+				handoffId: "handoff_1",
+				targetAgent: "codex",
+				requestText: longReply,
+				captureStatus: "ok",
+			}),
+		);
+	});
+
+	it("hands back empty (escalate floor) only after exhausting the attempt budget", async () => {
+		const broker = makeAcceptedBroker();
+		const relay = createMountedTurnOwnedRelay({
+			broker,
+			collabId: "collab_turn",
+			currentAgent: "claude",
+			writeLocalMessage() {},
+			writeUserInput() {},
+			openComposer: () => Promise.resolve(null),
+			turnCapture: claudeTurnCapture(),
+			autoHandbackRetryMs: 0,
+			autoHandbackMaxAttempts: 2,
+			captureHandbackText: () => Promise.resolve(null),
+		});
+
+		await relay.checkIdleActions();
+		expect(broker.control.handoffBackRelay).not.toHaveBeenCalled();
+
+		await relay.checkIdleActions();
+		expect(broker.control.handoffBackRelay).toHaveBeenCalledTimes(1);
+		expect(broker.control.handoffBackRelay).toHaveBeenCalledWith(
+			expect.objectContaining({
+				handoffId: "handoff_1",
+				requestText: "",
+				captureStatus: "no_response_captured",
+			}),
+		);
+	});
+
+	it("does not start a second capture while the first is still in flight (timer overlap)", async () => {
+		// The mount timer fires a fresh async checkIdleActions() every 1s. A capture
+		// can take ~1.3s + up to 4s lease wait, so a later tick must not start an
+		// overlapping /copy for the same handoff before the first attempt records its
+		// retry/terminal state. (Sequential-only tests miss this.)
+		const broker = makeAcceptedBroker();
+		let resolveCapture: ((v: string | null) => void) | undefined;
+		const capture = vi.fn(
+			() =>
+				new Promise<string | null>((resolve) => {
+					resolveCapture = resolve;
+				}),
+		);
+		const relay = createMountedTurnOwnedRelay({
+			broker,
+			collabId: "collab_turn",
+			currentAgent: "claude",
+			writeLocalMessage() {},
+			writeUserInput() {},
+			openComposer: () => Promise.resolve(null),
+			turnCapture: claudeTurnCapture(),
+			autoHandbackRetryMs: 0,
+			autoHandbackMaxAttempts: 3,
+			captureHandbackText: capture,
+		});
+
+		// First tick: enters, reserves, blocks on the pending capture promise.
+		// (checkIdleActions runs synchronously up to `await captureHandbackText`, so
+		// captureHandbackText is invoked before the function first suspends.)
+		const first = relay.checkIdleActions();
+		await Promise.resolve();
+		// Second tick while the first is still awaiting capture. Not awaited: in the
+		// unfixed code it would suspend on a second never-resolved capture promise.
+		// The bug shows synchronously as a second captureHandbackText invocation.
+		void relay.checkIdleActions();
+		expect(capture).toHaveBeenCalledTimes(1);
+		expect(broker.control.handoffBackRelay).not.toHaveBeenCalled();
+
+		// Let the first attempt complete with a real handback.
+		resolveCapture?.(longReply);
+		await first;
+		expect(capture).toHaveBeenCalledTimes(1);
+		expect(broker.control.handoffBackRelay).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not re-attempt /copy within the retry spacing window", async () => {
+		const broker = makeAcceptedBroker();
+		const capture = vi.fn(() => Promise.resolve(null));
+		const relay = createMountedTurnOwnedRelay({
+			broker,
+			collabId: "collab_turn",
+			currentAgent: "claude",
+			writeLocalMessage() {},
+			writeUserInput() {},
+			openComposer: () => Promise.resolve(null),
+			turnCapture: claudeTurnCapture(),
+			autoHandbackRetryMs: 60_000,
+			autoHandbackMaxAttempts: 3,
+			captureHandbackText: capture,
+		});
+
+		await relay.checkIdleActions();
+		await relay.checkIdleActions();
+
+		expect(capture).toHaveBeenCalledTimes(1);
+		expect(broker.control.handoffBackRelay).not.toHaveBeenCalled();
+	});
+});
+
 // Bug 2026-05-29 — Mode A: short claude reply rejected as low-confidence.
 // See docs/superpowers/bugs/2026-05-29-handback-capture-failures.md (Mode A).
 // captureClipboardHandback only returns on a clipboard-content change AFTER

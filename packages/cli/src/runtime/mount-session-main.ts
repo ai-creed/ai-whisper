@@ -43,6 +43,12 @@ function resolveCodexSubmitStrategyOverride(): CodexSubmitStrategy | undefined {
 	return undefined;
 }
 
+// Positive-integer env override, else undefined (relay applies its own default).
+function resolvePositiveIntEnv(name: string): number | undefined {
+	const n = Number(process.env[name] ?? "");
+	return Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
+}
+
 // changeCount reader for the clipboard capture lease (component 6). Degrades to
 // null off-darwin or when the native helper is missing, so the ownership check
 // is skipped rather than blocking capture.
@@ -431,6 +437,12 @@ export function createMountSessionRuntime(input: {
 					},
 					prefillHandbackFromCapture: false,
 					turnCapture,
+					autoHandbackMaxAttempts: resolvePositiveIntEnv(
+						"AI_WHISPER_AUTO_HANDBACK_MAX_ATTEMPTS",
+					),
+					autoHandbackRetryMs: resolvePositiveIntEnv(
+						"AI_WHISPER_AUTO_HANDBACK_RETRY_MS",
+					),
 				});
 				const mountedTurnRelay = turnRelay;
 

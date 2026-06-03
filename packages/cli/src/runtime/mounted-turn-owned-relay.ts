@@ -238,6 +238,12 @@ export function createMountedTurnOwnedRelay(input: {
 	isPausedInput?: () => boolean;
 	getTerminalCols?: () => number;
 	onHandoffAccepted?: () => void;
+	/** Max auto-handback capture attempts before delivering an empty handback
+	 *  (escalate floor). A single transient empty /copy must not be terminal. */
+	autoHandbackMaxAttempts?: number | undefined;
+	/** Minimum spacing between auto-handback retries — the 1s idle poll must not
+	 *  hammer /copy every tick while a long claude step is briefly idle. */
+	autoHandbackRetryMs?: number | undefined;
 }) {
 	function resolveCols(): number {
 		const c = input.getTerminalCols?.() ?? process.stdout.columns;
@@ -245,6 +251,20 @@ export function createMountedTurnOwnedRelay(input: {
 	}
 	const STALE_HANDOFF_AFTER_MS = 5 * 60_000;
 	const HAND_BACK_READY_AFTER_MS = 30_000;
+	const autoHandbackMaxAttempts = Math.max(1, input.autoHandbackMaxAttempts ?? 3);
+	const autoHandbackRetryMs = Math.max(0, input.autoHandbackRetryMs ?? 10_000);
+	// Per-handoff retry bookkeeping for the auto-handback empty-capture ladder.
+	const autoHandbackAttempts = new Map<
+		string,
+		{ attempts: number; nextEligibleAt: number }
+	>();
+	// Synchronous reservation guarding the awaited capture. The mount fires
+	// checkIdleActions() on a 1s timer while a capture can take several seconds
+	// (clipboard poll + lease wait), so an overlapping tick must not start a second
+	// /copy for the same in-flight handoff. (The pre-2026-06-03 one-shot guard, set
+	// before the await, used to provide this; the retry ladder records its state
+	// only after the await, so it needs an explicit in-flight flag.)
+	let autoHandbackInFlight = false;
 	let disconnectHandled = false;
 	let lastOwnerCardKey: string | null = null;
 	let renderedOwnerCardLines = 0;
@@ -600,7 +620,29 @@ export function createMountedTurnOwnedRelay(input: {
 				return;
 			}
 
-			autoHandbackFiredFor = accepted.handoffId;
+			// Retry-on-empty ladder (Mode C fix, 2026-06-03). The auto-handback used
+			// to fire exactly once (autoHandbackFiredFor set here, before the capture
+			// result was known), so a single transient empty /copy on a long claude
+			// step delivered an empty handback and permanently halted the workflow.
+			// We now spread up to autoHandbackMaxAttempts captures across idle ticks,
+			// spaced by autoHandbackRetryMs, and only burn the one-shot guard once we
+			// either capture a real handback or exhaust the budget (escalate floor).
+			const retryState = autoHandbackAttempts.get(accepted.handoffId) ?? {
+				attempts: 0,
+				nextEligibleAt: 0,
+			};
+			if (Date.now() < retryState.nextEligibleAt) {
+				return; // within spacing window — don't hammer /copy on the 1s poll
+			}
+
+			// Reserve synchronously BEFORE the awaited capture so a concurrent 1s
+			// timer tick cannot start a second /copy for this in-flight handoff.
+			// (retryState is only updated after the await, so the checks above do not
+			// protect against overlap on their own.) try/finally guarantees release
+			// on every exit — retry return, race-guard abort, delivery, or a throw.
+			if (autoHandbackInFlight) return;
+			autoHandbackInFlight = true;
+			try {
 
 			// Always extract turn text before attempting clipboard capture — must run even if clipboard throws.
 			// finishAssistantTurn clears the streaming flag so extractLatestAssistantTurn
@@ -663,6 +705,33 @@ export function createMountedTurnOwnedRelay(input: {
 			if (leaseDegraded && (turnResult.text ?? "").trim().length > 0) {
 				requestText = turnResult.text as string;
 			}
+
+			// Retry-on-empty (Mode C): if we captured *nothing* — neither clipboard
+			// nor a PTY fallback (captureStatus === "no_response_captured") — and the
+			// attempt budget is not yet spent, schedule another attempt on a later
+			// idle tick instead of delivering an empty (workflow-halting) handback.
+			// Scoped to "no_response_captured" only: "no_response_captured_confidently"
+			// means the agent DID reply (non-empty clip) but it failed similarity —
+			// re-running /copy would just re-capture the same reply, so don't retry it
+			// (that is Mode A, a separate classifier concern). Leaving
+			// autoHandbackFiredFor unset lets the next tick re-fire; nextEligibleAt
+			// spaces the retries. The final attempt falls through to deliver an empty
+			// handback (the genuine-failure escalate floor).
+			const capturedNothing = captureStatus === "no_response_captured";
+			if (capturedNothing && retryState.attempts + 1 < autoHandbackMaxAttempts) {
+				retryState.attempts += 1;
+				retryState.nextEligibleAt = Date.now() + autoHandbackRetryMs;
+				autoHandbackAttempts.set(accepted.handoffId, retryState);
+				console.warn(
+					`[ai-whisper] auto-handback empty capture — retrying: target=${input.currentAgent} handoff=${accepted.handoffId} attempt=${retryState.attempts}/${autoHandbackMaxAttempts}`,
+				);
+				return;
+			}
+
+			// Terminal: we have a real handback, or the retry budget is exhausted.
+			// Burn the one-shot guard and stop tracking retries for this handoff.
+			autoHandbackFiredFor = accepted.handoffId;
+			autoHandbackAttempts.delete(accepted.handoffId);
 
 			// Evaluate race guard synchronously so the diagnostic row carries the correct flag.
 			const currentAcceptedId = getAcceptedHandoff()?.handoffId;
@@ -733,6 +802,9 @@ export function createMountedTurnOwnedRelay(input: {
 				now,
 			});
 			input.turnCapture?.reset();
+			} finally {
+				autoHandbackInFlight = false;
+			}
 		},
 
 		handleOwnerDisconnect() {
