@@ -10,4 +10,8 @@ export interface InteractiveSessionController {
 	resize?(cols: number, rows: number): void;
 	onExit(handler: () => void): void;
 	onProviderOutput?(handler: (data: string) => void): void;
+	/** Protocol-native providers (ai-ezio) fire this on an explicit turn-complete
+	 *  event, passing the authoritative handback content. Byte/PTY providers omit
+	 *  it and rely on output-quiescence detection instead. */
+	onTurnFinished?(handler: (content: string) => void): void;
 }
