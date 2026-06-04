@@ -58,6 +58,18 @@ describe("README public contract", () => {
 		expect(readme).toContain("whisper collab dashboard");
 	});
 
+	it("names the bundled code-review skill IN the required-skills section", () => {
+		// Isolate the bundled-skills paragraph: from its intro sentence up to the
+		// `whisper skill install` command. The skill name lives in that intro
+		// sentence, so a stray mention elsewhere in the README cannot satisfy this.
+		const sectionStart = readme.indexOf("Install the bundled agent skills");
+		expect(sectionStart).toBeGreaterThan(-1);
+		const installIdx = readme.indexOf("whisper skill install", sectionStart);
+		expect(installIdx).toBeGreaterThan(sectionStart);
+		const section = readme.slice(sectionStart, installIdx);
+		expect(section).toContain("ai-whisper-code-review");
+	});
+
 	it("lists prerequisites (CLIs, Node, evaluator) with tmux marked optional", () => {
 		expect(readme).toMatch(/## Prerequisites/);
 		expect(readme).toMatch(/Claude Code CLI/);
