@@ -24,6 +24,8 @@ export default defineConfig({
 				__dirname,
 				"packages/adapter-claude/src/index.ts",
 			),
+			"@ai-ezio/harness": resolve(__dirname, "../ai-ezio/packages/harness/dist/index.js"),
+			"@ai-ezio/protocol": resolve(__dirname, "../ai-ezio/packages/protocol/dist/index.js"),
 		},
 	},
 	test: {
