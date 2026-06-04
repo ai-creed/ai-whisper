@@ -20,7 +20,10 @@ export function createCliSessionId(
 	agentType: "codex" | "claude" | "ai-ezio",
 	now: string,
 ): `session_${string}` {
-	return `session_${agentType}_${normalizeTimestamp(now)}`;
+	// Sanitize the agent segment to the `[a-z0-9_]` shape sessionIdSchema enforces
+	// — the "ai-ezio" hyphen would otherwise fail validation.
+	const agentSegment = agentType.replace(/-/g, "_");
+	return `session_${agentSegment}_${normalizeTimestamp(now)}`;
 }
 
 export function createCliThreadId(now: string): `thread_${string}` {

@@ -81,14 +81,18 @@ broker.control.createRelayHandoff({
 });
 
 // 4) The mounted ai-ezio auto-accepts (idle timer ~5s), submits over the real
-//    protocol, runs hax(mock), and hands back — recording a handed_back handoff
-//    whose sender is ai-ezio.
-let handback = null;
-for (let deadline = Date.now() + 40_000; Date.now() < deadline && !handback; await sleep(300)) {
-	handback = broker.control.listRelayHandoffs(collabId, 20).find((h) => h.senderAgent === "ai-ezio" && h.status === "handed_back") ?? null;
+//    protocol, runs hax(mock), and hands back. handoffBackRelay marks the
+//    ORIGINAL handoff (codex→ai-ezio) "handed_back" AND creates a new handoff
+//    whose sender is ai-ezio. Either proves the protocol round trip.
+let proof = null;
+for (let deadline = Date.now() + 40_000; Date.now() < deadline && !proof; await sleep(300)) {
+	const orig = broker.control.getRelayHandoff("handoff_e2e");
+	if (orig && orig.status === "handed_back") { proof = { kind: "original-handed-back", status: orig.status }; break; }
+	const fromAiEzio = broker.control.listRelayHandoffs(collabId, 30).find((h) => h.senderAgent === "ai-ezio");
+	if (fromAiEzio) { proof = { kind: "handback-from-ai-ezio", senderAgent: fromAiEzio.senderAgent, status: fromAiEzio.status }; break; }
 }
 
 cleanup();
-if (!handback) { console.error("FAIL: no protocol handback recorded from ai-ezio\n" + mountLog.slice(-2000)); process.exit(1); }
-console.log("OK: real relay handoff handed back via protocol by ai-ezio:", JSON.stringify({ senderAgent: handback.senderAgent, status: handback.status }));
+if (!proof) { console.error("FAIL: no protocol handback recorded from ai-ezio\n" + mountLog.slice(-2500)); process.exit(1); }
+console.log("OK: real relay handoff handed back via protocol by ai-ezio:", JSON.stringify(proof));
 process.exit(0);
