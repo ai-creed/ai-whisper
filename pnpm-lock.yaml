@@ -12,6 +12,15 @@ importers:
 
   .:
     devDependencies:
+      '@ai-ezio/harness':
+        specifier: file:../ai-ezio/packages/harness
+        version: file:../ai-ezio/packages/harness
+      '@ai-ezio/protocol':
+        specifier: file:../ai-ezio/packages/protocol
+        version: file:../ai-ezio/packages/protocol
+      '@ai-whisper/broker':
+        specifier: workspace:*
+        version: link:packages/broker
       '@eslint/js':
         specifier: ^9.23.0
         version: 9.39.4
@@ -39,6 +48,9 @@ importers:
       ink-testing-library:
         specifier: ^4.0.0
         version: 4.0.0(@types/react@19.2.14)
+      node-pty:
+        specifier: ^1.1.0
+        version: 1.1.0
       prettier:
         specifier: ^3.5.3
         version: 3.8.1

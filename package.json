@@ -7,6 +7,7 @@
 		"build": "pnpm -r --if-present build",
 		"test": "vitest run",
 		"test:watch": "vitest",
+		"e2e:ai-ezio-mount": "node scripts/ai-ezio-mount-relay-e2e.mjs",
 		"typecheck": "tsc --noEmit -p tsconfig.json && pnpm -r --if-present typecheck",
 		"lint": "eslint .",
 		"lint:fix": "eslint . --fix",
@@ -14,9 +15,13 @@
 		"format:write": "prettier --write \"{package.json,pnpm-workspace.yaml,tsconfig*.json,vitest.config.ts,eslint.config.mjs,prettier.config.mjs}\" \"packages/*/{package.json,tsconfig.json}\" \"packages/*/src/**/*.ts\" \"test/**/*.ts\""
 	},
 	"devDependencies": {
+		"@ai-ezio/harness": "file:../ai-ezio/packages/harness",
+		"@ai-ezio/protocol": "file:../ai-ezio/packages/protocol",
+		"@ai-whisper/broker": "workspace:*",
 		"@eslint/js": "^9.23.0",
 		"@stylistic/eslint-plugin": "^2.13.0",
 		"@types/node": "^22.13.10",
+		"node-pty": "^1.1.0",
 		"@types/react": "^19.2.14",
 		"esbuild": "^0.28.0",
 		"eslint": "^9.23.0",
