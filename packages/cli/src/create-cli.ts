@@ -260,7 +260,7 @@ export function createCli(): Command {
 	collab
 		.command("mount")
 		.description("Mount the current terminal as the managed session surface for a role")
-		.argument("<agent>", "Target agent: codex or claude")
+		.argument("<agent>", "Target agent: codex, claude, or ai-ezio")
 		.argument(
 			"[passthroughArgs...]",
 			"Args forwarded after `--` to the agent binary spawn (e.g. `mount codex -- --full-auto`)",
