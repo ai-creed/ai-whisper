@@ -5,6 +5,24 @@ All notable changes to the `ai-whisper` package are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] - 2026-06-04
+
+### Added
+
+- **Bundled `ai-whisper-code-review` skill.** A workflow-agnostic guideline for
+  reviewing code written by agents: what counts as a blocking finding (with
+  file/line or command evidence), how to judge committed tests, how to review
+  fix rounds, and how to avoid low-value nit loops. It is installed alongside
+  the other workflow skills by `whisper skill install` (into both
+  `~/.claude/skills/` and `~/.codex/skills/`). Code-bearing workflow review
+  handoffs — SDD `code-review`, complex-bug-fixing `fix-and-verify`, and both
+  the Ralph per-item and acceptance reviews — now ask the reviewer to use this
+  skill for *how* to inspect code, while the existing `WORKFLOW_REVIEW_PROTOCOL`
+  stays authoritative for output shape and evaluator semantics (the guidance is
+  injected before the protocol, preserving the verdict-before-`Non-blocking
+  risks:` ordering that the evaluator depends on). Non-code reviews (spec, plan,
+  diagnosis, post-mortem) are deliberately left unchanged.
+
 ## [0.4.4] - 2026-06-03
 
 ### Fixed
@@ -333,6 +351,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Claude + Codex) driven by structured workflows, with npm metadata
   (description, repository, homepage).
 
+[0.4.5]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.4.5
 [0.4.4]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.4.4
 [0.4.3]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.4.3
 [0.4.2]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.4.2
