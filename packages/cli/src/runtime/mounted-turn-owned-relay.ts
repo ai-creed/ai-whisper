@@ -244,6 +244,10 @@ export function createMountedTurnOwnedRelay(input: {
 	/** Minimum spacing between auto-handback retries — the 1s idle poll must not
 	 *  hammer /copy every tick while a long claude step is briefly idle. */
 	autoHandbackRetryMs?: number | undefined;
+	/** Protocol-native providers (ai-ezio) hand back via an explicit idle event
+	 *  (handbackResolvedContent), so the quiescence /copy auto-handback must be
+	 *  skipped. Auto-ACCEPT still runs — it is the delivery path. */
+	suppressQuiescenceHandback?: boolean;
 }) {
 	function resolveCols(): number {
 		const c = input.getTerminalCols?.() ?? process.stdout.columns;
@@ -591,6 +595,27 @@ export function createMountedTurnOwnedRelay(input: {
 			input.turnCapture?.reset();
 		},
 
+		/** Protocol-native handback: deliver the authoritative content from the
+		 *  explicit idle event directly to the original sender. Uses
+		 *  getAcceptedHandoff() (clean state — no age/visible-output heuristics). */
+		async handbackResolvedContent(content: string) {
+			const accepted = getAcceptedHandoff();
+			if (!accepted) return;
+			if (autoHandbackFiredFor === accepted.handoffId) return;
+			autoHandbackFiredFor = accepted.handoffId;
+			const now = new Date().toISOString();
+			input.broker.control.handoffBackRelay?.({
+				handoffId: accepted.handoffId,
+				nextHandoffId: `handoff_${now.replace(/[^0-9]/g, "")}`,
+				senderAgent: input.currentAgent,
+				targetAgent: accepted.senderAgent,
+				requestText: content,
+				captureStatus: "ok",
+				now,
+			});
+			input.turnCapture?.reset();
+		},
+
 		async checkIdleActions() {
 			// Auto-accept: pending (not deferred) handoff, guard not set, not paused.
 			// Autonomous handoffs (workflow=running, chain=active) also flow through
@@ -607,6 +632,11 @@ export function createMountedTurnOwnedRelay(input: {
 				await api.acceptPendingHandoff();
 				return;
 			}
+
+			// Protocol-native sessions resolve handback from the explicit idle event
+			// (handbackResolvedContent); auto-accept above already delivered the
+			// request, so skip the /copy quiescence handback below.
+			if (input.suppressQuiescenceHandback) return;
 
 			// Auto-handback: accepted handoff, guard not set, not paused. Same
 			// rationale as auto-accept — autonomous mode runs through this path so
