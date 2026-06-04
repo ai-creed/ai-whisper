@@ -18,6 +18,13 @@ export async function submitInjectedProviderInput(input: {
 		input.sleep ??
 		((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
 
+	if (input.target === "ai-ezio") {
+		// Protocol-native: the ai-ezio live session's writeUserInput maps to a
+		// single session.submit(); no keystream, no separate carriage return.
+		input.writeUserInput(input.text);
+		return;
+	}
+
 	if (input.target === "claude") {
 		input.writeUserInput(input.text);
 		await sleep(75);
