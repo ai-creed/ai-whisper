@@ -210,6 +210,7 @@ describe("mount session runtime — idle timer", () => {
 			}),
 			refreshOwnerView: vi.fn(),
 			checkIdleActions,
+			handbackResolvedContent: vi.fn(async () => {}),
 			acceptPendingHandoff: vi.fn(),
 			amendPendingHandoff: vi.fn(),
 			declinePendingHandoff: vi.fn(),

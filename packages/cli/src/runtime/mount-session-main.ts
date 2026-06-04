@@ -443,8 +443,19 @@ export function createMountSessionRuntime(input: {
 					autoHandbackRetryMs: resolvePositiveIntEnv(
 						"AI_WHISPER_AUTO_HANDBACK_RETRY_MS",
 					),
+					// Protocol-native providers (ai-ezio) expose onTurnFinished; for them
+					// the quiescence /copy auto-handback is skipped (handback comes from
+					// the explicit idle event). Auto-ACCEPT still runs.
+					suppressQuiescenceHandback:
+						typeof interactiveSession.onTurnFinished === "function",
 				});
 				const mountedTurnRelay = turnRelay;
+
+				// Protocol-native handback: on the explicit turn-complete event, deliver
+				// the authoritative content straight to the original sender.
+				interactiveSession.onTurnFinished?.((content) => {
+					void mountedTurnRelay.handbackResolvedContent(content);
+				});
 
 				// Degrade if the provider exits unexpectedly (e.g. user Ctrl+C inside the provider,
 				// or provider crashes). stop() is idempotent via the `stopping` guard.
