@@ -36,6 +36,10 @@
 			"better-sqlite3",
 			"esbuild",
 			"node-pty"
-		]
+		],
+		"overrides": {
+			"@ai-ezio/protocol": "file:../ai-ezio/packages/protocol",
+			"@ai-ezio/harness": "file:../ai-ezio/packages/harness"
+		}
 	}
 }
