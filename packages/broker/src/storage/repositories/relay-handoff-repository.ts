@@ -5,8 +5,8 @@ import { getCollab } from "./collab-repository.js";
 export type RelayHandoffRecord = {
 	handoffId: string;
 	collabId: string;
-	senderAgent: "codex" | "claude";
-	targetAgent: "codex" | "claude";
+	senderAgent: "codex" | "claude" | "ai-ezio";
+	targetAgent: "codex" | "claude" | "ai-ezio";
 	requestText: string;
 	status: "pending" | "deferred" | "accepted" | "declined" | "handed_back" | "failed";
 	captureStatus: "ok" | "no_response_captured_confidently" | "no_response_captured" | null;
@@ -132,8 +132,8 @@ export function createRelayHandoffTxn(
 	input: {
 		handoffId: string;
 		collabId: string;
-		senderAgent: "codex" | "claude";
-		targetAgent: "codex" | "claude";
+		senderAgent: "codex" | "claude" | "ai-ezio";
+		targetAgent: "codex" | "claude" | "ai-ezio";
 		requestText: string;
 		now: string;
 	},
@@ -305,8 +305,8 @@ export function handoffBackRelayTxn(
 	input: {
 		handoffId: string;
 		nextHandoffId?: string;
-		senderAgent: "codex" | "claude";
-		targetAgent: "codex" | "claude";
+		senderAgent: "codex" | "claude" | "ai-ezio";
+		targetAgent: "codex" | "claude" | "ai-ezio";
 		requestText: string;
 		captureStatus?: "ok" | "no_response_captured_confidently" | "no_response_captured" | null;
 		now: string;
@@ -942,8 +942,8 @@ export type RelayHandoffLogRow = {
 	handoffId: string;
 	createdAt: string;
 	collabId: string;
-	senderAgent: "codex" | "claude";
-	targetAgent: "codex" | "claude";
+	senderAgent: "codex" | "claude" | "ai-ezio";
+	targetAgent: "codex" | "claude" | "ai-ezio";
 	status: string;
 	captureStatus: string | null;
 	chainId: string | null;
@@ -1044,8 +1044,8 @@ export function listRelayHandoffs(
 		handoffId: r.handoff_id,
 		createdAt: r.created_at,
 		collabId: r.collab_id,
-		senderAgent: r.sender_agent as "codex" | "claude",
-		targetAgent: r.target_agent as "codex" | "claude",
+		senderAgent: r.sender_agent as "codex" | "claude" | "ai-ezio",
+		targetAgent: r.target_agent as "codex" | "claude" | "ai-ezio",
 		status: r.status,
 		captureStatus: r.capture_status,
 		chainId: r.chain_id,
@@ -1096,7 +1096,7 @@ export function cleanupOrchestrationOnShutdownTxn(
 
 			upsertRelayTurnState(db, {
 				collabId: row.collab_id,
-				turnOwner: row.sender_agent as "codex" | "claude",
+				turnOwner: row.sender_agent as "codex" | "claude" | "ai-ezio",
 				waitingAgent: null,
 				unresolvedHandoffId: null,
 				handoffState: "idle",

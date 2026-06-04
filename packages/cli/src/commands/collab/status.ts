@@ -7,6 +7,7 @@ import {
 } from "../../runtime/collab-resolver.js";
 import { getSharedSqlitePath } from "../../runtime/state-root.js";
 import { isEvaluatorReady, type EvaluatorStatus } from "../../runtime/evaluator-config.js";
+import { agentTypes } from "@ai-whisper/shared";
 
 export function runCollabStatus(input: {
 	cwd: string;
@@ -33,7 +34,7 @@ export function runCollabStatus(input: {
 					"SELECT agent_type, binding_state FROM session_binding WHERE collab_id = ?",
 				)
 				.all(r.collabId) as Array<{ agent_type: string; binding_state: string }>;
-			const agents = (["codex", "claude"] as const).map((agentType) => {
+			const agents = agentTypes.map((agentType) => {
 				const b = bindings.find((x) => x.agent_type === agentType);
 				return {
 					agentType,

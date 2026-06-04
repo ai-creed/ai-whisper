@@ -3,7 +3,7 @@ import { sessionBindingSchema, type SessionBinding } from "@ai-whisper/shared";
 
 type SessionBindingRow = {
 	collab_id: string;
-	agent_type: "codex" | "claude";
+	agent_type: "codex" | "claude" | "ai-ezio";
 	binding_state: "unbound" | "pending_attach" | "bound";
 	active_session_id: string | null;
 	binding_source: "launched" | "attached" | "adopted" | null;
@@ -68,7 +68,7 @@ export function upsertSessionBinding(
 export function getSessionBinding(
 	db: Database.Database,
 	collabId: string,
-	agentType: "codex" | "claude",
+	agentType: "codex" | "claude" | "ai-ezio",
 ): SessionBinding | null {
 	const row = db
 		.prepare(

@@ -19,7 +19,7 @@ export const threadStates = [
 	"failed",
 ] as const;
 export const collabStates = ["active", "stopped"] as const;
-export const agentTypes = ["codex", "claude"] as const;
+export const agentTypes = ["codex", "claude", "ai-ezio"] as const;
 export const sessionRegistrationStates = ["registered"] as const;
 export const workItemStates = [
 	"queued",

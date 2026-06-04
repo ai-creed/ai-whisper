@@ -2,8 +2,8 @@ import type Database from "better-sqlite3";
 
 export type RelayTurnStateRecord = {
 	collabId: string;
-	turnOwner: "codex" | "claude" | "none";
-	waitingAgent: "codex" | "claude" | null;
+	turnOwner: "codex" | "claude" | "ai-ezio" | "none";
+	waitingAgent: "codex" | "claude" | "ai-ezio" | null;
 	unresolvedHandoffId: string | null;
 	handoffState: "idle" | "pending" | "deferred" | "accepted" | "stale_handoff" | "failed";
 	handoffAgeMs: number | null;
@@ -86,8 +86,8 @@ export function upsertRelayTurnState(
 	db: Database.Database,
 	input: {
 		collabId: string;
-		turnOwner: "codex" | "claude" | "none";
-		waitingAgent: "codex" | "claude" | null;
+		turnOwner: "codex" | "claude" | "ai-ezio" | "none";
+		waitingAgent: "codex" | "claude" | "ai-ezio" | null;
 		unresolvedHandoffId: string | null;
 		handoffState: RelayTurnStateRecord["handoffState"];
 		updatedAt: string;
