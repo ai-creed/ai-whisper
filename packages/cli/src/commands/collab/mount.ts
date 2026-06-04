@@ -38,7 +38,7 @@ function defaultIsPidAlive(pid: number): boolean {
 
 export function recordMountedSession(input: {
 	cwd: string;
-	agentType: "codex" | "claude" | "ai-ezio";
+	agentType: "codex" | "claude" | "ezio";
 	ttyPath: string;
 	pid: number;
 	collabIdOverride?: string;
@@ -72,7 +72,7 @@ export function recordMountedSession(input: {
 export async function runCollabMount(input: {
 	workspaceRoot: string;
 	collabIdOverride?: string;
-	target: "codex" | "claude" | "ai-ezio";
+	target: "codex" | "claude" | "ezio";
 	/**
 	 * Args forwarded after `--` to the visible agent binary spawn
 	 * (e.g. `mount codex -- --full-auto --model gpt-5`). Threaded to

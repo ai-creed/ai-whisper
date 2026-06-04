@@ -1,14 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { createCliSessionId } from "../packages/cli/src/runtime/id-factory.ts";
 
-// sessionIdSchema enforces `^session_[a-z0-9_]+$` — the "ai-ezio" hyphen must be
-// sanitized or mount registration throws on the generated session id.
-describe("createCliSessionId (ai-ezio)", () => {
+// sessionIdSchema enforces `^session_[a-z0-9_]+$` — the generated session id for
+// the ezio role must stay within that shape (no mount-registration throw).
+describe("createCliSessionId (ezio)", () => {
 	it("produces a session id matching the [a-z0-9_] sessionId shape", () => {
-		const id = createCliSessionId("ai-ezio", "2026-06-04T00:00:00.000Z");
-		expect(id).toMatch(/^session_[a-z0-9_]+$/);
+		const id = createCliSessionId("ezio", "2026-06-04T00:00:00.000Z");
+		expect(id).toMatch(/^session_ezio_[0-9]+$/);
 		expect(id).not.toContain("-");
-		expect(id).toContain("ai_ezio");
 	});
 
 	it("still works for codex/claude", () => {

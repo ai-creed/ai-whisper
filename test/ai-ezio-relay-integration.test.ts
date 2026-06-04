@@ -37,14 +37,14 @@ function fakeBroker() {
 	const handoff = {
 		handoffId: "h1",
 		status: "pending" as string,
-		targetAgent: "ai-ezio",
+		targetAgent: "ezio",
 		senderAgent: "claude" as const,
 		requestText: "Summarize the spec.",
 	};
 	const handoffBackRelay = vi.fn();
 	const control = {
 		getRelayTurnState: vi.fn(() => ({
-			turnOwner: "ai-ezio",
+			turnOwner: "ezio",
 			unresolvedHandoffId: "h1",
 			handoffState: handoff.status,
 			handoffAgeMs: 1_000,
@@ -73,12 +73,12 @@ describe("ai-ezio relay handoff (integration, protocol-native)", () => {
 		const relay = createMountedTurnOwnedRelay({
 			broker,
 			collabId: "c1",
-			currentAgent: "ai-ezio",
+			currentAgent: "ezio",
 			writeLocalMessage: vi.fn(),
 			writeUserInput: (t: string) => live.writeUserInput(t),
 			submitUserInput: async (text: string) => {
 				await submitInjectedProviderInput({
-					target: "ai-ezio",
+					target: "ezio",
 					text,
 					writeUserInput: (t) => live.writeUserInput(t),
 				});
@@ -97,7 +97,7 @@ describe("ai-ezio relay handoff (integration, protocol-native)", () => {
 		expect(eng.session.submit).toHaveBeenCalledWith("Summarize the spec.");
 		expect(handoffBackRelay).toHaveBeenCalledTimes(1);
 		expect(handoffBackRelay.mock.calls[0]![0]).toMatchObject({
-			senderAgent: "ai-ezio",
+			senderAgent: "ezio",
 			targetAgent: "claude",
 			requestText: "Here is the summary.",
 			captureStatus: "ok",

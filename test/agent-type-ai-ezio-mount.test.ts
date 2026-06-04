@@ -8,7 +8,7 @@ import {
 
 describe("ai-ezio agent-type widening (mount-registration path)", () => {
 	it("agentTypes includes ai-ezio", () => {
-		expect(agentTypes).toContain("ai-ezio");
+		expect(agentTypes).toContain("ezio");
 	});
 
 	it("sessionBindingSchema accepts agentType ai-ezio", () => {
@@ -16,7 +16,7 @@ describe("ai-ezio agent-type widening (mount-registration path)", () => {
 			sessionBindingSchema.parse({
 				version: brokerSchemaVersion,
 				collabId: "collab_x",
-				agentType: "ai-ezio",
+				agentType: "ezio",
 				bindingState: "bound",
 				activeSessionId: null,
 				bindingSource: null,
@@ -34,7 +34,7 @@ describe("ai-ezio agent-type widening (mount-registration path)", () => {
 				version: brokerSchemaVersion,
 				claimId: "claim_x",
 				collabId: "collab_x",
-				agentType: "ai-ezio",
+				agentType: "ezio",
 				mode: "attach",
 				secret: "s",
 				status: "pending",

@@ -13,7 +13,7 @@ function fakeBroker(handoff: {
 	const handoffBackRelay = vi.fn();
 	const control = {
 		getRelayTurnState: vi.fn(() => ({
-			turnOwner: "ai-ezio",
+			turnOwner: "ezio",
 			unresolvedHandoffId: handoff ? handoff.handoffId : null,
 			handoffState: handoff ? "accepted" : null,
 			handoffAgeMs: 1_000,
@@ -28,7 +28,7 @@ function fakeBroker(handoff: {
 
 const baseInput = {
 	collabId: "c1",
-	currentAgent: "ai-ezio" as const,
+	currentAgent: "ezio" as const,
 	writeLocalMessage: vi.fn(),
 	writeUserInput: vi.fn(),
 	submitUserInput: vi.fn(),
@@ -40,7 +40,7 @@ describe("mounted-turn-owned-relay handbackResolvedContent", () => {
 		const { broker, handoffBackRelay } = fakeBroker({
 			handoffId: "h1",
 			status: "accepted",
-			targetAgent: "ai-ezio",
+			targetAgent: "ezio",
 			senderAgent: "claude",
 			requestText: "please do X",
 		});
@@ -52,7 +52,7 @@ describe("mounted-turn-owned-relay handbackResolvedContent", () => {
 		const arg = handoffBackRelay.mock.calls[0]![0];
 		expect(arg).toMatchObject({
 			handoffId: "h1",
-			senderAgent: "ai-ezio",
+			senderAgent: "ezio",
 			targetAgent: "claude",
 			requestText: "the final answer",
 			captureStatus: "ok",

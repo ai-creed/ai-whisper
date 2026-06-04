@@ -17,11 +17,11 @@ export function createCliCollabId(now: string): `collab_${string}` {
 }
 
 export function createCliSessionId(
-	agentType: "codex" | "claude" | "ai-ezio",
+	agentType: "codex" | "claude" | "ezio",
 	now: string,
 ): `session_${string}` {
-	// Sanitize the agent segment to the `[a-z0-9_]` shape sessionIdSchema enforces
-	// — the "ai-ezio" hyphen would otherwise fail validation.
+	// Defensive: keep the agent segment within the `[a-z0-9_]` shape sessionIdSchema
+	// enforces (a hyphen in any future agent name would otherwise fail validation).
 	const agentSegment = agentType.replace(/-/g, "_");
 	return `session_${agentSegment}_${normalizeTimestamp(now)}`;
 }

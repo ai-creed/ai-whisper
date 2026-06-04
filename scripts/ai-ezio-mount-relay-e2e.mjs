@@ -30,9 +30,9 @@ const childEnv = {
 	AI_WHISPER_IDLE_THRESHOLD_MS: "5000",
 };
 
-// 1) Spawn the REAL `whisper collab mount ai-ezio` in a pty (real tty; the command
+// 1) Spawn the REAL `whisper collab mount ezio` in a pty (real tty; the command
 //    auto-spawns its broker daemon and registers the ai-ezio binding).
-const mount = pty.spawn(process.execPath, [CLI, "collab", "mount", "ai-ezio"], {
+const mount = pty.spawn(process.execPath, [CLI, "collab", "mount", "ezio"], {
 	name: "xterm-color", cwd: root, cols: 100, rows: 30, env: childEnv,
 });
 let mountLog = "";
@@ -66,17 +66,17 @@ const broker = createBrokerRuntime({
 // Confirm the ai-ezio binding registered through the real schemas (authoritative).
 let registered = false;
 for (let deadline = Date.now() + 15_000; Date.now() < deadline && !registered; await sleep(300)) {
-	try { registered = broker.control.listSessionBindings(collabId).some((b) => b.agentType === "ai-ezio"); } catch {}
+	try { registered = broker.control.listSessionBindings(collabId).some((b) => b.agentType === "ezio"); } catch {}
 }
-if (!registered) { cleanup(); console.error("FAIL: ai-ezio never registered a binding via the real mount command\n" + mountLog.slice(-2000)); process.exit(1); }
-console.log("OK: real `whisper collab mount ai-ezio` registered an ai-ezio binding in", collabId);
+if (!registered) { cleanup(); console.error("FAIL: ezio never registered a binding via the real mount command\n" + mountLog.slice(-2000)); process.exit(1); }
+console.log("OK: real `whisper collab mount ezio` registered an ezio binding in", collabId);
 
 // 3) Inject ONE relay handoff TARGETING ai-ezio. createRelayHandoff flips turn
 //    ownership to the target (ai-ezio) so the mounted process sees it as pending;
 //    @@directive delivery is M6.
 broker.control.createRelayHandoff({
 	handoffId: "handoff_e2e", collabId,
-	senderAgent: "codex", targetAgent: "ai-ezio",
+	senderAgent: "codex", targetAgent: "ezio",
 	requestText: "Reply with the single word READY.", now: now(),
 });
 
@@ -88,11 +88,11 @@ let proof = null;
 for (let deadline = Date.now() + 40_000; Date.now() < deadline && !proof; await sleep(300)) {
 	const orig = broker.control.getRelayHandoff("handoff_e2e");
 	if (orig && orig.status === "handed_back") { proof = { kind: "original-handed-back", status: orig.status }; break; }
-	const fromAiEzio = broker.control.listRelayHandoffs(collabId, 30).find((h) => h.senderAgent === "ai-ezio");
+	const fromAiEzio = broker.control.listRelayHandoffs(collabId, 30).find((h) => h.senderAgent === "ezio");
 	if (fromAiEzio) { proof = { kind: "handback-from-ai-ezio", senderAgent: fromAiEzio.senderAgent, status: fromAiEzio.status }; break; }
 }
 
 cleanup();
-if (!proof) { console.error("FAIL: no protocol handback recorded from ai-ezio\n" + mountLog.slice(-2500)); process.exit(1); }
-console.log("OK: real relay handoff handed back via protocol by ai-ezio:", JSON.stringify(proof));
+if (!proof) { console.error("FAIL: no protocol handback recorded from ezio\n" + mountLog.slice(-2500)); process.exit(1); }
+console.log("OK: real relay handoff handed back via protocol by ezio:", JSON.stringify(proof));
 process.exit(0);

@@ -42,7 +42,7 @@ export function createAiEzioProvider(config?: {
 	return {
 		getIdentity: () =>
 			createProviderIdentity({
-				providerId: "ai-ezio",
+				providerId: "ezio",
 				toolFamily: "hax",
 				providerVersion: AI_EZIO_PROVIDER_VERSION,
 			}),

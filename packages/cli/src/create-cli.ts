@@ -187,7 +187,7 @@ export function createCli(): Command {
 		.action(async (instruction: string, opts: TellOpts) => {
 			const tellInput: Parameters<typeof runCollabTell>[0] = {
 				cwd: process.cwd(),
-				target: opts.target as "codex" | "claude" | "ai-ezio",
+				target: opts.target as "codex" | "claude" | "ezio",
 				instruction,
 				artifactPaths: opts.artifact ?? [],
 				now: new Date().toISOString(),
@@ -252,7 +252,7 @@ export function createCli(): Command {
 			await runCollabReconnect({
 				workspaceRoot: opts.workspace,
 				...(opts.collab ? { collabIdOverride: opts.collab } : {}),
-				target: target as "codex" | "claude" | "ai-ezio",
+				target: target as "codex" | "claude" | "ezio",
 				now: new Date().toISOString(),
 			});
 		});
@@ -260,7 +260,7 @@ export function createCli(): Command {
 	collab
 		.command("mount")
 		.description("Mount the current terminal as the managed session surface for a role")
-		.argument("<agent>", "Target agent: codex, claude, or ai-ezio")
+		.argument("<agent>", "Target agent: codex, claude, or ezio")
 		.argument(
 			"[passthroughArgs...]",
 			"Args forwarded after `--` to the agent binary spawn (e.g. `mount codex -- --full-auto`)",
@@ -269,7 +269,7 @@ export function createCli(): Command {
 		.option("--collab <id>", "Target a specific collab id (defaults to the active collab for cwd)")
 		.action(
 			async (
-				target: "codex" | "claude" | "ai-ezio",
+				target: "codex" | "claude" | "ezio",
 				passthroughArgs: string[],
 				opts: WorkspaceOpts & { collab?: string },
 			) => {

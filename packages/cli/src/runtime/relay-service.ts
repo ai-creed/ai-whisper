@@ -9,7 +9,7 @@ export function enqueueRelayWork(input: {
 	broker: BrokerRuntime;
 	collabId: string;
 	originSessionId: string;
-	target: "codex" | "claude" | "ai-ezio";
+	target: "codex" | "claude" | "ezio";
 	instruction: string;
 	artifactPaths: string[];
 	forceNewThread: boolean;
@@ -93,7 +93,7 @@ export function enqueueRelayWork(input: {
 }
 
 export function formatRelayAcknowledgement(input: {
-	target: "codex" | "claude" | "ai-ezio";
+	target: "codex" | "claude" | "ezio";
 	createdNewThread: boolean;
 }) {
 	return input.createdNewThread
@@ -102,7 +102,7 @@ export function formatRelayAcknowledgement(input: {
 }
 
 export function formatRelayReplySummary(input: {
-	target: "codex" | "claude" | "ai-ezio";
+	target: "codex" | "claude" | "ezio";
 	replyKind: string;
 	content: string;
 }) {

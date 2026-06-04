@@ -43,7 +43,7 @@ describe("createAiEzioProvider", () => {
 		const p = createAiEzioProvider({ createEngineSession: () => engineReturning("") });
 		const identity = p.getIdentity();
 		expect(() => providerIdentitySchema.parse(identity)).not.toThrow();
-		expect(identity.providerId).toBe("ai-ezio");
+		expect(identity.providerId).toBe("ezio");
 		expect(identity.providerVersion.length).toBeGreaterThanOrEqual(1);
 	});
 

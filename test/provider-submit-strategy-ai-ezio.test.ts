@@ -5,7 +5,7 @@ describe("submitInjectedProviderInput (ai-ezio)", () => {
 	it("submits the text exactly once with no trailing carriage return", async () => {
 		const writeUserInput = vi.fn();
 		await submitInjectedProviderInput({
-			target: "ai-ezio",
+			target: "ezio",
 			text: "implement the plan",
 			writeUserInput,
 		});

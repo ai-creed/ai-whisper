@@ -162,8 +162,8 @@ export type RelayViewSnapshot = {
 		status: "active" | "done" | "escalated" | "abandoned";
 	} | null;
 	turn: {
-		turnOwner: "codex" | "claude" | "ai-ezio" | "none";
-		waitingAgent: "codex" | "claude" | "ai-ezio" | null;
+		turnOwner: "codex" | "claude" | "ezio" | "none";
+		waitingAgent: "codex" | "claude" | "ezio" | null;
 		handoffState: string;
 	};
 	// Liveness is PER-AGENT: each entry optionally carries `mountAlive`, the
@@ -201,7 +201,7 @@ export type RelayViewState = {
 	turn: string;
 	health: string;
 	agentHealth: Array<{
-		agent: "codex" | "claude" | "ai-ezio";
+		agent: "codex" | "claude" | "ezio";
 		health: "healthy" | "degraded" | "dead";
 	}>;
 	live: string;

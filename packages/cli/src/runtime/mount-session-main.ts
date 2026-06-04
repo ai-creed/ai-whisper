@@ -111,7 +111,7 @@ export function reapStaleSessionsOnTeardown(input: ReapLifecycleInput): void {
 }
 
 export function createMountSessionRuntime(input: {
-	target: "codex" | "claude" | "ai-ezio";
+	target: "codex" | "claude" | "ezio";
 	ttyPath: string;
 	workspaceRoot: string;
 	claimId: string;

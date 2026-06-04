@@ -169,8 +169,8 @@ export function formatInspectSnapshot(input: {
 	flaggedItems: Array<{ workItemId: string; deliveryState: string; instructionPreview: string }>;
 	watch: boolean;
 	refreshedAt: string;
-	turnOwner: "codex" | "claude" | "ai-ezio" | "none";
-	waitingAgent: "codex" | "claude" | "ai-ezio" | null;
+	turnOwner: "codex" | "claude" | "ezio" | "none";
+	waitingAgent: "codex" | "claude" | "ezio" | null;
 	handoffState: "idle" | "pending" | "deferred" | "accepted" | "stale_handoff" | "failed";
 	handoffAgeMs?: number | null;
 	lastCaptureStatus?: "ok" | "no_response_captured_confidently" | "no_response_captured" | null;

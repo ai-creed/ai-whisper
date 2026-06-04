@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-export type AgentType = "codex" | "claude" | "ai-ezio";
+export type AgentType = "codex" | "claude" | "ezio";
 export type AttachmentKind = "owned" | "adopted" | "mounted";
 
 export type SessionAttachmentRecord = {

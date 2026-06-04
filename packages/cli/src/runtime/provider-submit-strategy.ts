@@ -4,7 +4,7 @@ const PASTE_START = "\x1b[200~";
 const PASTE_END = "\x1b[201~";
 
 export async function submitInjectedProviderInput(input: {
-	target: "codex" | "claude" | "ai-ezio";
+	target: "codex" | "claude" | "ezio";
 	text: string;
 	writeUserInput: (text: string) => void;
 	sleep?: (ms: number) => Promise<void>;
@@ -18,7 +18,7 @@ export async function submitInjectedProviderInput(input: {
 		input.sleep ??
 		((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
 
-	if (input.target === "ai-ezio") {
+	if (input.target === "ezio") {
 		// Protocol-native: the ai-ezio live session's writeUserInput maps to a
 		// single session.submit(); no keystream, no separate carriage return.
 		input.writeUserInput(input.text);

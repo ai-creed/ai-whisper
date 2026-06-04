@@ -13,7 +13,7 @@ import {
 import type { InteractiveSessionController } from "@ai-whisper/shared";
 import { getLiveSessionBrokerTempRoot } from "./paths.js";
 
-export type MountTarget = "codex" | "claude" | "ai-ezio";
+export type MountTarget = "codex" | "claude" | "ezio";
 
 export function getInteractiveSessionExecArgsForTarget(
 	target: MountTarget,
@@ -22,7 +22,7 @@ export function getInteractiveSessionExecArgsForTarget(
 
 	// ai-ezio is protocol-native: the harness owns the engine spawn, so there are
 	// no provider CLI exec args.
-	if (target === "ai-ezio") {
+	if (target === "ezio") {
 		return [];
 	}
 
@@ -40,7 +40,7 @@ export function getInteractiveSessionExecArgsForTarget(
 export function getProviderExecArgsForTarget(target: MountTarget): string[] {
 	const tempRoot = getLiveSessionBrokerTempRoot();
 
-	if (target === "ai-ezio") {
+	if (target === "ezio") {
 		return [];
 	}
 
@@ -57,7 +57,7 @@ export function getProviderExecArgsForTarget(target: MountTarget): string[] {
 }
 
 export function createProviderForTarget(target: MountTarget) {
-	if (target === "ai-ezio") {
+	if (target === "ezio") {
 		return createAiEzioProvider();
 	}
 	if (target === "codex") {
@@ -84,7 +84,7 @@ export function createInteractiveSessionForTarget(input: {
 	 */
 	passthroughArgs?: string[];
 }): InteractiveSessionController {
-	if (input.target === "ai-ezio") {
+	if (input.target === "ezio") {
 		// Protocol-native: the harness Session spawns hax in mounted posture; the
 		// adapter renders the streamed assistant deltas to the operator's stdout.
 		return createAiEzioLiveSession({ stdout: input.stdout });
