@@ -597,7 +597,9 @@ export function createMountedTurnOwnedRelay(input: {
 
 		/** Protocol-native handback: deliver the authoritative content from the
 		 *  explicit idle event directly to the original sender. Uses
-		 *  getAcceptedHandoff() (clean state — no age/visible-output heuristics). */
+		 *  getAcceptedHandoff() (clean state — no age/visible-output heuristics).
+		 *  async to mirror the other relay methods / await call sites; body is sync. */
+		// eslint-disable-next-line @typescript-eslint/require-await
 		async handbackResolvedContent(content: string) {
 			const accepted = getAcceptedHandoff();
 			if (!accepted) return;

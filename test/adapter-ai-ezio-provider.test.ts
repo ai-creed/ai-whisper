@@ -62,6 +62,7 @@ describe("createAiEzioProvider", () => {
 		const reply = await p.handleWork(request);
 		expect(() => mockProviderReplySchema.parse(reply)).not.toThrow();
 		expect(reply).toMatchObject({ kind: "answer", content: "done building" });
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- vitest mock assertion, not invoked
 		expect(session.submitAndWait).toHaveBeenCalledTimes(1);
 	});
 

@@ -54,6 +54,9 @@ export function createAiEzioLiveSession(input: {
 			});
 			await session.start();
 		},
+		// async to satisfy InteractiveSessionController.stop(): Promise<void>; the
+		// protocol close is synchronous.
+		// eslint-disable-next-line @typescript-eslint/require-await
 		async stop() {
 			session?.close();
 			session = null;

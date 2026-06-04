@@ -94,6 +94,7 @@ describe("ai-ezio relay handoff (integration, protocol-native)", () => {
 		await relay.checkIdleActions();
 		await new Promise((r) => setTimeout(r, 20)); // let the engine's macrotask run
 
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- vitest mock assertion, not invoked
 		expect(eng.session.submit).toHaveBeenCalledWith("Summarize the spec.");
 		expect(handoffBackRelay).toHaveBeenCalledTimes(1);
 		expect(handoffBackRelay.mock.calls[0]![0]).toMatchObject({
