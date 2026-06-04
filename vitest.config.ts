@@ -16,6 +16,10 @@ export default defineConfig({
 				__dirname,
 				"packages/adapter-codex/src/index.ts",
 			),
+			"@ai-whisper/adapter-ai-ezio": resolve(
+				__dirname,
+				"packages/adapter-ai-ezio/src/index.ts",
+			),
 			"@ai-whisper/adapter-claude": resolve(
 				__dirname,
 				"packages/adapter-claude/src/index.ts",

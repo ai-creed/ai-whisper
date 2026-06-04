@@ -4,6 +4,10 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  '@ai-ezio/protocol': file:../ai-ezio/packages/protocol
+  '@ai-ezio/harness': file:../ai-ezio/packages/harness
+
 importers:
 
   .:
@@ -56,6 +60,18 @@ importers:
       zod:
         specifier: ^3.25.76
         version: 3.25.76
+
+  packages/adapter-ai-ezio:
+    dependencies:
+      '@ai-ezio/harness':
+        specifier: file:../../../ai-ezio/packages/harness
+        version: file:../ai-ezio/packages/harness
+      '@ai-ezio/protocol':
+        specifier: file:../../../ai-ezio/packages/protocol
+        version: file:../ai-ezio/packages/protocol
+      '@ai-whisper/shared':
+        specifier: workspace:*
+        version: link:../shared
 
   packages/adapter-claude:
     dependencies:
@@ -171,6 +187,12 @@ importers:
         version: 3.25.76
 
 packages:
+
+  '@ai-ezio/harness@file:../ai-ezio/packages/harness':
+    resolution: {directory: ../ai-ezio/packages/harness, type: directory}
+
+  '@ai-ezio/protocol@file:../ai-ezio/packages/protocol':
+    resolution: {directory: ../ai-ezio/packages/protocol, type: directory}
 
   '@alcalzone/ansi-tokenize@0.3.0':
     resolution: {integrity: sha512-p+CMKJ93HFmLkjXKlXiVGlMQEuRb6H0MokBSwUsX+S6BRX8eV5naFZpQJFfJHjRZY0Hmnqy1/r6UWl3x+19zYA==}
@@ -1845,6 +1867,12 @@ packages:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
 snapshots:
+
+  '@ai-ezio/harness@file:../ai-ezio/packages/harness':
+    dependencies:
+      '@ai-ezio/protocol': file:../ai-ezio/packages/protocol
+
+  '@ai-ezio/protocol@file:../ai-ezio/packages/protocol': {}
 
   '@alcalzone/ansi-tokenize@0.3.0':
     dependencies:
