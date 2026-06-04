@@ -187,7 +187,7 @@ export function createCli(): Command {
 		.action(async (instruction: string, opts: TellOpts) => {
 			const tellInput: Parameters<typeof runCollabTell>[0] = {
 				cwd: process.cwd(),
-				target: opts.target as "codex" | "claude",
+				target: opts.target as "codex" | "claude" | "ai-ezio",
 				instruction,
 				artifactPaths: opts.artifact ?? [],
 				now: new Date().toISOString(),
@@ -252,7 +252,7 @@ export function createCli(): Command {
 			await runCollabReconnect({
 				workspaceRoot: opts.workspace,
 				...(opts.collab ? { collabIdOverride: opts.collab } : {}),
-				target: target as "codex" | "claude",
+				target: target as "codex" | "claude" | "ai-ezio",
 				now: new Date().toISOString(),
 			});
 		});
@@ -269,7 +269,7 @@ export function createCli(): Command {
 		.option("--collab <id>", "Target a specific collab id (defaults to the active collab for cwd)")
 		.action(
 			async (
-				target: "codex" | "claude",
+				target: "codex" | "claude" | "ai-ezio",
 				passthroughArgs: string[],
 				opts: WorkspaceOpts & { collab?: string },
 			) => {

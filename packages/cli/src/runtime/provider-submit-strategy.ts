@@ -4,7 +4,7 @@ const PASTE_START = "\x1b[200~";
 const PASTE_END = "\x1b[201~";
 
 export async function submitInjectedProviderInput(input: {
-	target: "codex" | "claude";
+	target: "codex" | "claude" | "ai-ezio";
 	text: string;
 	writeUserInput: (text: string) => void;
 	sleep?: (ms: number) => Promise<void>;

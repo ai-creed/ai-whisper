@@ -9,7 +9,7 @@ import { waitForReply } from "../../runtime/reply-wait.js";
 
 export async function runCollabTell(input: {
 	cwd: string;
-	target: "codex" | "claude";
+	target: "codex" | "claude" | "ai-ezio";
 	instruction: string;
 	explicitAction?: WorkItem["requestedAction"];
 	artifactPaths: string[];

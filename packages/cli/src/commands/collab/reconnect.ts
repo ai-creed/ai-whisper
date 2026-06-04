@@ -5,7 +5,7 @@ import { resolveCollab } from "../../runtime/collab-resolver.js";
 import { getSharedSqlitePath } from "../../runtime/state-root.js";
 
 export interface ReattachableSession {
-	agentType: "codex" | "claude";
+	agentType: "codex" | "claude" | "ai-ezio";
 	attachmentKind: "mounted" | "adopted";
 	ttyPath: string;
 	pid: number | null;
@@ -44,11 +44,11 @@ export function listReattachableSessions(input: {
 export async function runCollabReconnect(input: {
 	workspaceRoot: string;
 	collabIdOverride?: string;
-	target: "codex" | "claude";
+	target: "codex" | "claude" | "ai-ezio";
 	now: string;
 	resolveCurrentTty?: () => string;
 	startMountedSession?: (input: {
-		target: "codex" | "claude";
+		target: "codex" | "claude" | "ai-ezio";
 		workspaceRoot: string;
 		ttyPath: string;
 		claimId: string;

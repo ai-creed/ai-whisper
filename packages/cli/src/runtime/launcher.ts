@@ -85,7 +85,7 @@ function buildBrokerEnvPrefix(input: {
 }
 
 function buildMountCommand(
-	agent: "codex" | "claude",
+	agent: "codex" | "claude" | "ai-ezio",
 	envPrefix: string,
 	workspaceRoot: string,
 ): string {

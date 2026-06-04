@@ -42,6 +42,7 @@
 		"zod": "^3.24.2"
 	},
 	"devDependencies": {
+		"@ai-whisper/adapter-ai-ezio": "workspace:*",
 		"@ai-whisper/adapter-claude": "workspace:*",
 		"@ai-whisper/adapter-codex": "workspace:*",
 		"@ai-whisper/broker": "workspace:*",

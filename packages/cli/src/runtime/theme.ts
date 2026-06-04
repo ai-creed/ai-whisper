@@ -12,6 +12,7 @@ export const THEME = {
 export const AGENT_COLOR = {
 	claude: "#D97757", // signature terracotta
 	codex: "#5FB3C9", // palette teal
+	"ai-ezio": "#A78BFA", // palette violet
 } as const;
 
 export type ThemeToken = keyof typeof THEME;

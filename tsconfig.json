@@ -11,7 +11,10 @@
 			"@ai-whisper/companion-core": ["./packages/companion-core/src/index.ts"],
 			"ai-whisper": ["./packages/cli/src/index.ts"],
 			"@ai-whisper/adapter-codex": ["./packages/adapter-codex/src/index.ts"],
-			"@ai-whisper/adapter-claude": ["./packages/adapter-claude/src/index.ts"]
+			"@ai-whisper/adapter-claude": ["./packages/adapter-claude/src/index.ts"],
+			"@ai-whisper/adapter-ai-ezio": ["./packages/adapter-ai-ezio/src/index.ts"],
+			"@ai-ezio/harness": ["../ai-ezio/packages/harness/dist/index.d.ts"],
+			"@ai-ezio/protocol": ["../ai-ezio/packages/protocol/dist/index.d.ts"]
 		}
 	},
 	"include": ["test/**/*.ts", "test/**/*.tsx", "vitest.config.ts"]

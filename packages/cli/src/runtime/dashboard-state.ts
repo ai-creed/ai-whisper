@@ -24,7 +24,7 @@ export type WallPaneState = {
 	round: { current: number; max: number } | null;
 	progress: { current: number; total: number } | null;
 	agentHealth: Array<{
-		agent: "codex" | "claude";
+		agent: "codex" | "claude" | "ai-ezio";
 		health: "healthy" | "degraded" | "dead";
 	}>;
 	stuckWhy: string | null;

@@ -146,6 +146,9 @@ importers:
         specifier: ^3.24.2
         version: 3.25.76
     devDependencies:
+      '@ai-whisper/adapter-ai-ezio':
+        specifier: workspace:*
+        version: link:../adapter-ai-ezio
       '@ai-whisper/adapter-claude':
         specifier: workspace:*
         version: link:../adapter-claude

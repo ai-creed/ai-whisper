@@ -83,7 +83,7 @@ describe("createAiEzioProvider", () => {
 				statusFilePath: "/tmp/art/w1/status.json",
 			},
 		});
-		const submitted = (session.submitAndWait as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+		const submitted = (session.submitAndWait as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string;
 		expect(submitted).toContain("/tmp/art/w1/request.md");
 	});
 

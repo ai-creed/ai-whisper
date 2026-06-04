@@ -2,8 +2,8 @@ import type { CaptureHandbackResult } from "./capture-handback-text.js";
 
 type RelayTurnState = {
 	collabId: string;
-	turnOwner: "codex" | "claude" | "none";
-	waitingAgent: "codex" | "claude" | null;
+	turnOwner: "codex" | "claude" | "ai-ezio" | "none";
+	waitingAgent: "codex" | "claude" | "ai-ezio" | null;
 	unresolvedHandoffId: string | null;
 	handoffState: "idle" | "pending" | "deferred" | "accepted" | "stale_handoff" | "failed";
 	handoffAgeMs: number | null;
@@ -12,8 +12,8 @@ type RelayTurnState = {
 type RelayHandoff = {
 	handoffId: string;
 	collabId: string;
-	senderAgent: "codex" | "claude";
-	targetAgent: "codex" | "claude";
+	senderAgent: "codex" | "claude" | "ai-ezio";
+	targetAgent: "codex" | "claude" | "ai-ezio";
 	requestText: string;
 	status: "pending" | "deferred" | "accepted" | "declined" | "handed_back" | "failed";
 };
@@ -30,8 +30,8 @@ type BrokerLike = {
 		handoffBackRelay?(input: {
 			handoffId: string;
 			nextHandoffId: string;
-			senderAgent: "codex" | "claude";
-			targetAgent: "codex" | "claude";
+			senderAgent: "codex" | "claude" | "ai-ezio";
+			targetAgent: "codex" | "claude" | "ai-ezio";
 			requestText: string;
 			captureStatus?: "ok" | "no_response_captured_confidently" | "no_response_captured" | null;
 			now: string;
@@ -42,7 +42,7 @@ type BrokerLike = {
 			collabId: string;
 			chainId: string | null;
 			workflowId: string | null;
-			targetProvider: "codex" | "claude";
+			targetProvider: "codex" | "claude" | "ai-ezio";
 			captureStatus: "ok" | "no_response_captured_confidently" | "no_response_captured";
 			clipLen: number;
 			turnLen: number;
@@ -219,7 +219,7 @@ function isAutonomousHandoff(handoffId: string, broker: BrokerLike): boolean {
 export function createMountedTurnOwnedRelay(input: {
 	broker: BrokerLike;
 	collabId: string;
-	currentAgent: "codex" | "claude";
+	currentAgent: "codex" | "claude" | "ai-ezio";
 	writeLocalMessage: (text: string) => void;
 	writeUserInput: (text: string) => void;
 	submitUserInput?: (text: string) => Promise<void>;
@@ -227,7 +227,7 @@ export function createMountedTurnOwnedRelay(input: {
 	captureHandbackText?: (
 		turnText: string,
 	) => Promise<string | CaptureHandbackResult | null>;
-	confirmHandbackCapture?: (args: { target: "codex" | "claude"; text: string }) => Promise<boolean>;
+	confirmHandbackCapture?: (args: { target: "codex" | "claude" | "ai-ezio"; text: string }) => Promise<boolean>;
 	prefillHandbackFromCapture?: boolean;
 	turnCapture?: {
 		reset(): void;
@@ -524,7 +524,7 @@ export function createMountedTurnOwnedRelay(input: {
 		},
 
 		async handBackTo(
-			target: "codex" | "claude",
+			target: "codex" | "claude" | "ai-ezio",
 			options?: { force?: boolean },
 		) {
 			const handoff = getAcceptedHandoff();

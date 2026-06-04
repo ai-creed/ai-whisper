@@ -17,7 +17,7 @@ export function createCliCollabId(now: string): `collab_${string}` {
 }
 
 export function createCliSessionId(
-	agentType: "codex" | "claude",
+	agentType: "codex" | "claude" | "ai-ezio",
 	now: string,
 ): `session_${string}` {
 	return `session_${agentType}_${normalizeTimestamp(now)}`;

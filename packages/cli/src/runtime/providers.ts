@@ -6,13 +6,25 @@ import {
 	createCodexLiveSession,
 	createCodexProvider,
 } from "@ai-whisper/adapter-codex";
+import {
+	createAiEzioLiveSession,
+	createAiEzioProvider,
+} from "@ai-whisper/adapter-ai-ezio";
 import type { InteractiveSessionController } from "@ai-whisper/shared";
 import { getLiveSessionBrokerTempRoot } from "./paths.js";
 
+export type MountTarget = "codex" | "claude" | "ai-ezio";
+
 export function getInteractiveSessionExecArgsForTarget(
-	target: "codex" | "claude",
+	target: MountTarget,
 ): string[] {
 	const tempRoot = getLiveSessionBrokerTempRoot();
+
+	// ai-ezio is protocol-native: the harness owns the engine spawn, so there are
+	// no provider CLI exec args.
+	if (target === "ai-ezio") {
+		return [];
+	}
 
 	if (target === "codex") {
 		// Full autonomy: the relay drives codex unattended, so it must run
@@ -25,8 +37,12 @@ export function getInteractiveSessionExecArgsForTarget(
 	return ["--add-dir", tempRoot, "--dangerously-skip-permissions"];
 }
 
-export function getProviderExecArgsForTarget(target: "codex" | "claude"): string[] {
+export function getProviderExecArgsForTarget(target: MountTarget): string[] {
 	const tempRoot = getLiveSessionBrokerTempRoot();
+
+	if (target === "ai-ezio") {
+		return [];
+	}
 
 	if (target === "codex") {
 		return [
@@ -40,7 +56,10 @@ export function getProviderExecArgsForTarget(target: "codex" | "claude"): string
 	return ["-p", "--add-dir", tempRoot, "--dangerously-skip-permissions"];
 }
 
-export function createProviderForTarget(target: "codex" | "claude") {
+export function createProviderForTarget(target: MountTarget) {
+	if (target === "ai-ezio") {
+		return createAiEzioProvider();
+	}
 	if (target === "codex") {
 		return createCodexProvider({
 			executable: process.env.AI_WHISPER_CODEX_CMD ?? "codex",
@@ -54,7 +73,7 @@ export function createProviderForTarget(target: "codex" | "claude") {
 }
 
 export function createInteractiveSessionForTarget(input: {
-	target: "codex" | "claude";
+	target: MountTarget;
 	cwd: string;
 	stdout: NodeJS.WritableStream;
 	replyTimeoutMs?: number;
@@ -65,6 +84,11 @@ export function createInteractiveSessionForTarget(input: {
 	 */
 	passthroughArgs?: string[];
 }): InteractiveSessionController {
+	if (input.target === "ai-ezio") {
+		// Protocol-native: the harness Session spawns hax in mounted posture; the
+		// adapter renders the streamed assistant deltas to the operator's stdout.
+		return createAiEzioLiveSession({ stdout: input.stdout });
+	}
 	const baseExecArgs = getInteractiveSessionExecArgsForTarget(input.target);
 	const execArgs = [...baseExecArgs, ...(input.passthroughArgs ?? [])];
 	if (input.target === "codex") {
