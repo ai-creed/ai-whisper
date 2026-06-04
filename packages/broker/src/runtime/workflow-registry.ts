@@ -148,12 +148,21 @@ Non-blocking risks:
 - <risk that does NOT block this gate, or "None.">
 --- end protocol ---`;
 
+// Code-review skill guidance prepended to code-bearing review handoffs only.
+// It tells the reviewer to use the ai-whisper-code-review skill for HOW to
+// inspect code, while WORKFLOW_REVIEW_PROTOCOL (which follows it) remains
+// authoritative for output shape and evaluator semantics. Keep it BEFORE the
+// protocol so the verdict-before-`Non-blocking risks:` invariant is untouched.
+export const CODE_REVIEW_SKILL_GUIDANCE =
+	"Use the ai-whisper-code-review skill to evaluate the delivered code. The workflow review protocol below controls your output format and evaluator semantics; the skill controls how you inspect code and decide which code-quality issues are blocking.\n\n";
+
 const SDD_SPEC_REVIEW =
 	"Review the spec at {specPath}. This is an autonomous workflow with no human in the loop.\n\n" +
 	WORKFLOW_REVIEW_PROTOCOL;
 
 const SDD_CODE_REVIEW =
 	"Review the implementer's changes for this phase — the commits in {commitRange}. The upper bound is a LIVE `HEAD`: resolve it against the current repository at review time and INCLUDE any commits added during this review round (e.g. fixes for your prior findings); do not pin the review to an earlier tip. Verify against the spec's acceptance criteria and run the project's verification/tests. This is an autonomous workflow with no human in the loop.\n\n" +
+	CODE_REVIEW_SKILL_GUIDANCE +
 	WORKFLOW_REVIEW_PROTOCOL;
 
 export const SPEC_DRIVEN_DEVELOPMENT: WorkflowDefinition = {
@@ -255,10 +264,12 @@ End your handback with a 1-2 sentence summary, then on its own final line the ex
 
 const RALPH_ITEM_REVIEW =
 	"Review the latest delivered chunk against the goal at {specPath}. This is an autonomous workflow with no human in the loop.\n\n" +
+	CODE_REVIEW_SKILL_GUIDANCE +
 	WORKFLOW_REVIEW_PROTOCOL;
 
 const RALPH_ACCEPTANCE_REVIEW =
 	"The implementer claims the ENTIRE goal at {specPath} is complete. Verify the goal's completion/acceptance criteria against the current repository state. This is an autonomous workflow with no human in the loop.\n\n" +
+	CODE_REVIEW_SKILL_GUIDANCE +
 	WORKFLOW_REVIEW_PROTOCOL;
 
 export const RALPH_LOOP: WorkflowDefinition = {
@@ -322,6 +333,7 @@ If you discover the approved cause was WRONG, do NOT silently switch to a differ
 
 const BUGFIX_FIX_REVIEW =
 	"The implementer claims the fix for the bug at {specPath} is complete — the changes are commits {commitRange}; resolve the upper bound against LIVE HEAD and include fix-round commits. Verify against the APPROVED diagnosis at {diagnosisPath}. Independently re-run the reproduction (it must be GREEN) and the verification suite — do not trust pasted output. Confirm: the root cause is actually removed (not just relocated — anti-whack-a-mole); every declared blast-radius area is regression-free; residual risks are handled or explicitly accepted; and COVERAGE is adequate — every happy path has at least one covering test and edge cases are covered. A case that genuinely cannot be covered must be explicitly noted (not silently passed); thin coverage is a blocking finding. This is an autonomous workflow with no human in the loop.\n\n" +
+	CODE_REVIEW_SKILL_GUIDANCE +
 	WORKFLOW_REVIEW_PROTOCOL;
 
 const BUGFIX_FIX_FIX =
