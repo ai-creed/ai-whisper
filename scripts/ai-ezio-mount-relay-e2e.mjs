@@ -1,5 +1,5 @@
 import process from "node:process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -14,6 +14,17 @@ const root = mkdtempSync(join(tmpdir(), "ai-ezio-e2e-"));
 process.env.AI_WHISPER_STATE_ROOT = root;
 const sqlitePath = join(root, "state.db");
 
+// M8: drive a DETERMINISTIC tool turn so we can assert the mounted pane renders a
+// tool call (`⏺ bash`) and its output. The mock DSL replays one turn per stream()
+// call; a tool user-turn spans two streams (the tool call, then a follow-up). echo
+// emits a unique marker we can grep for in the pane AND the handback.
+const TOOL_MARKER = "M8_TOOL_OUTPUT_MARKER";
+const mockScriptPath = join(root, "mock-tool-turn.txt");
+writeFileSync(
+	mockScriptPath,
+	`tool bash {"command":"echo ${TOOL_MARKER}"}\nend-turn\ntext Done\nend-turn\n`,
+);
+
 // The built CLI binary is dist/bin/whisper.js (esbuild bundle).
 const CLI = join(process.cwd(), "packages/cli/dist/bin/whisper.js");
 // The real hax engine built in the sibling ai-ezio repo (HAX_PROVIDER=mock makes
@@ -26,6 +37,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const childEnv = {
 	...process.env,
 	HAX_PROVIDER: "mock",
+	HAX_MOCK_SCRIPT: mockScriptPath,
 	AI_EZIO_HAX_BIN: HAX_BIN,
 	AI_WHISPER_IDLE_THRESHOLD_MS: "5000",
 };
@@ -95,21 +107,31 @@ for (let deadline = Date.now() + 40_000; Date.now() < deadline && !proof; await 
 if (!proof) { cleanup(); console.error("FAIL: no protocol handback recorded from ezio\n" + mountLog.slice(-2500)); process.exit(1); }
 console.log("OK: real relay handoff handed back via protocol by ezio:", JSON.stringify(proof));
 
-// M7: the mounted pane shows a REPL-like banner on ready AND a `›` prompt AFTER
-// the driven turn. The banner itself contains one `›` (`ezio › provider · …`),
-// so a prompt-after-turn must add at least one MORE — assert >= 2 occurrences,
-// and that a `›` appears in the pane output AFTER the banner line.
+// M8: the mounted pane shows a REPL-like banner on ready (which uses hax's dim
+// `›`: `ezio › provider · …`) AND a magenta `❯` prompt AFTER the driven turn —
+// the banner and the prompt are now DISTINCT glyphs (M7 used `›` for both). So:
+//   - the banner line still matches `ezio … ›`
+//   - a `❯` prompt appears in the pane AFTER the banner line.
 await sleep(500); // let the pty pane output flush
 const bannerMatch = /ezio[^\n]*›[^\n]*\n/.exec(mountLog);
-if (!bannerMatch) { cleanup(); console.error("FAIL: no M7 banner line in mount pane\n" + mountLog.slice(-2500)); process.exit(1); }
+if (!bannerMatch) { cleanup(); console.error("FAIL: no banner line in mount pane\n" + mountLog.slice(-2500)); process.exit(1); }
 const afterBanner = mountLog.slice(bannerMatch.index + bannerMatch[0].length);
-const promptCount = (mountLog.match(/›/g) || []).length;
-if (promptCount < 2 || !afterBanner.includes("›")) {
+if (!afterBanner.includes("❯")) {
 	cleanup();
-	console.error("FAIL: no post-turn `›` prompt after the driven turn (banner-only)\n" + mountLog.slice(-2500));
+	console.error("FAIL: no post-turn `❯` prompt after the driven turn (banner-only)\n" + mountLog.slice(-2500));
 	process.exit(1);
 }
-console.log("OK: M7 banner on ready + post-turn `›` prompt rendered in the mounted ezio pane");
+console.log("OK: banner on ready (›) + post-turn `❯` prompt rendered in the mounted ezio pane");
+
+// M8 tool rendering: the driven tool turn must surface a tool-call marker (`⏺`)
+// AND the tool's output (the echo marker) in the pane, proving tool_call_started/
+// tool_call_finished flow from the hax dispatch seam through the mounted renderer.
+if (!afterBanner.includes("⏺") || !afterBanner.includes(TOOL_MARKER)) {
+	cleanup();
+	console.error(`FAIL: tool call (⏺) and output (${TOOL_MARKER}) not rendered in the mounted ezio pane\n` + mountLog.slice(-2500));
+	process.exit(1);
+}
+console.log(`OK: M8 tool call (⏺ bash) + output (${TOOL_MARKER}) rendered in the mounted ezio pane`);
 
 cleanup();
 process.exit(0);
