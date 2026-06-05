@@ -141,3 +141,42 @@ describe("runSkillInstall", () => {
 		).rejects.toThrow(/no skills/i);
 	});
 });
+
+describe("runSkillInstall — ezio target (M6)", () => {
+	it("installs into ${XDG_CONFIG_HOME or $HOME/.config}/ai-ezio/skills", async () => {
+		const prevXdg = process.env.XDG_CONFIG_HOME;
+		delete process.env.XDG_CONFIG_HOME; // force the $HOME/.config fallback for determinism
+		try {
+			const s = sandbox();
+			const result = await runSkillInstall({
+				target: "ezio",
+				fakeHome: s.home,
+				bundledSkillsDir: join(s.cliDist, "skills"),
+			});
+			expect(result.installedAt).toContain(
+				join(s.home, ".config", "ai-ezio", "skills", "ai-whisper-sdd", "SKILL.md"),
+			);
+		} finally {
+			if (prevXdg !== undefined) process.env.XDG_CONFIG_HOME = prevXdg;
+		}
+	});
+
+	it("--target=all installs to claude, codex, AND ezio", async () => {
+		const prevXdg = process.env.XDG_CONFIG_HOME;
+		delete process.env.XDG_CONFIG_HOME;
+		try {
+			const s = sandbox();
+			const result = await runSkillInstall({
+				target: "all",
+				fakeHome: s.home,
+				bundledSkillsDir: join(s.cliDist, "skills"),
+			});
+			const joined = result.installedAt.join("\n");
+			expect(joined).toMatch(/[/\\]\.claude[/\\]skills/);
+			expect(joined).toMatch(/[/\\]\.codex[/\\]skills/);
+			expect(joined).toMatch(/ai-ezio[/\\]skills/);
+		} finally {
+			if (prevXdg !== undefined) process.env.XDG_CONFIG_HOME = prevXdg;
+		}
+	});
+});

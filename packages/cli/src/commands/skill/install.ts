@@ -27,10 +27,19 @@ function defaultBundledSkillsDir(): string {
 function homeForTarget(target: AgentType, fakeHome?: string): string {
 	const home = fakeHome ?? process.env.HOME ?? process.env.USERPROFILE ?? "";
 	if (!home) throw new Error("Could not determine $HOME for skill install destination");
+	if (target === "ezio") {
+		// Mirrors ai-ezio's aiEzioGlobalSkillsDir (ai-ezio
+		// packages/harness/src/skills-dir.ts): ${XDG_CONFIG_HOME:-$HOME/.config}/ai-ezio/skills,
+		// the dir the engine reads via HAX_EXTRA_SKILLS_DIR. Replicated locally to
+		// avoid a cross-repo import from the ai-whisper CLI.
+		const xdg = process.env.XDG_CONFIG_HOME;
+		const base = xdg && xdg !== "" ? xdg : path.join(home, ".config");
+		return path.join(base, "ai-ezio", "skills");
+	}
 	return path.join(home, target === "claude" ? ".claude" : ".codex", "skills");
 }
 
-const VALID_TARGETS: ReadonlySet<SkillInstallTarget> = new Set(["claude", "codex", "all"]);
+const VALID_TARGETS: ReadonlySet<SkillInstallTarget> = new Set(["claude", "codex", "ezio", "all"]);
 
 export async function runSkillInstall(
 	input: SkillInstallInput,
@@ -41,7 +50,7 @@ export async function runSkillInstall(
 		// homeForTarget ternary would otherwise silently route any non-"claude"
 		// string into ~/.codex/skills.
 		throw new Error(
-			`Invalid --target value "${String(input.target)}". Expected one of: claude, codex, all.`,
+			`Invalid --target value "${String(input.target)}". Expected one of: claude, codex, ezio, all.`,
 		);
 	}
 	const bundledDir = input.bundledSkillsDir ?? defaultBundledSkillsDir();
@@ -60,8 +69,8 @@ export async function runSkillInstall(
 		throw new Error(`No skills found in ${bundledDir}.`);
 	}
 
-	const targets: (AgentType)[] =
-		input.target === "all" ? ["claude", "codex"] : [input.target];
+	const targets: AgentType[] =
+		input.target === "all" ? ["claude", "codex", "ezio"] : [input.target];
 
 	const installedAt: string[] = [];
 
