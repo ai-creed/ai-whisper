@@ -79,3 +79,38 @@ describe("parseCallerAgent", () => {
 		}
 	});
 });
+
+describe("resolveRoleBindings — bound-agent aware (M6)", () => {
+	it("ezio caller in an ezio+claude collab → implementer ezio, reviewer claude", () => {
+		const r = resolveRoleBindings({
+			callerAgent: "ezio",
+			boundAgents: ["ezio", "claude"],
+		});
+		expect(r).toMatchObject({ implementer: "ezio", reviewer: "claude", source: "caller" });
+	});
+
+	it("explicit --implementer ezio fills reviewer from the other bound agent", () => {
+		const r = resolveRoleBindings({
+			explicitImplementer: "ezio",
+			boundAgents: ["claude", "ezio"],
+		});
+		expect(r).toMatchObject({ implementer: "ezio", reviewer: "claude", source: "explicit" });
+	});
+
+	it("codex/claude with no bindings still flips (fallback preserved)", () => {
+		expect(resolveRoleBindings({ callerAgent: "codex" })).toMatchObject({
+			implementer: "codex",
+			reviewer: "claude",
+		});
+	});
+
+	it("ezio with no bindings and no explicit partner throws (ambiguous)", () => {
+		expect(() => resolveRoleBindings({ callerAgent: "ezio" })).toThrow(/partner/i);
+	});
+
+	it("same agent for both roles is still rejected", () => {
+		expect(() =>
+			resolveRoleBindings({ explicitImplementer: "ezio", explicitReviewer: "ezio" }),
+		).toThrow(/cannot be the same/i);
+	});
+});

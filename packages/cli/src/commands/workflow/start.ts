@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import type { AgentType } from "@ai-whisper/shared";
+import { agentTypes, type AgentType } from "@ai-whisper/shared";
 import { getBrokerDaemonByCollab, getWorkflowDefinition } from "@ai-whisper/broker";
 import {
 	isEvaluatorPreflightBlocked,
@@ -20,6 +20,9 @@ export interface WorkflowStartDeps {
 				roleBindings: { implementer: AgentType; reviewer: AgentType };
 				now: string;
 			}) => { workflowId: string };
+			listSessionBindings: (
+				collabId: string,
+			) => Array<{ agentType: string; bindingState: string }>;
 		};
 	};
 	collabId: string;
@@ -61,12 +64,20 @@ export async function runWorkflowStart(
 	}
 
 	const def = getWorkflowDefinition(deps.workflowType);
+	// The two agents actually bound in this collab; "the other role" is resolved
+	// from this set (replacement model), so ezio-replaces-codex pairs correctly.
+	const boundAgents = deps.broker.control
+		.listSessionBindings(deps.collabId)
+		.filter((b) => b.bindingState === "bound")
+		.map((b) => b.agentType)
+		.filter((t): t is AgentType => (agentTypes as readonly string[]).includes(t));
 	let resolved: ReturnType<typeof resolveRoleBindings>;
 	try {
 		resolved = resolveRoleBindings({
 			explicitImplementer: deps.implementer,
 			explicitReviewer: deps.reviewer,
 			callerAgent: deps.callerAgent ?? null,
+			boundAgents,
 			def,
 		});
 	} catch (e) {
@@ -92,27 +103,44 @@ export async function runWorkflowStart(
 
 type Agent = AgentType;
 
-const otherAgent = (a: Agent): Agent => (a === "claude" ? "codex" : "claude");
+// Resolve "the other role's agent" from the agents actually bound in the collab.
+// Falls back to the literal codex<->claude flip ONLY when bindings don't yield a
+// distinct partner — preserving existing two-agent behavior and tests. ezio has
+// no literal partner, so an ezio role with no second bound agent is surfaced as
+// an explicit error rather than guessed (the replacement model needs both bound).
+function otherAgent(a: Agent, boundAgents?: readonly Agent[]): Agent {
+	if (boundAgents) {
+		const partner = boundAgents.find((b) => b !== a);
+		if (partner) return partner;
+	}
+	if (a === "claude") return "codex";
+	if (a === "codex") return "claude";
+	throw new Error(
+		`Cannot infer the partner agent for "${a}" without a second bound agent; ` +
+			"pass --implementer and --reviewer explicitly.",
+	);
+}
 
 /**
  * Resolve which agent implements and which reviews, by precedence:
  *   1. explicit flags  (either present → explicit; the missing side is filled
- *      as the opposite agent; both naming the same agent is rejected)
- *   2. caller-derived  (the triggering agent implements; the other reviews)
+ *      from the other bound agent; both naming the same agent is rejected)
+ *   2. caller-derived  (the triggering agent implements; the other bound reviews)
  *   3. definition default + a warning that no caller was detected
  */
 export function resolveRoleBindings(input: {
 	explicitImplementer?: Agent | undefined;
 	explicitReviewer?: Agent | undefined;
 	callerAgent?: Agent | null | undefined;
+	boundAgents?: readonly Agent[] | undefined;
 	def?: { defaultImplementer?: Agent; defaultReviewer?: Agent } | undefined;
 }): { implementer: Agent; reviewer: Agent; source: "explicit" | "caller" | "default"; warning?: string } {
-	const { explicitImplementer, explicitReviewer, callerAgent, def } = input;
+	const { explicitImplementer, explicitReviewer, callerAgent, boundAgents, def } = input;
 
 	// 1. Explicit flags.
 	if (explicitImplementer || explicitReviewer) {
-		const implementer = explicitImplementer ?? (explicitReviewer ? otherAgent(explicitReviewer) : undefined);
-		const reviewer = explicitReviewer ?? (explicitImplementer ? otherAgent(explicitImplementer) : undefined);
+		const implementer = explicitImplementer ?? (explicitReviewer ? otherAgent(explicitReviewer, boundAgents) : undefined);
+		const reviewer = explicitReviewer ?? (explicitImplementer ? otherAgent(explicitImplementer, boundAgents) : undefined);
 		if (implementer && reviewer) {
 			if (implementer === reviewer) {
 				throw new Error("implementer and reviewer cannot be the same agent");
@@ -123,7 +151,7 @@ export function resolveRoleBindings(input: {
 
 	// 2. Caller-derived.
 	if (callerAgent) {
-		return { implementer: callerAgent, reviewer: otherAgent(callerAgent), source: "caller" };
+		return { implementer: callerAgent, reviewer: otherAgent(callerAgent, boundAgents), source: "caller" };
 	}
 
 	// 3. Definition default + warning.
@@ -142,7 +170,7 @@ export function resolveRoleBindings(input: {
 	};
 }
 
-/** Validate an `AI_WHISPER_AGENT` value; anything but the two known agents is null. */
+/** Validate an `AI_WHISPER_AGENT` value; anything but a known agent type is null. */
 export function parseCallerAgent(raw: string | undefined): Agent | null {
-	return raw === "claude" || raw === "codex" ? raw : null;
+	return raw !== undefined && (agentTypes as readonly string[]).includes(raw) ? (raw as Agent) : null;
 }
