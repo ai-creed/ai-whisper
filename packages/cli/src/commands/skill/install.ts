@@ -32,8 +32,15 @@ function homeForTarget(target: AgentType, fakeHome?: string): string {
 		// packages/harness/src/skills-dir.ts): ${XDG_CONFIG_HOME:-$HOME/.config}/ai-ezio/skills,
 		// the dir the engine reads via HAX_EXTRA_SKILLS_DIR. Replicated locally to
 		// avoid a cross-repo import from the ai-whisper CLI.
+		// Under a fakeHome test override, derive strictly from fakeHome and ignore
+		// the ambient XDG_CONFIG_HOME so installs stay isolated; in production honor
+		// XDG_CONFIG_HOME (matching the engine), falling back to $HOME/.config.
 		const xdg = process.env.XDG_CONFIG_HOME;
-		const base = xdg && xdg !== "" ? xdg : path.join(home, ".config");
+		const base = fakeHome
+			? path.join(fakeHome, ".config")
+			: xdg && xdg !== ""
+				? xdg
+				: path.join(home, ".config");
 		return path.join(base, "ai-ezio", "skills");
 	}
 	return path.join(home, target === "claude" ? ".claude" : ".codex", "skills");
