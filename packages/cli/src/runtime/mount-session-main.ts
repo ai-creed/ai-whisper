@@ -329,7 +329,7 @@ export function createMountSessionRuntime(input: {
 							mountTarget: input.target,
 							// `pull` returns earlier, so this is a non-pull AgentType.
 							directive: {
-								target: directive.target as AgentType,
+								target: directive.target,
 								instruction: directive.instruction,
 							},
 							collabId: resolvedClaim.collabId,

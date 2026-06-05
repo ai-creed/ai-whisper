@@ -1,4 +1,4 @@
-import { type AgentType, 
+import { type AgentType,
 	artifactManifestSchema,
 	attachClaimSchema,
 	brokerSchemaVersion,
