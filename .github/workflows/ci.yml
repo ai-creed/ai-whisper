@@ -10,8 +10,22 @@ jobs:
     name: lint · build · typecheck · test
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      # ai-whisper depends on @ai-ezio/harness + @ai-ezio/protocol via
+      # file:../ai-ezio/packages/* (see package.json). Both repos are checked out
+      # side-by-side inside the workspace so those relative paths resolve, mirroring
+      # the local dev layout. ai-ezio is public, so the default token is sufficient.
+      - name: Checkout ai-whisper
         uses: actions/checkout@v5
+        with:
+          path: ai-whisper
+
+      - name: Checkout ai-ezio (provides @ai-ezio/harness + @ai-ezio/protocol)
+        uses: actions/checkout@v5
+        with:
+          repository: ai-creed/ai-ezio
+          path: ai-ezio
+          # No submodules: the harness/protocol build is tsc-only and does not
+          # need the vendored hax engine (that is a runtime dependency).
 
       - name: Enable corepack (pnpm)
         run: |
@@ -23,18 +37,32 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+          cache-dependency-path: |
+            ai-whisper/pnpm-lock.yaml
+            ai-ezio/pnpm-lock.yaml
+
+      - name: Build ai-ezio harness + protocol
+        working-directory: ai-ezio
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter "@ai-ezio/harness..." build
 
       - name: Install dependencies
+        working-directory: ai-whisper
         run: pnpm install --frozen-lockfile
 
       - name: Lint
+        working-directory: ai-whisper
         run: pnpm lint
 
       - name: Build
+        working-directory: ai-whisper
         run: pnpm build
 
       - name: Typecheck
+        working-directory: ai-whisper
         run: pnpm typecheck
 
       - name: Test
+        working-directory: ai-whisper
         run: pnpm -s test

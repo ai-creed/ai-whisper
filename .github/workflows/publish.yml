@@ -12,8 +12,19 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      # ai-whisper depends on @ai-ezio/harness + @ai-ezio/protocol via
+      # file:../ai-ezio/packages/* — check out both repos side-by-side so the
+      # relative paths resolve (mirrors ci.yml and the local dev layout).
+      - name: Checkout ai-whisper
         uses: actions/checkout@v5
+        with:
+          path: ai-whisper
+
+      - name: Checkout ai-ezio (provides @ai-ezio/harness + @ai-ezio/protocol)
+        uses: actions/checkout@v5
+        with:
+          repository: ai-creed/ai-ezio
+          path: ai-ezio
 
       - name: Enable corepack (pnpm)
         run: |
@@ -25,22 +36,35 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+          cache-dependency-path: |
+            ai-whisper/pnpm-lock.yaml
+            ai-ezio/pnpm-lock.yaml
           registry-url: "https://registry.npmjs.org"
 
+      - name: Build ai-ezio harness + protocol
+        working-directory: ai-ezio
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter "@ai-ezio/harness..." build
+
       - name: Install dependencies
+        working-directory: ai-whisper
         run: pnpm install --frozen-lockfile
 
       - name: Build
+        working-directory: ai-whisper
         run: pnpm build
 
       - name: Typecheck
+        working-directory: ai-whisper
         run: pnpm typecheck
 
       - name: Test
+        working-directory: ai-whisper
         run: pnpm -s test
 
       - name: Publish to npm
-        working-directory: packages/cli
+        working-directory: ai-whisper/packages/cli
         run: |
           VERSION=$(node -p "require('./package.json').version")
           echo "Publishing ai-whisper@$VERSION"
