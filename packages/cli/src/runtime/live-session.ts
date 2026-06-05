@@ -41,6 +41,14 @@ export function createLiveSessionRuntime(input: {
 		handleInput(text: string): Promise<boolean> | boolean;
 	};
 	onActivity?: () => void;
+	/**
+	 * Protocol-native targets (ai-ezio) have no PTY to buffer/echo operator
+	 * keystrokes, so without this each character is submitted as its own turn.
+	 * When true, plain passthrough input is accumulated with local echo and
+	 * submitted as a complete line on Enter (codex/claude PTY paths leave this
+	 * false and keep raw char-by-char passthrough).
+	 */
+	lineBufferedInput?: boolean;
 }) {
 	const ttyStdin = input.stdin as NodeJS.ReadableStream & {
 		isTTY?: boolean;
@@ -110,6 +118,33 @@ export function createLiveSessionRuntime(input: {
 		input.interactiveSession.sendLocalMessage(CLEAR_LINE);
 	}
 
+	// Line buffer for protocol-native targets (no PTY): accumulate plain input
+	// with local echo, handle backspace, and submit the whole line on Enter.
+	// Mirrors createLocalModalLineReader's local line-editing.
+	let inputLineBuffer = "";
+	function feedLineBufferedInput(data: string) {
+		for (const char of data) {
+			if (char === "\r" || char === "\n") {
+				input.stdout.write("\n");
+				const completed = inputLineBuffer;
+				inputLineBuffer = "";
+				if (completed.length > 0) {
+					input.interactiveSession.writeUserInput(completed);
+				}
+				continue;
+			}
+			if (char === "\u0008" || char === "\u007f") {
+				if (inputLineBuffer.length > 0) {
+					inputLineBuffer = inputLineBuffer.slice(0, -1);
+					input.stdout.write("\b \b");
+				}
+				continue;
+			}
+			inputLineBuffer += char;
+			input.stdout.write(char);
+		}
+	}
+
 	async function processChunk(raw: string) {
 		const normalized = normalizeTerminalInput({
 			raw,
@@ -174,7 +209,11 @@ export function createLiveSessionRuntime(input: {
 
 			clearRelayPreview();
 			if (decision.kind === "passthrough") {
-				input.interactiveSession.writeUserInput(decision.data);
+				if (input.lineBufferedInput) {
+					feedLineBufferedInput(decision.data);
+				} else {
+					input.interactiveSession.writeUserInput(decision.data);
+				}
 				input.onActivity?.();
 				continue;
 			}

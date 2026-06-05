@@ -50,6 +50,106 @@ describe("live session runtime", () => {
 		expect(fakePty.writes.join("")).toContain("\u0003");
 	});
 
+	it("lineBufferedInput: accumulates keystrokes, echoes them, and submits the whole line on Enter", async () => {
+		const stdin = new PassThrough();
+		const stdout = new PassThrough();
+		const echoed: string[] = [];
+		stdout.on("data", (c) => echoed.push(String(c)));
+		const submits: string[] = [];
+
+		const runtime = createLiveSessionRuntime({
+			interactiveSession: {
+				start: () => Promise.resolve(),
+				stop: () => Promise.resolve(),
+				writeUserInput(data: string) {
+					submits.push(data);
+				},
+				sendLocalMessage(message: string) {
+					stdout.write(message);
+				},
+				onExit() {},
+			},
+			stdin,
+			stdout,
+			onRelay: () => Promise.reject(new Error("relay should not fire")),
+			lineBufferedInput: true,
+		});
+
+		await runtime.start();
+		for (const ch of "hi") stdin.write(ch);
+		await nextTick();
+		// Nothing submitted before Enter; keystrokes are echoed locally.
+		expect(submits).toEqual([]);
+		expect(echoed.join("")).toContain("h");
+		expect(echoed.join("")).toContain("i");
+
+		stdin.write("\r");
+		await nextTick();
+		// Exactly one submit with the full line (no trailing CR), not one per char.
+		expect(submits).toEqual(["hi"]);
+	});
+
+	it("lineBufferedInput: backspace edits the buffer before submit", async () => {
+		const stdin = new PassThrough();
+		const stdout = new PassThrough();
+		const submits: string[] = [];
+
+		const runtime = createLiveSessionRuntime({
+			interactiveSession: {
+				start: () => Promise.resolve(),
+				stop: () => Promise.resolve(),
+				writeUserInput(data: string) {
+					submits.push(data);
+				},
+				sendLocalMessage(message: string) {
+					stdout.write(message);
+				},
+				onExit() {},
+			},
+			stdin,
+			stdout,
+			onRelay: () => Promise.reject(new Error("relay should not fire")),
+			lineBufferedInput: true,
+		});
+
+		await runtime.start();
+		for (const ch of "hx") stdin.write(ch);
+		stdin.write(""); // backspace removes the "x"
+		stdin.write("i");
+		stdin.write("\r");
+		await nextTick();
+		expect(submits).toEqual(["hi"]);
+	});
+
+	it("lineBufferedInput: a bare Enter does not submit an empty turn", async () => {
+		const stdin = new PassThrough();
+		const stdout = new PassThrough();
+		const submits: string[] = [];
+
+		const runtime = createLiveSessionRuntime({
+			interactiveSession: {
+				start: () => Promise.resolve(),
+				stop: () => Promise.resolve(),
+				writeUserInput(data: string) {
+					submits.push(data);
+				},
+				sendLocalMessage(message: string) {
+					stdout.write(message);
+				},
+				onExit() {},
+			},
+			stdin,
+			stdout,
+			onRelay: () => Promise.reject(new Error("relay should not fire")),
+			lineBufferedInput: true,
+		});
+
+		await runtime.start();
+		stdin.write("\r");
+		await nextTick();
+		expect(submits).toEqual([]);
+	});
+
 	it("consumes relay directives and writes local acknowledgement instead of forwarding them", async () => {
 		const stdin = new PassThrough();
 		const stdout = new PassThrough();

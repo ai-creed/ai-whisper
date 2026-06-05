@@ -366,6 +366,11 @@ export function createMountSessionRuntime(input: {
 					onActivity: () => {
 						lastActivityAt = Date.now();
 					},
+					// Protocol-native targets (ai-ezio) expose onTurnFinished and have no
+					// PTY to buffer/echo keystrokes — line-buffer operator input so a typed
+					// line submits as one turn on Enter instead of one turn per character.
+					lineBufferedInput:
+						typeof interactiveSession.onTurnFinished === "function",
 				});
 
 				// Start the live session — this launches the provider in the current terminal.
