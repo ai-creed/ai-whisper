@@ -51,7 +51,7 @@ describe("createMountedRenderer", () => {
 		const t = setup();
 		t.r.handle({ type: "assistant_turn_finished", turnId: "t", content: "**hi**" });
 		t.r.handle({ type: "idle" });
-		expect(t.out()).toMatch(/\u001b\[1mhi\u001b\[0m/); // bold-rendered markdown
+		expect(t.out()).toContain("\u001b[1mhi\u001b[0m"); // bold-rendered markdown
 	});
 
 	it("spinner: shown after user_turn_started, cleared on first output", () => {

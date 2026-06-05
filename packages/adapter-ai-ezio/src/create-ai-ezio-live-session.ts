@@ -5,6 +5,7 @@ import {
 	type AiEzioEngineSession,
 	type CreateEngineSession,
 } from "./ai-ezio-engine.js";
+import { createMountedRenderer } from "./mounted-renderer.js";
 
 export function createAiEzioLiveSession(input: {
 	stdout: NodeJS.WritableStream;
@@ -20,85 +21,41 @@ export function createAiEzioLiveSession(input: {
 	const turnFinishedHandlers: Array<(content: string) => void> = [];
 	const exitHandlers: Array<() => void> = [];
 
-	// M7: re-create the hax REPL "look" from protocol events (engine stays
-	// protocol-native — no PTY, no scraping). Banner once on `status`; a usage
-	// line + `›` prompt after each turn.
-	let lastUsage: Extract<ProtocolEvent, { type: "assistant_turn_finished" }>["usage"];
-	let bannerRendered = false; // spec: render the banner ONCE
-
-	// Mirrors hax's format_tokens (vendor/hax/src/agent.c) EXACTLY — binary k/M
-	// with the same rounding: 595 -> "595", 8900 -> "8.7k", 262144 -> "256k".
-	const fmtTokens = (n: number): string => {
-		if (n < 0) return "?";
-		if (n < 1024) return String(n);
-		if (n < 10 * 1024) return `${(n / 1024).toFixed(1)}k`;
-		if (n < 1024 * 1024) return `${Math.floor((n + 512) / 1024)}k`;
-		if (n < 10 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)}M`;
-		return `${Math.floor((n + 512 * 1024) / (1024 * 1024))}M`;
-	};
-
-	const renderBanner = (provider: string, model: string, effort: string) => {
-		const tail = effort ? `${provider} · ${model} · ${effort}` : `${provider} · ${model}`;
-		input.stdout.write(`\u001b[36m▌\u001b[0m \u001b[1mezio\u001b[0m \u001b[2m› ${tail}\u001b[0m\n`);
-	};
-
-	const renderUsage = (
-		u: NonNullable<Extract<ProtocolEvent, { type: "assistant_turn_finished" }>["usage"]>,
-	) => {
-		const parts: string[] = [];
-		if (typeof u.contextTokens === "number") {
-			let s = `context ${fmtTokens(u.contextTokens)}`;
-			if (typeof u.contextLimit === "number" && u.contextLimit > 0)
-				s += ` / ${fmtTokens(u.contextLimit)} (${Math.floor((u.contextTokens * 100) / u.contextLimit)}%)`;
-			parts.push(s);
-		}
-		if (typeof u.outputTokens === "number") parts.push(`out ${fmtTokens(u.outputTokens)}`);
-		if (typeof u.cachedTokens === "number" && u.cachedTokens > 0)
-			parts.push(`cached ${fmtTokens(u.cachedTokens)}`);
-		if (parts.length > 0) input.stdout.write(`\u001b[2m${parts.join(" · ")}\u001b[0m\n`);
-	};
-
-	const renderPrompt = () => input.stdout.write("\u001b[2m›\u001b[0m ");
+	// M8: all pane presentation (banner / spinner / markdown-at-turn-end / tool
+	// calls / usage / prompt / errors) lives in the mounted renderer. The engine
+	// stays protocol-native — the renderer reconstructs the hax REPL look from
+	// events alone (no PTY, no scraping). This session keeps only its
+	// InteractiveSessionController duties: handler forwarding, M6 handback timing,
+	// and submit — and delegates every byte of display to the renderer.
+	const renderer = createMountedRenderer({ stdout: input.stdout });
 
 	const onEvent = (event: ProtocolEvent) => {
+		// 1) Session responsibilities — forward to handlers BEFORE the renderer
+		//    draws the prompt, preserving M6 handback timing. Raw deltas are
+		//    forwarded to onProviderOutput (relay capture) even though the pane
+		//    suppresses them (markdown renders from the final content instead).
 		switch (event.type) {
-			case "status": {
-				// Render the banner ONCE (auto-emitted right after ready in mount
-				// mode); a later M4 status control must not duplicate it.
-				if (!bannerRendered) {
-					renderBanner(event.provider, event.model, event.effort ?? "");
-					bannerRendered = true;
-				}
-				break;
-			}
-			case "assistant_delta": {
+			case "assistant_delta":
 				sawTurn = true;
 				for (const h of outputHandlers) h(event.text);
-				input.stdout.write(event.text);
 				break;
-			}
-			case "assistant_turn_finished": {
+			case "assistant_turn_finished":
 				sawTurn = true;
 				lastContent = event.content;
-				lastUsage = event.usage;
 				break;
-			}
-			case "idle": {
-				if (!sawTurn) break; // startup idle — nothing to hand back
-				const content = lastContent;
-				lastContent = "";
-				sawTurn = false;
-				for (const h of turnFinishedHandlers) h(content);
-				// Usage line + `›` prompt land after the turn's streamed text and
-				// the handback, giving the pane a REPL look.
-				if (lastUsage) renderUsage(lastUsage);
-				lastUsage = undefined;
-				renderPrompt();
+			case "idle":
+				if (sawTurn) {
+					const content = lastContent;
+					lastContent = "";
+					sawTurn = false;
+					for (const h of turnFinishedHandlers) h(content);
+				}
 				break;
-			}
 			default:
 				break;
 		}
+		// 2) Display — the renderer owns all pane output.
+		renderer.handle(event);
 	};
 
 	return {
