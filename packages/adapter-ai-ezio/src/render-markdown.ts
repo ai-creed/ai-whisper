@@ -50,22 +50,22 @@ export function renderMarkdown(md: string): string {
 		}
 		const header = /^(#{1,6})\s+(.*)$/.exec(line);
 		if (header) {
-			out.push(`${BOLD}${inline(header[2])}${RESET}`);
+			out.push(`${BOLD}${inline(header[2] ?? "")}${RESET}`);
 			continue;
 		}
 		const ul = /^(\s*)[-*]\s+(.*)$/.exec(line);
 		if (ul) {
-			out.push(`${ul[1]}• ${inline(ul[2])}`);
+			out.push(`${ul[1] ?? ""}• ${inline(ul[2] ?? "")}`);
 			continue;
 		}
 		const ol = /^(\s*)(\d+)\.\s+(.*)$/.exec(line);
 		if (ol) {
-			out.push(`${ol[1]}${ol[2]}. ${inline(ol[3])}`);
+			out.push(`${ol[1] ?? ""}${ol[2] ?? ""}. ${inline(ol[3] ?? "")}`);
 			continue;
 		}
 		const bq = /^>\s?(.*)$/.exec(line);
 		if (bq) {
-			out.push(`${DIM}│ ${inline(bq[1])}${RESET}`);
+			out.push(`${DIM}│ ${inline(bq[1] ?? "")}${RESET}`);
 			continue;
 		}
 		out.push(inline(line));
