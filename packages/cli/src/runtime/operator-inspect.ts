@@ -1,4 +1,5 @@
 import type { BrokerRuntime } from "@ai-whisper/broker";
+import type { AgentType } from "@ai-whisper/shared";
 
 export type InspectSnapshotState = {
 	collabId: string;
@@ -169,8 +170,8 @@ export function formatInspectSnapshot(input: {
 	flaggedItems: Array<{ workItemId: string; deliveryState: string; instructionPreview: string }>;
 	watch: boolean;
 	refreshedAt: string;
-	turnOwner: "codex" | "claude" | "ezio" | "none";
-	waitingAgent: "codex" | "claude" | "ezio" | null;
+	turnOwner: AgentType | "none";
+	waitingAgent: AgentType | null;
 	handoffState: "idle" | "pending" | "deferred" | "accepted" | "stale_handoff" | "failed";
 	handoffAgeMs?: number | null;
 	lastCaptureStatus?: "ok" | "no_response_captured_confidently" | "no_response_captured" | null;

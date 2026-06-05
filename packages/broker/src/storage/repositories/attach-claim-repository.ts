@@ -1,10 +1,10 @@
 import type Database from "better-sqlite3";
-import { attachClaimSchema, type AttachClaim } from "@ai-whisper/shared";
+import { type AgentType,  attachClaimSchema, type AttachClaim } from "@ai-whisper/shared";
 
 type AttachClaimRow = {
 	claim_id: string;
 	collab_id: string;
-	agent_type: "codex" | "claude";
+	agent_type: AgentType;
 	mode: "attach" | "rebind" | "reconnect";
 	target_mode: "snippet_shell" | "adopt_current_tty" | "explicit_tty" | null;
 	target_tty_path: string | null;

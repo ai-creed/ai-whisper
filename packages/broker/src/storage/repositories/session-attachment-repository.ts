@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
+import type { AgentType } from "@ai-whisper/shared";
 
-export type AgentType = "codex" | "claude" | "ezio";
+export type { AgentType };
 export type AttachmentKind = "owned" | "adopted" | "mounted";
 
 export type SessionAttachmentRecord = {

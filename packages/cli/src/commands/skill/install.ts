@@ -1,8 +1,9 @@
 import { cp, mkdir, readdir, stat } from "node:fs/promises";
+import type { AgentType } from "@ai-whisper/shared";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export type SkillInstallTarget = "claude" | "codex" | "all";
+export type SkillInstallTarget = AgentType | "all";
 
 export interface SkillInstallInput {
 	target: SkillInstallTarget;
@@ -23,7 +24,7 @@ function defaultBundledSkillsDir(): string {
 	return path.resolve(here, "..", "..", "skills");
 }
 
-function homeForTarget(target: "claude" | "codex", fakeHome?: string): string {
+function homeForTarget(target: AgentType, fakeHome?: string): string {
 	const home = fakeHome ?? process.env.HOME ?? process.env.USERPROFILE ?? "";
 	if (!home) throw new Error("Could not determine $HOME for skill install destination");
 	return path.join(home, target === "claude" ? ".claude" : ".codex", "skills");
@@ -59,7 +60,7 @@ export async function runSkillInstall(
 		throw new Error(`No skills found in ${bundledDir}.`);
 	}
 
-	const targets: ("claude" | "codex")[] =
+	const targets: (AgentType)[] =
 		input.target === "all" ? ["claude", "codex"] : [input.target];
 
 	const installedAt: string[] = [];

@@ -1,11 +1,12 @@
 import { createBrokerRuntime, openDatabase, type BrokerRuntime } from "@ai-whisper/broker";
+import type { AgentType } from "@ai-whisper/shared";
 import { resolveCurrentTty as defaultResolveCurrentTty } from "../../runtime/current-tty.js";
 import { createMountSessionRuntime } from "../../runtime/mount-session-main.js";
 import { resolveCollab } from "../../runtime/collab-resolver.js";
 import { getSharedSqlitePath } from "../../runtime/state-root.js";
 
 export interface ReattachableSession {
-	agentType: "codex" | "claude" | "ezio";
+	agentType: AgentType;
 	attachmentKind: "mounted" | "adopted";
 	ttyPath: string;
 	pid: number | null;
@@ -44,11 +45,11 @@ export function listReattachableSessions(input: {
 export async function runCollabReconnect(input: {
 	workspaceRoot: string;
 	collabIdOverride?: string;
-	target: "codex" | "claude" | "ezio";
+	target: AgentType;
 	now: string;
 	resolveCurrentTty?: () => string;
 	startMountedSession?: (input: {
-		target: "codex" | "claude" | "ezio";
+		target: AgentType;
 		workspaceRoot: string;
 		ttyPath: string;
 		claimId: string;

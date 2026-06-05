@@ -1,4 +1,5 @@
 import { mkdirSync } from "node:fs";
+import type { AgentType } from "@ai-whisper/shared";
 import { basename } from "node:path";
 import {
 	applyMigrations,
@@ -38,7 +39,7 @@ function defaultIsPidAlive(pid: number): boolean {
 
 export function recordMountedSession(input: {
 	cwd: string;
-	agentType: "codex" | "claude" | "ezio";
+	agentType: AgentType;
 	ttyPath: string;
 	pid: number;
 	collabIdOverride?: string;
@@ -72,7 +73,7 @@ export function recordMountedSession(input: {
 export async function runCollabMount(input: {
 	workspaceRoot: string;
 	collabIdOverride?: string;
-	target: "codex" | "claude" | "ezio";
+	target: AgentType;
 	/**
 	 * Args forwarded after `--` to the visible agent binary spawn
 	 * (e.g. `mount codex -- --full-auto --model gpt-5`). Threaded to

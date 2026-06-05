@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import type { AgentType } from "@ai-whisper/shared";
 import { basename } from "node:path";
 
 export type CollabSummary = {
@@ -14,8 +15,8 @@ export type CollabSummary = {
 	maxRounds: number | null;
 	chainStatus: "active" | "done" | "escalated" | "abandoned" | null;
 	turn: {
-		owner: "codex" | "claude" | "none";
-		waiting: "codex" | "claude" | null;
+		owner: AgentType | "none";
+		waiting: AgentType | null;
 		handoffState: string;
 	};
 	// Per-agent liveness (Bug C): `mountAlive` is filled in by the dashboard
@@ -188,7 +189,7 @@ function buildCollabSummary(db: Database.Database, collabId: string): CollabSumm
 				   FROM relay_turn_state WHERE collab_id = ?`,
 			)
 			.get(e.collabId) as
-			| { owner: "codex" | "claude" | "none"; waiting: "codex" | "claude" | null; handoffState: string }
+			| { owner: AgentType | "none"; waiting: AgentType | null; handoffState: string }
 			| undefined;
 
 		// Return ONE row per agent_type: prefer the session that is the agent's

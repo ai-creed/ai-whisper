@@ -1,10 +1,11 @@
+import type { AgentType } from "@ai-whisper/shared";
 export type CodexSubmitStrategy = "bracketed" | "keystream" | "chunk";
 
 const PASTE_START = "\x1b[200~";
 const PASTE_END = "\x1b[201~";
 
 export async function submitInjectedProviderInput(input: {
-	target: "codex" | "claude" | "ezio";
+	target: AgentType;
 	text: string;
 	writeUserInput: (text: string) => void;
 	sleep?: (ms: number) => Promise<void>;

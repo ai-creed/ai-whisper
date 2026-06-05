@@ -1,12 +1,13 @@
 import type Database from "better-sqlite3";
+import type { AgentType } from "@ai-whisper/shared";
 import { upsertRelayTurnState } from "./relay-turn-state-repository.js";
 import { getCollab } from "./collab-repository.js";
 
 export type RelayHandoffRecord = {
 	handoffId: string;
 	collabId: string;
-	senderAgent: "codex" | "claude" | "ezio";
-	targetAgent: "codex" | "claude" | "ezio";
+	senderAgent: AgentType;
+	targetAgent: AgentType;
 	requestText: string;
 	status: "pending" | "deferred" | "accepted" | "declined" | "handed_back" | "failed";
 	captureStatus: "ok" | "no_response_captured_confidently" | "no_response_captured" | null;
@@ -132,8 +133,8 @@ export function createRelayHandoffTxn(
 	input: {
 		handoffId: string;
 		collabId: string;
-		senderAgent: "codex" | "claude" | "ezio";
-		targetAgent: "codex" | "claude" | "ezio";
+		senderAgent: AgentType;
+		targetAgent: AgentType;
 		requestText: string;
 		now: string;
 	},
@@ -305,8 +306,8 @@ export function handoffBackRelayTxn(
 	input: {
 		handoffId: string;
 		nextHandoffId?: string;
-		senderAgent: "codex" | "claude" | "ezio";
-		targetAgent: "codex" | "claude" | "ezio";
+		senderAgent: AgentType;
+		targetAgent: AgentType;
 		requestText: string;
 		captureStatus?: "ok" | "no_response_captured_confidently" | "no_response_captured" | null;
 		now: string;
@@ -780,8 +781,8 @@ export function insertWorkflowOwnedRelayHandoff(
 	input: {
 		handoffId: string;
 		collabId: string;
-		senderAgent: "claude" | "codex";
-		targetAgent: "claude" | "codex";
+		senderAgent: AgentType;
+		targetAgent: AgentType;
 		requestText: string;
 		chainId: string;
 		roundNumber: number;
@@ -942,8 +943,8 @@ export type RelayHandoffLogRow = {
 	handoffId: string;
 	createdAt: string;
 	collabId: string;
-	senderAgent: "codex" | "claude" | "ezio";
-	targetAgent: "codex" | "claude" | "ezio";
+	senderAgent: AgentType;
+	targetAgent: AgentType;
 	status: string;
 	captureStatus: string | null;
 	chainId: string | null;
@@ -1044,8 +1045,8 @@ export function listRelayHandoffs(
 		handoffId: r.handoff_id,
 		createdAt: r.created_at,
 		collabId: r.collab_id,
-		senderAgent: r.sender_agent as "codex" | "claude" | "ezio",
-		targetAgent: r.target_agent as "codex" | "claude" | "ezio",
+		senderAgent: r.sender_agent as AgentType,
+		targetAgent: r.target_agent as AgentType,
 		status: r.status,
 		captureStatus: r.capture_status,
 		chainId: r.chain_id,
@@ -1096,7 +1097,7 @@ export function cleanupOrchestrationOnShutdownTxn(
 
 			upsertRelayTurnState(db, {
 				collabId: row.collab_id,
-				turnOwner: row.sender_agent as "codex" | "claude" | "ezio",
+				turnOwner: row.sender_agent as AgentType,
 				waitingAgent: null,
 				unresolvedHandoffId: null,
 				handoffState: "idle",

@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import type { AgentType } from "@ai-whisper/shared";
 
 export type HandoffStep = "review" | "fix" | "implement" | "execute";
 
@@ -67,8 +68,8 @@ export interface WorkflowDefinition {
 	displayName: string;
 	description: string;
 	phases: PhaseConfig[];
-	defaultImplementer?: "claude" | "codex";
-	defaultReviewer?: "claude" | "codex";
+	defaultImplementer?: AgentType;
+	defaultReviewer?: AgentType;
 }
 
 export const WORKFLOW_REVIEW_PROTOCOL = `--- ai-whisper workflow review protocol ---

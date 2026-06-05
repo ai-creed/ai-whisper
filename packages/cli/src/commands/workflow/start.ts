@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import type { AgentType } from "@ai-whisper/shared";
 import { getBrokerDaemonByCollab, getWorkflowDefinition } from "@ai-whisper/broker";
 import {
 	isEvaluatorPreflightBlocked,
@@ -16,7 +17,7 @@ export interface WorkflowStartDeps {
 				workflowType: string;
 				name?: string;
 				specPath: string;
-				roleBindings: { implementer: "claude" | "codex"; reviewer: "claude" | "codex" };
+				roleBindings: { implementer: AgentType; reviewer: AgentType };
 				now: string;
 			}) => { workflowId: string };
 		};
@@ -24,10 +25,10 @@ export interface WorkflowStartDeps {
 	collabId: string;
 	workflowType: string;
 	specPath: string;
-	implementer?: "claude" | "codex";
-	reviewer?: "claude" | "codex";
+	implementer?: AgentType;
+	reviewer?: AgentType;
 	/** The agent that triggered this run (from AI_WHISPER_AGENT); null when unknown. */
-	callerAgent?: "claude" | "codex" | null;
+	callerAgent?: AgentType | null;
 	name?: string;
 	now: string;
 }
@@ -89,7 +90,7 @@ export async function runWorkflowStart(
 	return { workflowId, ...(resolved.warning ? { roleWarning: resolved.warning } : {}) };
 }
 
-type Agent = "claude" | "codex";
+type Agent = AgentType;
 
 const otherAgent = (a: Agent): Agent => (a === "claude" ? "codex" : "claude");
 

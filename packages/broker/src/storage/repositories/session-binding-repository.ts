@@ -1,9 +1,9 @@
 import type Database from "better-sqlite3";
-import { sessionBindingSchema, type SessionBinding } from "@ai-whisper/shared";
+import { type AgentType,  sessionBindingSchema, type SessionBinding } from "@ai-whisper/shared";
 
 type SessionBindingRow = {
 	collab_id: string;
-	agent_type: "codex" | "claude" | "ezio";
+	agent_type: AgentType;
 	binding_state: "unbound" | "pending_attach" | "bound";
 	active_session_id: string | null;
 	binding_source: "launched" | "attached" | "adopted" | null;
@@ -68,7 +68,7 @@ export function upsertSessionBinding(
 export function getSessionBinding(
 	db: Database.Database,
 	collabId: string,
-	agentType: "codex" | "claude" | "ezio",
+	agentType: AgentType,
 ): SessionBinding | null {
 	const row = db
 		.prepare(

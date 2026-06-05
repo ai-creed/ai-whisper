@@ -1,4 +1,4 @@
-import type { BrokerRuntime } from "@ai-whisper/broker";
+import type { AgentType,  BrokerRuntime } from "@ai-whisper/broker";
 import type { RelayDirective } from "@ai-whisper/shared";
 import {
 	openDatabase,
@@ -111,7 +111,7 @@ export function reapStaleSessionsOnTeardown(input: ReapLifecycleInput): void {
 }
 
 export function createMountSessionRuntime(input: {
-	target: "codex" | "claude" | "ezio";
+	target: AgentType;
 	ttyPath: string;
 	workspaceRoot: string;
 	claimId: string;

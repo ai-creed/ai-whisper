@@ -1,4 +1,4 @@
-import type { BrokerRuntime } from "@ai-whisper/broker";
+import type { AgentType,  BrokerRuntime } from "@ai-whisper/broker";
 import type { WorkItem } from "@ai-whisper/shared";
 import { inferRequestedAction } from "./action-inference.js";
 import { requiresExplicitArtifacts } from "./context-policy.js";
@@ -9,7 +9,7 @@ export function enqueueRelayWork(input: {
 	broker: BrokerRuntime;
 	collabId: string;
 	originSessionId: string;
-	target: "codex" | "claude" | "ezio";
+	target: AgentType;
 	instruction: string;
 	artifactPaths: string[];
 	forceNewThread: boolean;
@@ -93,7 +93,7 @@ export function enqueueRelayWork(input: {
 }
 
 export function formatRelayAcknowledgement(input: {
-	target: "codex" | "claude" | "ezio";
+	target: AgentType;
 	createdNewThread: boolean;
 }) {
 	return input.createdNewThread
@@ -102,7 +102,7 @@ export function formatRelayAcknowledgement(input: {
 }
 
 export function formatRelayReplySummary(input: {
-	target: "codex" | "claude" | "ezio";
+	target: AgentType;
 	replyKind: string;
 	content: string;
 }) {

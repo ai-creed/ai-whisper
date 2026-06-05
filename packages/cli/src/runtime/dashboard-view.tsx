@@ -1,4 +1,5 @@
 import { Box, Text, useInput, useStdin } from "ink";
+import type { AgentType } from "@ai-whisper/shared";
 import type { ReactElement, ReactNode } from "react";
 import type { WallState, WallPaneState } from "./dashboard-state.js";
 import { RelayView, type Viewport } from "./relay-view.js";

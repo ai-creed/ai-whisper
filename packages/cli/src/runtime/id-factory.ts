@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import type { AgentType } from "@ai-whisper/shared";
 
 function normalizeTimestamp(now: string): string {
 	return now.replace(/[^0-9]/g, "");
@@ -17,7 +18,7 @@ export function createCliCollabId(now: string): `collab_${string}` {
 }
 
 export function createCliSessionId(
-	agentType: "codex" | "claude" | "ezio",
+	agentType: AgentType,
 	now: string,
 ): `session_${string}` {
 	// Defensive: keep the agent segment within the `[a-z0-9_]` shape sessionIdSchema

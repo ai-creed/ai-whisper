@@ -1,4 +1,5 @@
 import { execSync, spawn as nodeSpawn } from "node:child_process";
+import type { AgentType } from "@ai-whisper/shared";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -85,7 +86,7 @@ function buildBrokerEnvPrefix(input: {
 }
 
 function buildMountCommand(
-	agent: "codex" | "claude" | "ezio",
+	agent: AgentType,
 	envPrefix: string,
 	workspaceRoot: string,
 ): string {

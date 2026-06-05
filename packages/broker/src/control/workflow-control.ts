@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { AgentType } from "@ai-whisper/shared";
 import type Database from "better-sqlite3";
 import { getCollab } from "../storage/repositories/collab-repository.js";
 import { listSessionBindingsForCollab } from "../storage/repositories/session-binding-repository.js";
@@ -141,7 +142,7 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 		workflowType: string;
 		name?: string;
 		specPath: string;
-		roleBindings: { implementer: "claude" | "codex"; reviewer: "claude" | "codex" };
+		roleBindings: { implementer: AgentType; reviewer: AgentType };
 		now: string;
 	}): { workflowId: string } {
 		const collab = getCollab(db, input.collabId);
@@ -229,8 +230,8 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 		phaseName: string;
 		initialHandoffStep: "review" | "fix" | "implement" | "execute";
 		kickoffText: string;
-		sender: "claude" | "codex";
-		target: "claude" | "codex";
+		sender: AgentType;
+		target: AgentType;
 		maxRounds: number;
 		executionBaseHeadSha?: string;
 		now: string;
@@ -385,7 +386,7 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 	function getAgentForRole(
 		workflow: WorkflowRecord,
 		role: "implementer" | "reviewer",
-	): "claude" | "codex" {
+	): AgentType {
 		const v = workflow.roleBindings[role];
 		if (!v) throw new Error(`getAgentForRole: no binding for ${role}`);
 		return v;
@@ -462,8 +463,8 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 		chain: RelayChainRecord;
 		prev: NonNullable<ReturnType<typeof getHandoffWithWorkflowMetaById>>;
 		nextStep: "review" | "fix";
-		sender: "claude" | "codex";
-		target: "claude" | "codex";
+		sender: AgentType;
+		target: AgentType;
 		requestText: string;
 		incrementRound: boolean;
 		now: string;

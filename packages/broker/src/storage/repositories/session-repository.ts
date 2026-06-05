@@ -1,10 +1,10 @@
 import type Database from "better-sqlite3";
-import { sessionSchema, type Session } from "@ai-whisper/shared";
+import { type AgentType,  sessionSchema, type Session } from "@ai-whisper/shared";
 
 type SessionRow = {
 	session_id: string;
 	collab_id: string;
-	agent_type: "codex" | "claude";
+	agent_type: AgentType;
 	registration_state: "registered";
 	health_state: "healthy" | "degraded" | "offline";
 	capabilities_json: string;

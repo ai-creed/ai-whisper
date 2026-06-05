@@ -1,4 +1,4 @@
-import {
+import { type AgentType, 
 	artifactManifestSchema,
 	attachClaimSchema,
 	brokerSchemaVersion,
@@ -250,7 +250,7 @@ export function createControlService(db: Database.Database, events: BrokerEventB
 		registerSession(input: {
 			sessionId: string;
 			collabId: string;
-			agentType: "codex" | "claude" | "ezio";
+			agentType: AgentType;
 			capabilities: Record<string, unknown>;
 			now: string;
 		}) {
@@ -839,7 +839,7 @@ export function createControlService(db: Database.Database, events: BrokerEventB
 		},
 		issueAttachClaim(input: {
 			collabId: string;
-			agentType: "codex" | "claude" | "ezio";
+			agentType: AgentType;
 			mode: "attach" | "rebind" | "reconnect";
 			targetMode?: "snippet_shell" | "adopt_current_tty" | "explicit_tty" | "mount_current_tty";
 			targetTtyPath?: string | null;
@@ -994,7 +994,7 @@ export function createControlService(db: Database.Database, events: BrokerEventB
 		listSessionAttachments(collabId: string): SessionAttachmentRecord[] {
 			return listSessionAttachmentsByCollab(db, collabId);
 		},
-		resolveBoundSession(collabId: string, agentType: "codex" | "claude" | "ezio"): string {
+		resolveBoundSession(collabId: string, agentType: AgentType): string {
 			const binding = getSessionBinding(db, collabId, agentType);
 			// Accept both 'bound' and 'pending_attach' states if there is an active session.
 			// During a rebind the old session remains authoritative until the claim is completed.
@@ -1007,7 +1007,7 @@ export function createControlService(db: Database.Database, events: BrokerEventB
 		},
 		setSessionBinding(input: {
 			collabId: string;
-			agentType: "codex" | "claude" | "ezio";
+			agentType: AgentType;
 			sessionId: string;
 			bindingSource: "launched" | "attached" | "adopted" | "mounted";
 			targetTtyPath?: string | null;
@@ -1132,8 +1132,8 @@ export function createControlService(db: Database.Database, events: BrokerEventB
 		createRelayHandoff(input: {
 			handoffId: string;
 			collabId: string;
-			senderAgent: "codex" | "claude" | "ezio";
-			targetAgent: "codex" | "claude" | "ezio";
+			senderAgent: AgentType;
+			targetAgent: AgentType;
 			requestText: string;
 			now: string;
 		}) {
@@ -1155,8 +1155,8 @@ export function createControlService(db: Database.Database, events: BrokerEventB
 		handoffBackRelay(input: {
 			handoffId: string;
 			nextHandoffId?: string;
-			senderAgent: "codex" | "claude" | "ezio";
-			targetAgent: "codex" | "claude" | "ezio";
+			senderAgent: AgentType;
+			targetAgent: AgentType;
 			requestText: string;
 			captureStatus?: "ok" | "no_response_captured_confidently" | "no_response_captured" | null;
 			now: string;
@@ -1215,7 +1215,7 @@ export function createControlService(db: Database.Database, events: BrokerEventB
 			collabId: string;
 			chainId: string | null;
 			workflowId: string | null;
-			targetProvider: "codex" | "claude";
+			targetProvider: AgentType;
 			captureStatus: "ok" | "no_response_captured_confidently" | "no_response_captured";
 			clipLen: number;
 			turnLen: number;

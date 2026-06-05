@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import type { AgentType } from "@ai-whisper/shared";
 
 export type BrokerEventMap = {
 	"chain.resolved": { collabId: string; chainId: string };
@@ -15,8 +16,8 @@ export type BrokerEventMap = {
 		phaseName: string;
 		chainId: string;
 		phaseRunId: string;
-		implementer: "claude" | "codex";
-		reviewer: "claude" | "codex";
+		implementer: AgentType;
+		reviewer: AgentType;
 	};
 	"workflow.round-started": {
 		workflowId: string;
@@ -24,8 +25,8 @@ export type BrokerEventMap = {
 		phaseRunId: string;
 		roundNumber: number;
 		handoffStep: "review" | "fix" | "implement" | "execute";
-		sender: "claude" | "codex";
-		target: "claude" | "codex";
+		sender: AgentType;
+		target: AgentType;
 	};
 	"workflow.phase-done": {
 		workflowId: string;

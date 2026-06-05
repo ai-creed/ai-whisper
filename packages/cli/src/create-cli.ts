@@ -1,4 +1,5 @@
 import { execSync } from "node:child_process";
+import type { AgentType } from "@ai-whisper/shared";
 import { readFileSync } from "node:fs";
 import { Command, Option } from "commander";
 import { waitForBrokerReady } from "./runtime/wait-for-broker-ready.js";
@@ -187,7 +188,7 @@ export function createCli(): Command {
 		.action(async (instruction: string, opts: TellOpts) => {
 			const tellInput: Parameters<typeof runCollabTell>[0] = {
 				cwd: process.cwd(),
-				target: opts.target as "codex" | "claude" | "ezio",
+				target: opts.target as AgentType,
 				instruction,
 				artifactPaths: opts.artifact ?? [],
 				now: new Date().toISOString(),
@@ -252,7 +253,7 @@ export function createCli(): Command {
 			await runCollabReconnect({
 				workspaceRoot: opts.workspace,
 				...(opts.collab ? { collabIdOverride: opts.collab } : {}),
-				target: target as "codex" | "claude" | "ezio",
+				target: target as AgentType,
 				now: new Date().toISOString(),
 			});
 		});
@@ -269,7 +270,7 @@ export function createCli(): Command {
 		.option("--collab <id>", "Target a specific collab id (defaults to the active collab for cwd)")
 		.action(
 			async (
-				target: "codex" | "claude" | "ezio",
+				target: AgentType,
 				passthroughArgs: string[],
 				opts: WorkspaceOpts & { collab?: string },
 			) => {
@@ -426,8 +427,8 @@ export function createCli(): Command {
 			async (opts: WorkspaceOpts & {
 				type: string;
 				spec: string;
-				implementer?: "claude" | "codex";
-				reviewer?: "claude" | "codex";
+				implementer?: AgentType;
+				reviewer?: AgentType;
 				name?: string;
 			}) => {
 				const { broker, collabId } = await connectToWorkspaceBroker({ cwd: opts.workspace });
@@ -566,7 +567,7 @@ export function createCli(): Command {
 		.option("--force", "Overwrite existing skill destinations")
 		.action(
 			async (opts: {
-				target: "claude" | "codex" | "all";
+				target: AgentType | "all";
 				force?: boolean;
 			}) => {
 				const result = await runSkillInstall({

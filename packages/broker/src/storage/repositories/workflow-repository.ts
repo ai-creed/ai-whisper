@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import type { AgentType } from "@ai-whisper/shared";
 
 export type WorkflowStatus = "running" | "paused" | "halted" | "done" | "canceled";
 
@@ -8,7 +9,7 @@ export type WorkflowRecord = {
 	workflowType: string;
 	name: string | null;
 	specPath: string;
-	roleBindings: Record<string, "claude" | "codex">;
+	roleBindings: Record<string, AgentType>;
 	status: WorkflowStatus;
 	currentPhaseIndex: number;
 	haltReason: string | null;
@@ -37,7 +38,7 @@ function rowToRecord(row: {
 		workflowType: row.workflow_type,
 		name: row.name,
 		specPath: row.spec_path,
-		roleBindings: JSON.parse(row.role_bindings) as Record<string, "claude" | "codex">,
+		roleBindings: JSON.parse(row.role_bindings) as Record<string, AgentType>,
 		status: row.status as WorkflowStatus,
 		currentPhaseIndex: row.current_phase_index,
 		haltReason: row.halt_reason,
@@ -55,7 +56,7 @@ export function insertWorkflow(
 		workflowType: string;
 		name: string | null;
 		specPath: string;
-		roleBindings: Record<string, "claude" | "codex">;
+		roleBindings: Record<string, AgentType>;
 		status: WorkflowStatus;
 		currentPhaseIndex: number;
 		workflowContext: Record<string, unknown>;

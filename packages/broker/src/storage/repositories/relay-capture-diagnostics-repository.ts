@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import type { AgentType } from "@ai-whisper/shared";
 
 export type CaptureStatus =
 	| "ok"
@@ -11,7 +12,7 @@ export type RelayCaptureDiagnosticRecord = {
 	collabId: string;
 	chainId: string | null;
 	workflowId: string | null;
-	targetProvider: "codex" | "claude";
+	targetProvider: AgentType;
 	captureStatus: CaptureStatus;
 	clipLen: number;
 	turnLen: number;
@@ -53,7 +54,7 @@ function rowToRecord(row: Row): RelayCaptureDiagnosticRecord {
 		collabId: row.collab_id,
 		chainId: row.chain_id,
 		workflowId: row.workflow_id,
-		targetProvider: row.target_provider as "codex" | "claude",
+		targetProvider: row.target_provider as AgentType,
 		captureStatus: row.capture_status as CaptureStatus,
 		clipLen: row.clip_len,
 		turnLen: row.turn_len,

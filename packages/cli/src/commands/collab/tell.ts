@@ -1,4 +1,4 @@
-import { createBrokerRuntime } from "@ai-whisper/broker";
+import { type AgentType,  createBrokerRuntime } from "@ai-whisper/broker";
 import type { CompanionProvider, WorkItem } from "@ai-whisper/shared";
 import { normalizeArtifactPaths } from "../../runtime/artifact-input.js";
 import { resolveCollab } from "../../runtime/collab-resolver.js";
@@ -9,7 +9,7 @@ import { waitForReply } from "../../runtime/reply-wait.js";
 
 export async function runCollabTell(input: {
 	cwd: string;
-	target: "codex" | "claude" | "ezio";
+	target: AgentType;
 	instruction: string;
 	explicitAction?: WorkItem["requestedAction"];
 	artifactPaths: string[];

@@ -1,6 +1,7 @@
 import { createCompanionRuntime } from "@ai-whisper/companion-core";
 import type { BrokerRuntime } from "@ai-whisper/broker";
 import type {
+	AgentType,
 	CompanionProvider,
 	InteractiveSessionController,
 } from "@ai-whisper/shared";
@@ -22,11 +23,17 @@ export function runCompanionAgentLoop(input: {
 	pollIntervalMs?: number;
 }): Promise<() => Promise<void>> {
 	input.provider.attachInteractiveSession?.(input.interactiveSession);
+	const fallbackAgent: AgentType = (() => {
+		const family = input.provider.getIdentity().toolFamily;
+		if (family === "codex") return "codex";
+		if (family === "hax") return "ezio";
+		return "claude";
+	})();
 	const sessionRole =
 		input.broker.control
 			.listSessions(input.collabId)
 			.find((session) => session.sessionId === input.sessionId)?.agentType ??
-		(input.provider.getIdentity().toolFamily === "codex" ? "codex" : "claude");
+		fallbackAgent;
 
 	const artifactService = createBrokerArtifactService();
 	const baseExecutor = createLiveSessionBrokerExecutor({

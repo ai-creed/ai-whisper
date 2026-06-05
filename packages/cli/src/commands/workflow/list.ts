@@ -1,3 +1,4 @@
+import type { AgentType } from "@ai-whisper/shared";
 export type WorkflowStatus = "running" | "paused" | "halted" | "done" | "canceled";
 
 export type WorkflowRecord = {
@@ -6,7 +7,7 @@ export type WorkflowRecord = {
 	workflowType: string;
 	name: string | null;
 	specPath: string;
-	roleBindings: Record<string, "claude" | "codex">;
+	roleBindings: Record<string, AgentType>;
 	status: WorkflowStatus;
 	currentPhaseIndex: number;
 	haltReason: string | null;

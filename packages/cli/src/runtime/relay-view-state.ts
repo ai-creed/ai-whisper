@@ -1,4 +1,5 @@
 import type { RelayHandoffLogRow } from "@ai-whisper/broker";
+import type { AgentType } from "@ai-whisper/shared";
 
 // Fixed column widths for the workflow event line (kept here so Task 5/6
 // renderers stay aligned with this producer).
@@ -162,8 +163,8 @@ export type RelayViewSnapshot = {
 		status: "active" | "done" | "escalated" | "abandoned";
 	} | null;
 	turn: {
-		turnOwner: "codex" | "claude" | "ezio" | "none";
-		waitingAgent: "codex" | "claude" | "ezio" | null;
+		turnOwner: AgentType | "none";
+		waitingAgent: AgentType | null;
 		handoffState: string;
 	};
 	// Liveness is PER-AGENT: each entry optionally carries `mountAlive`, the
@@ -201,7 +202,7 @@ export type RelayViewState = {
 	turn: string;
 	health: string;
 	agentHealth: Array<{
-		agent: "codex" | "claude" | "ezio";
+		agent: AgentType;
 		health: "healthy" | "degraded" | "dead";
 	}>;
 	live: string;

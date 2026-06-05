@@ -1,3 +1,4 @@
+import type { AgentType } from "@ai-whisper/shared";
 import type {
 	LogLine,
 	PhaseRunRef,
@@ -24,7 +25,7 @@ export type WallPaneState = {
 	round: { current: number; max: number } | null;
 	progress: { current: number; total: number } | null;
 	agentHealth: Array<{
-		agent: "codex" | "claude" | "ezio";
+		agent: AgentType;
 		health: "healthy" | "degraded" | "dead";
 	}>;
 	stuckWhy: string | null;

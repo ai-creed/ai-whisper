@@ -10,10 +10,10 @@ import {
 	createAiEzioLiveSession,
 	createAiEzioProvider,
 } from "@ai-whisper/adapter-ai-ezio";
-import type { InteractiveSessionController } from "@ai-whisper/shared";
+import type { AgentType, InteractiveSessionController } from "@ai-whisper/shared";
 import { getLiveSessionBrokerTempRoot } from "./paths.js";
 
-export type MountTarget = "codex" | "claude" | "ezio";
+export type MountTarget = AgentType;
 
 export function getInteractiveSessionExecArgsForTarget(
 	target: MountTarget,

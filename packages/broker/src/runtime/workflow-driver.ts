@@ -1,4 +1,5 @@
 import type { WorkspaceHeadReader } from "./workspace-head-reader.js";
+import type { AgentType } from "@ai-whisper/shared";
 import type { BrokerEventBus } from "./broker-event-bus.js";
 import {
 	getWorkflowDefinition,
@@ -18,7 +19,7 @@ type WorkflowRecordLike = {
 	currentPhaseIndex: number;
 	status: WorkflowStatus;
 	specPath: string;
-	roleBindings: Record<string, "claude" | "codex">;
+	roleBindings: Record<string, AgentType>;
 	workflowContext: Record<string, unknown>;
 	createdAt: string;
 	haltReason: string | null;
@@ -30,7 +31,7 @@ export interface WorkflowDriverDeps {
 			getWorkflow: (id: string) => WorkflowRecordLike | null | undefined;
 			listWorkflows: (filter?: { status?: WorkflowStatus }) => WorkflowRecordLike[];
 			getWorkflowPhaseRuns: (id: string) => Array<{ phaseIndex: number; endedAt: string | null }>;
-			beginPhaseRun: (input: { workflowId: string; phaseIndex: number; phaseName: string; initialHandoffStep: "review" | "fix" | "implement" | "execute"; kickoffText: string; sender: "claude" | "codex"; target: "claude" | "codex"; maxRounds: number; executionBaseHeadSha?: string; now: string }) => { phaseRunId: string; chainId: string; handoffId: string };
+			beginPhaseRun: (input: { workflowId: string; phaseIndex: number; phaseName: string; initialHandoffStep: "review" | "fix" | "implement" | "execute"; kickoffText: string; sender: AgentType; target: AgentType; maxRounds: number; executionBaseHeadSha?: string; now: string }) => { phaseRunId: string; chainId: string; handoffId: string };
 			haltWorkflow: (input: { workflowId: string; reason: string; now: string }) => void;
 			listSessionBindings: (collabId: string) => Array<{ agentType: string; bindingState: string }>;
 			getCollab: (collabId: string) => { workspaceRoot: string } | null;
@@ -110,7 +111,7 @@ export function createWorkflowDriver(deps: WorkflowDriverDeps): WorkflowDriver {
 			return;
 		}
 
-		const isAgentBound = (agent: "claude" | "codex"): boolean =>
+		const isAgentBound = (agent: AgentType): boolean =>
 			bindings.some((b) => b.agentType === agent && b.bindingState === "bound");
 
 		// Check implementer binding
@@ -134,11 +135,11 @@ export function createWorkflowDriver(deps: WorkflowDriverDeps): WorkflowDriver {
 		}
 
 		// Determine sender/target from phase initialHandoffStep
-		const sender: "claude" | "codex" =
+		const sender: AgentType =
 			phase.initialHandoffStep === "review"
 				? (implementerAgent)
 				: (reviewerAgent);
-		const target: "claude" | "codex" =
+		const target: AgentType =
 			phase.initialHandoffStep === "review"
 				? (reviewerAgent)
 				: (implementerAgent);
