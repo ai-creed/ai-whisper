@@ -2,6 +2,7 @@ import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
 import { createFakePty } from "./helpers/fake-pty.ts";
 import { createLiveSessionRuntime } from "../packages/cli/src/runtime/live-session.ts";
+import { createAiEzioLiveSession } from "../packages/adapter-ai-ezio/src/create-ai-ezio-live-session.ts";
 
 let _mockStdin: PassThrough | null = null;
 
@@ -87,6 +88,46 @@ describe("live session runtime", () => {
 		await nextTick();
 		// Exactly one submit with the full line (no trailing CR), not one per char.
 		expect(submits).toEqual(["hi"]);
+	});
+
+	it("lineBufferedInput + real ai-ezio controller: re-paints the submitted line as a magenta ▌ stripe", async () => {
+		// End-to-end proof of the hax-style submitted-prompt echo: the REAL
+		// createAiEzioLiveSession controller is driven through the runtime with a
+		// fake engine. On Enter the runtime erases its plain echo and calls the
+		// controller's echoUserInput, which paints the bright-magenta stripe.
+		const stdin = new PassThrough();
+		const stdout = new PassThrough();
+		const out: string[] = [];
+		stdout.on("data", (c) => out.push(String(c)));
+
+		const controller = createAiEzioLiveSession({
+			stdout,
+			createEngineSession: () => ({
+				start: () => Promise.resolve({ type: "ready" }),
+				submit: () => {},
+				submitAndWait: () => Promise.resolve({ turnId: "t", content: "" }),
+				onExit: () => {},
+				close: () => {},
+			}),
+		});
+
+		const runtime = createLiveSessionRuntime({
+			interactiveSession: controller,
+			stdin,
+			stdout,
+			onRelay: () => Promise.reject(new Error("relay should not fire")),
+			lineBufferedInput: true,
+		});
+
+		await runtime.start();
+		for (const ch of "hi") stdin.write(ch);
+		stdin.write("\r");
+		await nextTick();
+
+		const s = out.join("");
+		expect(s).toContain("[95m"); // bright-magenta stripe (hax purple)
+		expect(s).toContain("▌ hi"); // submitted line re-painted with the stripe
+		expect(s).toContain("[J"); // erase-to-end-of-screen before the re-paint
 	});
 
 	it("lineBufferedInput: backspace edits the buffer before submit", async () => {
