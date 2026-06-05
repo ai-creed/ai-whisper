@@ -30,10 +30,14 @@ export function createAiEzioProvider(config?: {
 	let health: "healthy" | "degraded" | "offline" = "healthy";
 
 	// All five booleans + `extensions` are REQUIRED by providerCapabilitiesSchema.
+	// supportsRelayInterception is true: ezio's mount routes through the shared
+	// live-session.ts stdin interception (M5), so operator-typed @@ directives in
+	// an ezio mount are intercepted and create handoffs (senderAgent = "ezio") —
+	// the declaration matches the already-wired behavior (M6, full parity).
 	const capabilities: ProviderCapabilities = {
 		supportsDirectPackets: true,
 		supportsNormalization: false,
-		supportsRelayInterception: false,
+		supportsRelayInterception: true,
 		supportsLocalBuffering: false,
 		supportsLaunchHooks: true,
 		extensions: {},

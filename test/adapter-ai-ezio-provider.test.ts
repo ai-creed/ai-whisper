@@ -47,12 +47,12 @@ describe("createAiEzioProvider", () => {
 		expect(identity.providerVersion.length).toBeGreaterThanOrEqual(1);
 	});
 
-	it("capabilities are schema-valid, with direct packets, no relay interception, and extensions", () => {
+	it("capabilities are schema-valid, with direct packets, relay interception, and extensions", () => {
 		const p = createAiEzioProvider({ createEngineSession: () => engineReturning("") });
 		const caps = p.getCapabilities();
 		expect(() => providerCapabilitiesSchema.parse(caps)).not.toThrow();
 		expect(caps.supportsDirectPackets).toBe(true);
-		expect(caps.supportsRelayInterception).toBe(false);
+		expect(caps.supportsRelayInterception).toBe(true);
 		expect(caps.extensions).toBeDefined();
 	});
 
