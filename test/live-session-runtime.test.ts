@@ -105,6 +105,7 @@ describe("live session runtime", () => {
 			createEngineSession: () => ({
 				start: () => Promise.resolve({ type: "ready" }),
 				submit: () => {},
+				interrupt: () => {},
 				submitAndWait: () => Promise.resolve({ turnId: "t", content: "" }),
 				onExit: () => {},
 				close: () => {},
@@ -128,6 +129,73 @@ describe("live session runtime", () => {
 		expect(s).toContain("[95m"); // bright-magenta stripe (hax purple)
 		expect(s).toContain("▌ hi"); // submitted line re-painted with the stripe
 		expect(s).toContain("[J"); // erase-to-end-of-screen before the re-paint
+	});
+
+	function ctrlKeyFixture() {
+		const stdin = new PassThrough();
+		const stdout = new PassThrough();
+		const out: string[] = [];
+		stdout.on("data", (c) => out.push(String(c)));
+		const calls = { interrupt: 0, stop: 0, submits: [] as string[] };
+		const interactiveSession = {
+			start: () => Promise.resolve(),
+			stop: () => {
+				calls.stop++;
+				return Promise.resolve();
+			},
+			interrupt: () => {
+				calls.interrupt++;
+			},
+			writeUserInput(data: string) {
+				calls.submits.push(data);
+			},
+			sendLocalMessage(message: string) {
+				stdout.write(message);
+			},
+			onExit() {},
+			onTurnFinished() {}, // marks this as a protocol-native (line-buffered) session
+		};
+		const runtime = createLiveSessionRuntime({
+			interactiveSession,
+			stdin,
+			stdout,
+			onRelay: () => Promise.reject(new Error("relay should not fire")),
+			lineBufferedInput: true,
+		});
+		return { stdin, out: () => out.join(""), calls, runtime };
+	}
+
+	it("Ctrl+C mid-turn (empty buffer) interrupts the running turn", async () => {
+		const f = ctrlKeyFixture();
+		await f.runtime.start();
+		f.stdin.write("\u0003"); // Ctrl+C with nothing typed
+		await nextTick();
+		expect(f.calls.interrupt).toBe(1);
+		expect(f.calls.submits).toEqual([]);
+		expect(f.calls.stop).toBe(0);
+	});
+
+	it("Ctrl+C with typed text clears the line and does NOT interrupt or submit", async () => {
+		const f = ctrlKeyFixture();
+		await f.runtime.start();
+		for (const ch of "abc") f.stdin.write(ch);
+		f.stdin.write("\u0003"); // Ctrl+C clears the typed input
+		await nextTick();
+		expect(f.calls.interrupt).toBe(0);
+		expect(f.calls.submits).toEqual([]);
+		// A subsequent Enter submits nothing — the buffer was cleared.
+		f.stdin.write("\r");
+		await nextTick();
+		expect(f.calls.submits).toEqual([]);
+		expect(f.out()).toContain("\b \b"); // visually erased the typed chars
+	});
+
+	it("Ctrl+D exits immediately by stopping the session", async () => {
+		const f = ctrlKeyFixture();
+		await f.runtime.start();
+		f.stdin.write("\u0004"); // Ctrl+D
+		await nextTick();
+		expect(f.calls.stop).toBe(1);
 	});
 
 	it("lineBufferedInput: backspace edits the buffer before submit", async () => {

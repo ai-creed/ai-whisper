@@ -12,6 +12,7 @@ function engineReturning(content: string): AiEzioEngineSession {
 	return {
 		start: vi.fn(async () => ({ type: "ready" })),
 		submit: vi.fn(),
+		interrupt: vi.fn(),
 		submitAndWait: vi.fn(async () => ({ turnId: "t", content })),
 		onExit: vi.fn(),
 		close: vi.fn(),
@@ -22,6 +23,7 @@ function engineThrowing(error: Error): AiEzioEngineSession {
 	return {
 		start: vi.fn(async () => ({ type: "ready" })),
 		submit: vi.fn(),
+		interrupt: vi.fn(),
 		submitAndWait: vi.fn(async () => {
 			throw error;
 		}),

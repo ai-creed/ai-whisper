@@ -18,6 +18,7 @@ function fakeEngine(reply: string) {
 				emit({ type: "idle" });
 			}, 0);
 		}),
+		interrupt: vi.fn(),
 		submitAndWait: vi.fn(async () => ({ turnId: "t1", content: reply })),
 		onExit: vi.fn(),
 		close: vi.fn(),

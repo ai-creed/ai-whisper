@@ -9,6 +9,7 @@ function fakeEngine() {
 	const session: AiEzioEngineSession = {
 		start: vi.fn(async () => ({ type: "ready" })),
 		submit,
+		interrupt: vi.fn(),
 		submitAndWait: vi.fn(async () => ({ turnId: "t", content: "" })),
 		onExit: vi.fn(),
 		close: vi.fn(),

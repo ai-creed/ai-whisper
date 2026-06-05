@@ -77,6 +77,11 @@ export function createAiEzioLiveSession(input: {
 			// Protocol-native: one submit, no keystream, no trailing CR.
 			session?.submit(data);
 		},
+		interrupt() {
+			// Cancel the in-flight turn over the protocol; the engine ignores it
+			// when no turn is running, so a stray Ctrl+C at idle is harmless.
+			session?.interrupt();
+		},
 		echoUserInput(text: string, cols: number) {
 			// hax-style magenta `▌ ` echo of the submitted line. The runtime erases
 			// its plain local echo before calling this; we just paint the stripe.

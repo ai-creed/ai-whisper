@@ -14,6 +14,10 @@ export interface InteractiveSessionController {
 	 *  event, passing the authoritative handback content. Byte/PTY providers omit
 	 *  it and rely on output-quiescence detection instead. */
 	onTurnFinished?(handler: (content: string) => void): void;
+	/** Protocol-native providers (ai-ezio) cancel the in-flight turn (engine-level
+	 *  interrupt). A no-op at the engine when no turn is running. Byte/PTY providers
+	 *  omit it — Ctrl+C is forwarded to the spawned agent's own tty instead. */
+	interrupt?(): void;
 	/** Protocol-native providers (ai-ezio) re-render a just-submitted operator
 	 *  line as hax's magenta `▌ ` stripe. The line-buffered input runtime erases
 	 *  its plain echo and calls this with the submitted text + current tty width

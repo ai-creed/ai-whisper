@@ -5,6 +5,9 @@ import type { ProtocolEvent } from "@ai-ezio/protocol";
 export interface AiEzioEngineSession {
 	start(): Promise<unknown>;
 	submit(text: string): void;
+	/** Cancel the in-flight turn (protocol `interrupt`; the engine ignores it
+	 *  between turns). */
+	interrupt(): void;
 	submitAndWait(text: string): Promise<{ turnId: string; content: string }>;
 	onExit(handler: (info: { code: number | null; signal: NodeJS.Signals | null }) => void): void;
 	close(): void;

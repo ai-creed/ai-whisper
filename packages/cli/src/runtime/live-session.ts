@@ -133,6 +133,24 @@ export function createLiveSessionRuntime(input: {
 	let inputLineBuffer = "";
 	function feedLineBufferedInput(data: string) {
 		for (const char of data) {
+			if (char === "\u0003") {
+				// Ctrl+C: with text typed, clear the line (hax-style); otherwise
+				// interrupt the in-flight turn (a no-op at the engine when idle).
+				// Raw mode means there is no SIGINT — we own this key.
+				if (inputLineBuffer.length > 0) {
+					input.stdout.write("\b \b".repeat(Array.from(inputLineBuffer).length));
+					inputLineBuffer = "";
+				} else {
+					input.interactiveSession.interrupt?.();
+				}
+				continue;
+			}
+			if (char === "\u0004") {
+				// Ctrl+D: exit the mounted session immediately. stop() closes the
+				// engine, whose exit cascades to the mount's onExit → process.exit.
+				void input.interactiveSession.stop();
+				continue;
+			}
 			if (char === "\r" || char === "\n") {
 				const completed = inputLineBuffer;
 				inputLineBuffer = "";
