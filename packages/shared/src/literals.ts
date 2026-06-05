@@ -20,6 +20,7 @@ export const threadStates = [
 ] as const;
 export const collabStates = ["active", "stopped"] as const;
 export const agentTypes = ["codex", "claude", "ezio"] as const;
+export type AgentType = (typeof agentTypes)[number];
 export const sessionRegistrationStates = ["registered"] as const;
 export const workItemStates = [
 	"queued",

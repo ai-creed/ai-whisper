@@ -22,6 +22,7 @@ export {
 } from "./id.js";
 export {
 	agentTypes,
+	type AgentType,
 	artifactCategories,
 	attachTargetModes,
 	bindingSources,
