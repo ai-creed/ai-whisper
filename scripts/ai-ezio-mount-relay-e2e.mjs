@@ -113,6 +113,16 @@ console.log("OK: real relay handoff handed back via protocol by ezio:", JSON.str
 //   - the banner line still matches `ezio … ›`
 //   - a `❯` prompt appears in the pane AFTER the banner line.
 await sleep(500); // let the pty pane output flush
+// The renderer must emit REAL ESC bytes, not literal "[36m" text. A regression
+// once set the renderer's ESC constant to "" so every code shipped as printable
+// text the terminal showed verbatim (banner/spinner/prompt all broken) — yet the
+// substring assertions below still passed. Guard the actual escape byte.
+if (!mountLog.includes("\u001b[36m") || !mountLog.includes("\u001b[95m")) {
+	cleanup();
+	console.error("FAIL: pane ANSI codes lack a real ESC byte (literal '[36m'/'[95m' text) — renderer ESC broken\n" + JSON.stringify(mountLog.slice(0, 400)));
+	process.exit(1);
+}
+console.log("OK: pane emits real ESC bytes (banner cyan + prompt bright-magenta interpreted, not literal)");
 const bannerMatch = /ezio[^\n]*›[^\n]*\n/.exec(mountLog);
 if (!bannerMatch) { cleanup(); console.error("FAIL: no banner line in mount pane\n" + mountLog.slice(-2500)); process.exit(1); }
 const afterBanner = mountLog.slice(bannerMatch.index + bannerMatch[0].length);

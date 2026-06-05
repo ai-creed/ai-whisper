@@ -31,6 +31,17 @@ const STATUS: ProtocolEvent = {
 };
 
 describe("createMountedRenderer", () => {
+	it("emits real ESC bytes (\\u001b), not literal bracket codes", () => {
+		// Regression guard: the renderer's ESC constant was once an empty string,
+		// so every ANSI code shipped as literal text ("[95m") that terminals print
+		// verbatim instead of interpreting. Assert a real ESC precedes a code.
+		const t = setup();
+		t.r.handle(STATUS); // banner
+		t.r.handle({ type: "idle" }); // prompt
+		expect(t.out()).toContain("\u001b[36m"); // banner cyan with a REAL escape
+		expect(t.out()).toContain("\u001b[95m"); // prompt bright magenta with a REAL escape
+	});
+
 	it("renders the banner exactly once across repeated status events", () => {
 		const t = setup();
 		t.r.handle(STATUS);

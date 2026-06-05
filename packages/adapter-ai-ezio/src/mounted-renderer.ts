@@ -10,7 +10,7 @@
 import type { ProtocolEvent } from "@ai-ezio/protocol";
 import { renderMarkdown } from "./render-markdown.js";
 
-const ESC = "";
+const ESC = "\u001b";
 const RESET = `${ESC}[0m`;
 const DIM = `${ESC}[2m`;
 const BOLD = `${ESC}[1m`;
