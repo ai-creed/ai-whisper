@@ -92,7 +92,24 @@ for (let deadline = Date.now() + 40_000; Date.now() < deadline && !proof; await 
 	if (fromAiEzio) { proof = { kind: "handback-from-ai-ezio", senderAgent: fromAiEzio.senderAgent, status: fromAiEzio.status }; break; }
 }
 
-cleanup();
-if (!proof) { console.error("FAIL: no protocol handback recorded from ezio\n" + mountLog.slice(-2500)); process.exit(1); }
+if (!proof) { cleanup(); console.error("FAIL: no protocol handback recorded from ezio\n" + mountLog.slice(-2500)); process.exit(1); }
 console.log("OK: real relay handoff handed back via protocol by ezio:", JSON.stringify(proof));
+
+// M7: the mounted pane shows a REPL-like banner on ready AND a `›` prompt AFTER
+// the driven turn. The banner itself contains one `›` (`ezio › provider · …`),
+// so a prompt-after-turn must add at least one MORE — assert >= 2 occurrences,
+// and that a `›` appears in the pane output AFTER the banner line.
+await sleep(500); // let the pty pane output flush
+const bannerMatch = /ezio[^\n]*›[^\n]*\n/.exec(mountLog);
+if (!bannerMatch) { cleanup(); console.error("FAIL: no M7 banner line in mount pane\n" + mountLog.slice(-2500)); process.exit(1); }
+const afterBanner = mountLog.slice(bannerMatch.index + bannerMatch[0].length);
+const promptCount = (mountLog.match(/›/g) || []).length;
+if (promptCount < 2 || !afterBanner.includes("›")) {
+	cleanup();
+	console.error("FAIL: no post-turn `›` prompt after the driven turn (banner-only)\n" + mountLog.slice(-2500));
+	process.exit(1);
+}
+console.log("OK: M7 banner on ready + post-turn `›` prompt rendered in the mounted ezio pane");
+
+cleanup();
 process.exit(0);
