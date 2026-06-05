@@ -51,13 +51,16 @@ jobs:
         working-directory: ai-whisper
         run: pnpm install --frozen-lockfile
 
-      - name: Lint
-        working-directory: ai-whisper
-        run: pnpm lint
-
+      # Build before Lint: typescript-eslint's type-aware rules resolve
+      # cross-package types from built dist/.d.ts (incl. the @ai-ezio packages),
+      # so the workspace must be built first or lint reports unsafe-any errors.
       - name: Build
         working-directory: ai-whisper
         run: pnpm build
+
+      - name: Lint
+        working-directory: ai-whisper
+        run: pnpm lint
 
       - name: Typecheck
         working-directory: ai-whisper
