@@ -2,9 +2,11 @@
 import { createBrokerRuntime } from "@ai-whisper/broker";
 import { createLiveSessionRuntime } from "../runtime/live-session.js";
 import { runCompanionAgentLoop } from "../runtime/companion-agent-loop.js";
+import { agentTypes } from "@ai-whisper/shared";
 import {
 	createInteractiveSessionForTarget,
 	createProviderForTarget,
+	type MountTarget,
 } from "../runtime/providers.js";
 import {
 	enqueueRelayWork,
@@ -24,11 +26,12 @@ function requireEnv(name: string): string {
 
 async function main(): Promise<void> {
 	const agentArg = process.argv[2];
-	if (agentArg !== "codex" && agentArg !== "claude") {
+	if (agentArg === undefined || !(agentTypes as readonly string[]).includes(agentArg)) {
 		throw new Error(
-			"companion-agent requires a target argument: codex or claude",
+			"companion-agent requires a target argument: codex, claude, or ezio",
 		);
 	}
+	const target: MountTarget = agentArg as MountTarget;
 
 	const sqlitePath = requireEnv("AI_WHISPER_BROKER_SQLITE");
 	const host = process.env.AI_WHISPER_BROKER_HOST ?? "127.0.0.1";
@@ -47,9 +50,9 @@ async function main(): Promise<void> {
 		runDaemonHeartbeat: false,
 		runBrokerDaemonSweep: false,
 	});
-	const provider = createProviderForTarget(agentArg);
+	const provider = createProviderForTarget(target);
 	const interactiveSession = createInteractiveSessionForTarget({
-		target: agentArg,
+		target: target,
 		cwd: process.cwd(),
 		stdout: process.stdout,
 	});
@@ -91,7 +94,7 @@ async function main(): Promise<void> {
 			const contextInjector = createContextInjector({ broker, collabId, sessionId });
 
 			relayPaneWriter.relayDirective({
-				senderAgent: agentArg,
+				senderAgent: target,
 				receiverAgent: directive.target,
 				instruction: directive.instruction,
 				now: new Date().toISOString(),
@@ -126,7 +129,7 @@ async function main(): Promise<void> {
 
 				relayPaneWriter.relayResponse({
 					senderAgent: directive.target,
-					receiverAgent: agentArg,
+					receiverAgent: target,
 					content: reply.content,
 					now: new Date().toISOString(),
 				});
