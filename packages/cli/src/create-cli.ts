@@ -419,8 +419,8 @@ export function createCli(): Command {
 		.description("Start a new workflow")
 		.requiredOption("--type <type>", "Workflow type (e.g. spec-driven-development)")
 		.requiredOption("--spec <path>", "Spec file path")
-		.option("--implementer <agent>", "Implementer agent: claude or codex (defaults to the workflow type's defaultImplementer)")
-		.option("--reviewer <agent>", "Reviewer agent: claude or codex (defaults to the workflow type's defaultReviewer)")
+		.option("--implementer <agent>", "Implementer agent: claude, codex, or ezio (defaults to the workflow type's defaultImplementer)")
+		.option("--reviewer <agent>", "Reviewer agent: claude, codex, or ezio (defaults to the workflow type's defaultReviewer)")
 		.option("--name <name>", "Optional workflow display name")
 		.option("--workspace <path>", "Workspace root", process.cwd())
 		.action(
@@ -561,7 +561,7 @@ export function createCli(): Command {
 		)
 		.addOption(
 			new Option("--target <target>", "Agent install target")
-				.choices(["claude", "codex", "all"])
+				.choices(["claude", "codex", "ezio", "all"])
 				.default("all"),
 		)
 		.option("--force", "Overwrite existing skill destinations")
