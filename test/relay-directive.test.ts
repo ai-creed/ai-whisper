@@ -39,3 +39,24 @@ describe("relay directive parser", () => {
 		expect(result!.instruction).toBe("");
 	});
 });
+
+describe("relay directive — @@ezio (M6)", () => {
+	it("parses @@ezio with an instruction", () => {
+		const d = parseRelayDirective("@@ezio summarize the spec");
+		expect(d).toMatchObject({ target: "ezio", instruction: "summarize the spec", forceNewThread: false });
+	});
+
+	it("parses @@ezio[new] force-new-thread", () => {
+		const d = parseRelayDirective("@@ezio[new] do the thing");
+		expect(d).toMatchObject({ target: "ezio", forceNewThread: true });
+	});
+
+	it("rejects @@ezio with no instruction", () => {
+		expect(parseRelayDirective("@@ezio")).toBeNull();
+	});
+
+	it("rejects unsupported @@ezio[bad] bracket", () => {
+		expect(parseRelayDirective("@@ezio[bad] x")).toBeNull();
+		expect(getRelayDirectiveError("@@ezio[bad] x")).toMatch(/ezio/);
+	});
+});

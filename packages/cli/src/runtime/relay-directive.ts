@@ -4,8 +4,8 @@ import {
 } from "@ai-whisper/shared";
 
 const relayPattern =
-	/^@@(?<target>codex|claude|pull)(?<force>\[new\])?\s*(?<instruction>.*)$/;
-const unsupportedRelayPrefix = /^@@(?:codex|claude|pull)\[(?!new\])/;
+	/^@@(?<target>codex|claude|ezio|pull)(?<force>\[new\])?\s*(?<instruction>.*)$/;
+const unsupportedRelayPrefix = /^@@(?:codex|claude|ezio|pull)\[(?!new\])/;
 
 export function parseRelayDirective(raw: string): RelayDirective | null {
 	const trimmed = raw.trim();
@@ -40,7 +40,7 @@ export function parseRelayDirective(raw: string): RelayDirective | null {
 export function getRelayDirectiveError(raw: string): string | null {
 	const trimmed = raw.trim();
 	if (unsupportedRelayPrefix.test(trimmed)) {
-		return "[ai-whisper] Unsupported relay syntax. Phase 6 supports only @@codex ..., @@claude ..., and [new].";
+		return "[ai-whisper] Unsupported relay syntax. Phase 6 supports only @@codex ..., @@claude ..., @@ezio ..., and [new].";
 	}
 	return null;
 }
