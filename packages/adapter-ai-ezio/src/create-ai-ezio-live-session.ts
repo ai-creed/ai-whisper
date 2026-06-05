@@ -77,6 +77,11 @@ export function createAiEzioLiveSession(input: {
 			// Protocol-native: one submit, no keystream, no trailing CR.
 			session?.submit(data);
 		},
+		echoUserInput(text: string, cols: number) {
+			// hax-style magenta `▌ ` echo of the submitted line. The runtime erases
+			// its plain local echo before calling this; we just paint the stripe.
+			renderer.echoUserInput(text, cols);
+		},
 		sendLocalMessage(message: string) {
 			// Local control text (relay preview) — surface to the operator's stdout.
 			input.stdout.write(message);

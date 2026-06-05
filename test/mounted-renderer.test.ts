@@ -114,6 +114,7 @@ describe("createMountedRenderer", () => {
 		const u = setup({ utf8: true });
 		u.r.handle({ type: "idle" });
 		expect(u.out()).toContain("❯");
+		expect(u.out()).toContain("[95m"); // bright magenta, matching hax's purple prompt
 
 		const a = setup({ utf8: false });
 		a.r.handle({ type: "idle" });
@@ -128,5 +129,34 @@ describe("createMountedRenderer", () => {
 		expect(out).toContain("[31m"); // red
 		expect(out).toContain("boom");
 		expect(out).toContain("❯"); // trailing prompt — pane usable again
+	});
+
+	it("echoUserInput paints a bright-magenta ▌ stripe + body, one trailing newline", () => {
+		const t = setup({ utf8: true });
+		t.r.echoUserInput("hello world", 80);
+		const out = t.out();
+		expect(out).toContain("[95m"); // bright magenta (hax stripe)
+		expect(out).toContain("▌ hello world");
+		expect(out.endsWith("\n")).toBe(true);
+		expect((out.match(/▌ /g) || []).length).toBe(1); // single visual row
+	});
+
+	it("echoUserInput re-stripes every wrapped visual row (hax-exact wrap)", () => {
+		const t = setup({ utf8: true });
+		// cols=7 → body width = 7-2 = 5; 12 chars → rows of 5/5/2 = 3 stripes.
+		t.r.echoUserInput("abcdefghijkl", 7);
+		const out = t.out();
+		expect((out.match(/▌ /g) || []).length).toBe(3);
+		expect(out).toContain("▌ abcde");
+		expect(out).toContain("▌ fghij");
+		expect(out).toContain("▌ kl");
+	});
+
+	it("echoUserInput uses an ASCII | stripe when utf8 is off", () => {
+		const t = setup({ utf8: false });
+		t.r.echoUserInput("hi", 80);
+		const out = t.out();
+		expect(out).toContain("| hi");
+		expect(out).not.toContain("▌");
 	});
 });

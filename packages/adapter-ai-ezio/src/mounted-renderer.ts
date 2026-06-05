@@ -17,7 +17,13 @@ const BOLD = `${ESC}[1m`;
 const CYAN = `${ESC}[36m`;
 const RED = `${ESC}[31m`;
 const GREEN = `${ESC}[32m`;
-const MAGENTA = `${ESC}[35m`;
+// Bright magenta (95), matching hax's PROMPT_UTF8 (ANSI_BRIGHT_MAGENTA) — the
+// purple `❯` AND the submitted-prompt `▌ ` stripe. Regular magenta (35) is duller.
+const BRIGHT_MAGENTA = `${ESC}[95m`;
+// Reset foreground only (not bold/etc), matching hax's submitted_emit row-end.
+const FG_DEFAULT = `${ESC}[39m`;
+// Cell width of the `▌ ` stripe (box glyph + space) — body wraps after it.
+const STRIPE_COLS = 2;
 const CLEAR_LINE = `\r${ESC}[2K`;
 const SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const PREVIEW_LINES = 4;
@@ -51,7 +57,7 @@ export function createMountedRenderer(input: {
 	const setI = input.setInterval ?? ((cb, ms) => globalThis.setInterval(cb, ms));
 	const clrI = input.clearInterval ?? ((h) => globalThis.clearInterval(h as never));
 	const w = (s: string) => input.stdout.write(s);
-	const prompt = utf8 ? `${MAGENTA}${BOLD}❯${RESET} ` : "> ";
+	const prompt = utf8 ? `${BRIGHT_MAGENTA}${BOLD}❯${RESET} ` : "> ";
 
 	let bannerRendered = false;
 	let lastUsage: UsageT | undefined;
@@ -129,7 +135,24 @@ export function createMountedRenderer(input: {
 		if (lines.length > PREVIEW_LINES) w(`\n${DIM}  …(+${lines.length - PREVIEW_LINES})${RESET}`);
 	};
 
+	// Re-render a just-submitted operator line as hax's bright-magenta `▌ ` stripe
+	// + magenta body, hard-wrapping at every visual row (hax submitted_emit). The
+	// line-buffered runtime erases its plain echo first, then calls this. `cols` is
+	// the live tty width; the ASCII fallback uses `|` so it never emits a stray
+	// box glyph on a non-UTF-8 terminal.
+	const echoUserInput = (text: string, cols: number): void => {
+		const stripe = utf8 ? "▌ " : "| ";
+		const width = Math.max(1, cols - STRIPE_COLS); // body cols after the stripe
+		const cps = Array.from(text); // code points, so surrogate pairs wrap as one
+		const rows: string[] = [];
+		for (let i = 0; i < cps.length; i += width) rows.push(cps.slice(i, i + width).join(""));
+		if (rows.length === 0) rows.push("");
+		const block = rows.map((r) => `${BRIGHT_MAGENTA}${stripe}${r}${FG_DEFAULT}`).join("\n");
+		w(`${block}\n`);
+	};
+
 	return {
+		echoUserInput,
 		handle(event: ProtocolEvent): void {
 			switch (event.type) {
 				case "status":

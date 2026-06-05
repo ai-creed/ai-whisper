@@ -18,8 +18,17 @@ import {
 const ORANGE_RELAY = "\u001b[38;5;215m";
 const ANSI_RESET = "\u001b[0m";
 const CLEAR_LINE = "\r\u001b[2K";
+// Cell width of the prompt (`❯ `) / submitted stripe (`▌ `): glyph + space. Used
+// to count how many tty rows the plainly-echoed input occupied before re-paint.
+const STRIPE_COLS = 2;
+const FALLBACK_COLS = 80;
 function toHex(text: string): string {
 	return Buffer.from(text, "utf8").toString("hex");
+}
+
+function ttyCols(stdout: NodeJS.WritableStream): number {
+	const cols = (stdout as Partial<NodeJS.WriteStream>).columns;
+	return typeof cols === "number" && cols > 0 ? cols : FALLBACK_COLS;
 }
 
 export function createLiveSessionRuntime(input: {
@@ -125,9 +134,26 @@ export function createLiveSessionRuntime(input: {
 	function feedLineBufferedInput(data: string) {
 		for (const char of data) {
 			if (char === "\r" || char === "\n") {
-				input.stdout.write("\n");
 				const completed = inputLineBuffer;
 				inputLineBuffer = "";
+				const session = input.interactiveSession;
+				if (completed.length > 0 && session.echoUserInput) {
+					// hax render_submitted parity: erase the plainly-echoed input
+					// (prompt `❯ ` + text, soft-wrapped at the tty width) and re-paint
+					// it as the bright-magenta `▌ ` stripe. The cursor sits at the end
+					// of the typed text, so return to col 0, climb to the prompt row,
+					// clear to end of screen, then draw the magenta version.
+					const cols = ttyCols(input.stdout);
+					const len = Array.from(completed).length;
+					const plainRows = Math.max(1, Math.ceil((STRIPE_COLS + len) / cols));
+					let erase = "\r";
+					if (plainRows > 1) erase += `\u001b[${plainRows - 1}A`;
+					erase += "\u001b[J";
+					input.stdout.write(erase);
+					session.echoUserInput(completed, cols);
+				} else {
+					input.stdout.write("\n");
+				}
 				if (completed.length > 0) {
 					input.interactiveSession.writeUserInput(completed);
 				}
