@@ -36,6 +36,36 @@ import {
 import { createBracketedPasteDetector } from "./bracketed-paste-detector.js";
 import { createRuntimeDebugLogger } from "./runtime-debug-log.js";
 
+/**
+ * Build the createRelayHandoff input for an operator-issued @@ directive in a
+ * mounted session: the handoff's sender is the MOUNTED agent (`mountTarget`), the
+ * target is the directive's recipient. Pure + exported so the sender contract is
+ * unit-testable (the inline `onRelay` closure calls this). The `pull` directive is
+ * handled earlier and never reaches here, so `directive.target` is an `AgentType`.
+ */
+export function buildRelayHandoffInput(input: {
+	mountTarget: AgentType;
+	directive: { target: AgentType; instruction: string };
+	collabId: string;
+	now: string;
+}): {
+	handoffId: string;
+	collabId: string;
+	senderAgent: AgentType;
+	targetAgent: AgentType;
+	requestText: string;
+	now: string;
+} {
+	return {
+		handoffId: `handoff_${input.now.replace(/[^0-9]/g, "")}`,
+		collabId: input.collabId,
+		senderAgent: input.mountTarget,
+		targetAgent: input.directive.target,
+		requestText: input.directive.instruction,
+		now: input.now,
+	};
+}
+
 /** Operator override for the codex submit strategy (AI_WHISPER_CODEX_SUBMIT_STRATEGY). */
 function resolveCodexSubmitStrategyOverride(): CodexSubmitStrategy | undefined {
 	const raw = process.env.AI_WHISPER_CODEX_SUBMIT_STRATEGY;
@@ -294,14 +324,18 @@ export function createMountSessionRuntime(input: {
 					});
 
 					const handoffNow = new Date().toISOString();
-					input.broker.control.createRelayHandoff({
-						handoffId: `handoff_${handoffNow.replace(/[^0-9]/g, "")}`,
-						collabId: resolvedClaim.collabId,
-						senderAgent: input.target,
-						targetAgent: directive.target,
-						requestText: directive.instruction,
-						now: handoffNow,
-					});
+					input.broker.control.createRelayHandoff(
+						buildRelayHandoffInput({
+							mountTarget: input.target,
+							// `pull` returns earlier, so this is a non-pull AgentType.
+							directive: {
+								target: directive.target as AgentType,
+								instruction: directive.instruction,
+							},
+							collabId: resolvedClaim.collabId,
+							now: handoffNow,
+						}),
+					);
 
 					sendNow(`[ai-whisper] Handed turn to ${directive.target}.`);
 
