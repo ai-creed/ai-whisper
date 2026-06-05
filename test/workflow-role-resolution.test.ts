@@ -68,13 +68,14 @@ describe("resolveRoleBindings", () => {
 });
 
 describe("parseCallerAgent", () => {
-	it("accepts claude/codex", () => {
+	it("accepts claude/codex/ezio", () => {
 		expect(parseCallerAgent("claude")).toBe("claude");
 		expect(parseCallerAgent("codex")).toBe("codex");
+		expect(parseCallerAgent("ezio")).toBe("ezio");
 	});
 
 	it("rejects anything else as null", () => {
-		for (const v of [undefined, "", "gpt", "Claude ", "both"]) {
+		for (const v of [undefined, "", "gpt", "Claude ", "both", "ezio "]) {
 			expect(parseCallerAgent(v)).toBeNull();
 		}
 	});

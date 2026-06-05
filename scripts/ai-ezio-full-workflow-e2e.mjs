@@ -1,5 +1,5 @@
 import process from "node:process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -8,17 +8,19 @@ import { createBrokerRuntime } from "@ai-whisper/broker";
 
 // M6 full-workflow e2e: a complete spec-driven-development workflow run to the
 // terminal `done` state with ezio as implementer and claude as reviewer, over the
-// REAL stack — real `whisper collab mount ezio` (real hax engine), the real broker
-// runtime, the real workflow driver / relay state machine / control service, and
-// the real `whisper workflow start` CLI (real role resolution).
+// REAL stack — real `whisper collab mount ezio` (real hax engine) AND real
+// `whisper collab mount claude` (real claude mount path, model stubbed), the real
+// broker runtime, the real workflow driver / relay state machine / control
+// service, and the real `whisper workflow start` CLI (real role resolution).
 //
-// What is mocked: only the LLMs. ezio's model is HAX_PROVIDER=mock; the evaluator
-// LLM is disabled (AI_WHISPER_RELAY_ORCHESTRATOR_ENABLED=0) and its verdicts are
-// injected deterministically via the real applyOrchestratorVerdict control method
-// (the same mechanism the broker's own integration tests use to drive a workflow).
-// ezio is mounted with a long idle threshold so it stays passive — the injected
-// evaluator verdicts are the sole, deterministic phase-advancement authority.
-// (The real ezio PTY protocol round-trip itself is covered by e2e:ai-ezio-mount.)
+// What is mocked: only the LLMs. ezio's model is HAX_PROVIDER=mock; claude's model
+// is a deterministic stub wired via AI_WHISPER_CLAUDE_CMD (scripts/e2e/fake-claude-model.mjs);
+// the evaluator LLM is replaced by deterministic injected verdicts via the real
+// applyOrchestratorVerdict control method (the same mechanism the broker's own
+// integration tests use to drive a workflow). Both agents are mounted with a long
+// idle threshold so they stay passive — the injected evaluator verdicts are the
+// sole, deterministic phase-advancement authority. (The real ezio PTY protocol
+// round-trip itself is additionally covered by e2e:ai-ezio-mount.)
 
 const root = mkdtempSync(join(tmpdir(), "ai-ezio-wf-e2e-"));
 process.env.AI_WHISPER_STATE_ROOT = root;
@@ -34,14 +36,16 @@ const childEnv = {
 	// The orchestrator must be enabled for createWorkflow, and the start preflight
 	// requires a configured evaluator — but the evaluator LLM only fires on an
 	// agent handback. A dummy key satisfies the preflight; it is never used because
-	// ezio stays passive (long idle threshold) and claude is bound (no live process),
-	// so nothing hands back. Phase advancement comes solely from the injected
-	// verdicts below — the evaluator LLM is the only mocked component.
+	// both agents stay passive (long idle threshold), so nothing hands back. Phase
+	// advancement comes solely from the injected verdicts below.
 	ANTHROPIC_API_KEY: "sk-ant-e2e-dummy-unused-key",
-	// Keep the mounted agent passive so it does not auto-accept/handback during
+	// claude's model is stubbed (real claude mount path, mocked model).
+	AI_WHISPER_CLAUDE_CMD: join(process.cwd(), "scripts/e2e/fake-claude-model.mjs"),
+	// Keep the mounted agents passive so they do not auto-accept/handback during
 	// the window — injected verdicts are the deterministic advancement authority.
 	AI_WHISPER_IDLE_THRESHOLD_MS: "600000",
 };
+chmodSync(join(process.cwd(), "scripts/e2e/fake-claude-model.mjs"), 0o755);
 
 const sh = (args) => spawnSync(process.execPath, [CLI, ...args], { cwd: root, encoding: "utf8", env: childEnv });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -55,12 +59,18 @@ const mount = pty.spawn(process.execPath, [CLI, "collab", "mount", "ezio"], {
 let mountLog = "";
 mount.onData((d) => { mountLog += d; });
 
+// The REAL `whisper collab mount claude` is spawned later (step 1b), AFTER the
+// ezio mount has created the collab + daemon, to avoid a no-live-daemon race.
+let claudeMount = null;
+let claudeLog = "";
+
 const cleanup = () => {
 	try { mount.kill(); } catch {}
+	try { claudeMount?.kill(); } catch {}
 	try { sh(["collab", "stop"]); } catch {}
 	try { rmSync(root, { recursive: true, force: true }); } catch {}
 };
-const fail = (msg) => { cleanup(); console.error("FAIL: " + msg + "\n--- mount log tail ---\n" + mountLog.slice(-2500)); process.exit(1); };
+const fail = (msg) => { cleanup(); console.error("FAIL: " + msg + "\n--- ezio mount log tail ---\n" + mountLog.slice(-2000) + "\n--- claude mount log tail ---\n" + claudeLog.slice(-2000)); process.exit(1); };
 
 // 2) Wait for the collab + daemon, then attach a passive observer broker on the
 //    daemon's shared DB.
@@ -89,14 +99,20 @@ for (let deadline = Date.now() + 15_000; Date.now() < deadline && !ezioBound; aw
 if (!ezioBound) fail("ezio never registered a bound binding via the real mount command");
 console.log("OK: real `whisper collab mount ezio` bound ezio in", collabId);
 
-// 4) Bind claude as the reviewer through the real session-binding schema.
-broker.control.setSessionBinding({
-	collabId, agentType: "claude", sessionId: "session_claude_e2e",
-	bindingSource: "adopted", now: now(),
+// 1b) Now that the collab + daemon exist, spawn the REAL claude mount (same cwd
+//     → same collab; its model is the AI_WHISPER_CLAUDE_CMD stub).
+claudeMount = pty.spawn(process.execPath, [CLI, "collab", "mount", "claude"], {
+	name: "xterm-color", cwd: root, cols: 100, rows: 30, env: childEnv,
 });
-const claudeBound = broker.control.listSessionBindings(collabId).some((b) => b.agentType === "claude" && b.bindingState === "bound");
-if (!claudeBound) fail("claude session binding did not report bound");
-console.log("OK: claude bound as reviewer");
+claudeMount.onData((d) => { claudeLog += d; });
+
+// 4) Wait for the real claude mount to bind (real mount path; stubbed model).
+let claudeBound = false;
+for (let deadline = Date.now() + 30_000; Date.now() < deadline && !claudeBound; await sleep(300)) {
+	try { claudeBound = broker.control.listSessionBindings(collabId).some((b) => b.agentType === "claude" && b.bindingState === "bound"); } catch {}
+}
+if (!claudeBound) fail("claude never registered a bound binding via the real mount command");
+console.log("OK: real `whisper collab mount claude` bound claude as reviewer");
 
 // 5) Write a small spec and start the REAL workflow with ezio implementer + claude reviewer.
 const specPath = join(root, "m6-e2e-spec.md");

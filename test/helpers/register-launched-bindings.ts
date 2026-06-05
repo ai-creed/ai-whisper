@@ -13,6 +13,8 @@ import { getSharedSqlitePath } from "../../packages/cli/src/runtime/state-root.t
 export async function registerLaunchedBindings(input: {
 	workspaceRoot: string;
 	now: string;
+	/** Agents to bind; defaults to the codex/claude pair. */
+	agents?: readonly ("codex" | "claude" | "ezio")[];
 }) {
 	const db = openDatabase(getSharedSqlitePath());
 	let resolved;
@@ -35,7 +37,7 @@ export async function registerLaunchedBindings(input: {
 	});
 
 	try {
-		for (const agentType of ["codex", "claude"] as const) {
+		for (const agentType of input.agents ?? (["codex", "claude"] as const)) {
 			const sessionId = createSessionId(createCliSessionId(agentType, input.now));
 			broker.control.registerSession({
 				sessionId,

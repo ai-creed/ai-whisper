@@ -1,5 +1,5 @@
-import { type AgentType,  createBrokerRuntime } from "@ai-whisper/broker";
-import type { CompanionProvider, WorkItem } from "@ai-whisper/shared";
+import { type AgentType, createBrokerRuntime } from "@ai-whisper/broker";
+import { agentTypes, type CompanionProvider, type WorkItem } from "@ai-whisper/shared";
 import { normalizeArtifactPaths } from "../../runtime/artifact-input.js";
 import { resolveCollab } from "../../runtime/collab-resolver.js";
 import { getSharedSqlitePath } from "../../runtime/state-root.js";
@@ -18,9 +18,9 @@ export async function runCollabTell(input: {
 	now: string;
 	collabIdOverride?: string;
 }) {
-	if (input.target !== "codex" && input.target !== "claude") {
+	if (!(agentTypes as readonly string[]).includes(input.target)) {
 		throw new Error(
-			`Invalid target "${String(input.target)}". Must be "codex" or "claude".`,
+			`Invalid target "${String(input.target)}". Must be one of: ${agentTypes.join(", ")}.`,
 		);
 	}
 
@@ -45,7 +45,17 @@ export async function runCollabTell(input: {
 			input.artifactPaths,
 		);
 
-		const senderRole = input.target === "codex" ? "claude" : "codex";
+		// The sender is the OTHER bound agent (replacement model: the pair may be
+		// ezio+claude, not codex+claude). Fall back to the literal codex<->claude
+		// flip when bindings don't yield a distinct partner (preserves prior behavior).
+		const boundAgents = broker.control
+			.listSessionBindings(resolved.collabId)
+			.filter((b) => b.bindingState === "bound")
+			.map((b) => b.agentType)
+			.filter((t): t is AgentType => (agentTypes as readonly string[]).includes(t));
+		const senderRole: AgentType =
+			boundAgents.find((a) => a !== input.target) ??
+			(input.target === "codex" ? "claude" : "codex");
 		const senderSessionId = broker.control.resolveBoundSession(
 			resolved.collabId,
 			senderRole,

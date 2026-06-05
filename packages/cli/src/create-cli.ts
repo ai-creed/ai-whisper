@@ -174,7 +174,7 @@ export function createCli(): Command {
 	collab
 		.command("tell")
 		.description("Send an instruction to an agent")
-		.requiredOption("--target <agent>", "Target agent: codex or claude")
+		.requiredOption("--target <agent>", "Target agent: codex, claude, or ezio")
 		.option("--collab <id>", "Send to a specific collab id (defaults to the active collab for cwd)")
 		.option("--action <action>", "Explicit requested action")
 		.option(
