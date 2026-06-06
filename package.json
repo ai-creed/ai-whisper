@@ -9,6 +9,7 @@
 		"test:watch": "vitest",
 		"e2e:ai-ezio-mount": "node scripts/ai-ezio-mount-relay-e2e.mjs",
 		"e2e:ai-ezio-workflow": "node scripts/ai-ezio-full-workflow-e2e.mjs",
+		"smoke:bundle": "node scripts/bundle-selfcontained-smoke.mjs",
 		"typecheck": "tsc --noEmit -p tsconfig.json && pnpm -r --if-present typecheck",
 		"lint": "eslint .",
 		"lint:fix": "eslint . --fix",
