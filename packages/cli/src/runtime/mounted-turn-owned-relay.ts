@@ -178,17 +178,20 @@ export function classifyCapture(
 	}
 
 	if (clipText.trim().length > 0) {
-		// Substantial clipboard (>= 100 chars): trust it as a fresh /copy capture.
-		// Full-screen TUI providers (e.g. Claude Code) produce cursor-positioned PTY
-		// output that normalizeCapturedOutput cannot reconstruct, so PTY similarity
-		// checks always fail even when the response is valid. The clipboard change
-		// detection in captureClipboardHandback already guarantees freshness.
-		if (clipText.trim().length >= 100) {
-			return { status: "ok", jaccardScore: null, containmentScore: null };
-		}
-
-		// Short clipboard: require PTY similarity to rule out stale or unrelated content.
-		if (turnResult.confidence === "high") {
+		// When high-confidence current-phase turn text is available, the clip MUST be
+		// validated against it — REGARDLESS of clip length. A substantial clip that
+		// bears no resemblance to the current turn is stale/prior-phase content (a
+		// re-/copy of an earlier turn that still advanced changeCount, so the lease
+		// freshness check in captureHandbackText cannot detect it), not the response
+		// to this phase's request, and must not resolve the gate.
+		//
+		// Bug 2026-06-06: the >=100-char fast-path below used to fire FIRST and trust
+		// any substantial clip unconditionally, so a reviewer's prior-phase plan
+		// review (clip_len=3732, jaccard/containment NULL) was accepted as the
+		// code-review handback even though high-confidence turn text was present to
+		// reject it. See docs/superpowers/bugs/2026-06-06-code-review-gate-passed-on-
+		// stale-prior-phase-review.md.
+		if (turnResult.confidence === "high" && turnText.trim().length > 0) {
 			const jaccardScore = computeOrderedJaccard(turnText, clipText);
 			const containmentScore = computeContainment(clipText, turnText);
 			if (jaccardScore >= 0.6 || containmentScore >= 0.8) {
@@ -199,6 +202,17 @@ export function classifyCapture(
 				jaccardScore,
 				containmentScore,
 			};
+		}
+
+		// No high-confidence turn text to validate against. Full-screen TUI providers
+		// (e.g. Claude Code) produce cursor-positioned PTY output that
+		// normalizeCapturedOutput cannot reconstruct, so PTY similarity checks always
+		// fail even when the response is valid. A substantial clipboard (>= 100 chars)
+		// captured under the held lease is trusted as a fresh /copy — the clipboard
+		// change detection in captureClipboardHandback already guarantees it is not a
+		// foreign-clobbered read.
+		if (clipText.trim().length >= 100) {
+			return { status: "ok", jaccardScore: null, containmentScore: null };
 		}
 	}
 
@@ -743,15 +757,26 @@ export function createMountedTurnOwnedRelay(input: {
 			// nor a PTY fallback (captureStatus === "no_response_captured") — and the
 			// attempt budget is not yet spent, schedule another attempt on a later
 			// idle tick instead of delivering an empty (workflow-halting) handback.
-			// Scoped to "no_response_captured" only: "no_response_captured_confidently"
-			// means the agent DID reply (non-empty clip) but it failed similarity —
-			// re-running /copy would just re-capture the same reply, so don't retry it
-			// (that is Mode A, a separate classifier concern). Leaving
-			// autoHandbackFiredFor unset lets the next tick re-fire; nextEligibleAt
-			// spaces the retries. The final attempt falls through to deliver an empty
-			// handback (the genuine-failure escalate floor).
+			// Leaving autoHandbackFiredFor unset lets the next tick re-fire;
+			// nextEligibleAt spaces the retries. The final attempt falls through to
+			// deliver an empty handback (the genuine-failure escalate floor).
 			const capturedNothing = captureStatus === "no_response_captured";
-			if (capturedNothing && retryState.attempts + 1 < autoHandbackMaxAttempts) {
+			// Bug 2026-06-06: a confident no-match against HIGH-confidence current-phase
+			// turn text means the captured clip is stale/prior-turn content — the agent
+			// is still echoing this phase's request and has not yet produced its
+			// response. Re-running /copy on a later tick will capture different
+			// (matching) content, so retry rather than burning the one-shot guard on
+			// stale content. classifyCapture only populates jaccardScore on this
+			// high-confidence similarity path; a null-score confident-miss is the Mode A
+			// claude-TUI case (agent already replied but PTY can't validate it) and must
+			// NOT retry — re-/copy would just re-capture the identical reply.
+			const staleAgainstCurrentTurn =
+				captureStatus === "no_response_captured_confidently" &&
+				classification.jaccardScore !== null;
+			if (
+				(capturedNothing || staleAgainstCurrentTurn) &&
+				retryState.attempts + 1 < autoHandbackMaxAttempts
+			) {
 				retryState.attempts += 1;
 				retryState.nextEligibleAt = Date.now() + autoHandbackRetryMs;
 				autoHandbackAttempts.set(accepted.handoffId, retryState);

@@ -379,11 +379,17 @@ describe("checkIdleActions: auto-handback captureStatus", () => {
 	});
 
 	it("calls handoffBackRelay with no_response_captured_confidently when jaccard < 0.6 and containment < 0.8", async () => {
+		// maxAttempts:1 = terminal on the first capture; this test asserts the
+		// classification→handback mapping, not the retry. With the default budget a
+		// confident no-match against high-confidence turn text now retries as
+		// stale/echoed-request content (Bug 2026-06-06) — that loop is covered by the
+		// "stale prior-phase clipboard" tests in mounted-turn-owned-relay.test.ts.
 		// Completely different vocabulary: no words overlap between clip and turn
 		const turnText = "zebra monkey banana orange apple grape lemon melon";
 		const clipText = "implement approve commit verify tests pass done";
 		const { relay, broker } = makeRelayForIdle({
 			handoffStatus: "accepted",
+			autoHandbackMaxAttempts: 1,
 			captureHandbackText: async () => clipText,
 			turnCapture: {
 				reset: vi.fn(),
