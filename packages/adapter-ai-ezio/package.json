@@ -19,6 +19,7 @@
 	"dependencies": {
 		"@ai-whisper/shared": "workspace:*",
 		"@ai-ezio/harness": "file:../../../ai-ezio/packages/harness",
-		"@ai-ezio/protocol": "file:../../../ai-ezio/packages/protocol"
+		"@ai-ezio/protocol": "file:../../../ai-ezio/packages/protocol",
+		"@ai-ezio/surface": "file:../../../ai-ezio/packages/surface"
 	}
 }
