@@ -35,6 +35,8 @@
 		"commander": "^13.1.0",
 		"fastify": "^5.2.1",
 		"ink": "^7.0.3",
+		"marked": "^15",
+		"marked-terminal": "^7",
 		"nanoid": "^5.1.5",
 		"node-pty": "^1.1.0",
 		"ollama": "^0.6.3",

@@ -145,6 +145,12 @@ importers:
       ink:
         specifier: ^7.0.3
         version: 7.0.3(@types/react@19.2.14)(react@19.2.6)
+      marked:
+        specifier: ^15
+        version: 15.0.12
+      marked-terminal:
+        specifier: ^7
+        version: 7.3.0(marked@15.0.12)
       nanoid:
         specifier: ^5.1.5
         version: 5.1.7
