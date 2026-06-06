@@ -32,6 +32,13 @@ const externalizeNpmDeps = {
 			const p = args.path;
 			if (p.startsWith(".") || path.isAbsolute(p)) return undefined; // local → bundle
 			if (p.startsWith("@ai-whisper/")) return undefined; // workspace → bundle
+			// ai-ezio TS packages (protocol, harness, …) are pure-TS `file:` deps the
+			// ezio adapter pulls in — inline them too so the published artifact is
+			// self-contained (they are NOT published to the registry). The hax BINARY
+			// package `@ai-ezio/hax-<platform>` is resolved at RUNTIME by resolve-hax
+			// via createRequire — never a static import — so it stays external.
+			if (p.startsWith("@ai-ezio/") && !p.startsWith("@ai-ezio/hax-"))
+				return undefined; // ezio TS → bundle
 			return { path: p, external: true }; // npm dependency → external
 		});
 	},
