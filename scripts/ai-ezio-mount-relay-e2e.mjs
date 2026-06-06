@@ -19,10 +19,15 @@ const sqlitePath = join(root, "state.db");
 // call; a tool user-turn spans two streams (the tool call, then a follow-up). echo
 // emits a unique marker we can grep for in the pane AND the handback.
 const TOOL_MARKER = "M8_TOOL_OUTPUT_MARKER";
+// The follow-up text of the same turn is a markdown TABLE — proves @ai-ezio/surface's
+// robust renderer turns it into a bordered grid (not raw `| --- |` pipes). The mock
+// `text` directive decodes \n, so the `\\n` below become real newlines in the table.
+const TABLE_CELL = "M8_TABLE_CELL";
 const mockScriptPath = join(root, "mock-tool-turn.txt");
 writeFileSync(
 	mockScriptPath,
-	`tool bash {"command":"echo ${TOOL_MARKER}"}\nend-turn\ntext Done\nend-turn\n`,
+	`tool bash {"command":"echo ${TOOL_MARKER}"}\nend-turn\n` +
+		`text | Col | Val |\\n| --- | --- |\\n| ${TABLE_CELL} | 2 |\nend-turn\n`,
 );
 
 // The built CLI binary is dist/bin/whisper.js (esbuild bundle).
@@ -142,6 +147,21 @@ if (!afterBanner.includes("⏺") || !afterBanner.includes(TOOL_MARKER)) {
 	process.exit(1);
 }
 console.log(`OK: M8 tool call (⏺ bash) + output (${TOOL_MARKER}) rendered in the mounted ezio pane`);
+
+// surface-extraction: the follow-up markdown TABLE must render as a bordered grid —
+// the cell text AND a box-drawing glyph — proving @ai-ezio/surface's robust renderer
+// ran (no raw `| --- |`). Guards against the original raw-pipe regression.
+const hasCell = afterBanner.includes(TABLE_CELL);
+const hasBorder = /[│┌─]/u.test(afterBanner);
+if (!hasCell || !hasBorder) {
+	cleanup();
+	console.error(
+		`FAIL: markdown table not rendered as a grid in the mounted pane (cell=${hasCell}, border=${hasBorder})\n` +
+			mountLog.slice(-2500),
+	);
+	process.exit(1);
+}
+console.log("OK: markdown table renders as a bordered grid (cell + box glyph) in the mounted ezio pane");
 
 cleanup();
 process.exit(0);
