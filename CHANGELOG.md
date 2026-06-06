@@ -5,6 +5,52 @@ All notable changes to the `ai-whisper` package are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-06-06
+
+### Added
+
+- **`ezio` as a first-class, mountable agent type.** Alongside `codex` and
+  `claude`, ai-whisper now drives `ezio` — a hax-backed, protocol-native agent
+  — through a new `@ai-whisper/adapter-ai-ezio` adapter (provider +
+  live session). Unlike the PTY-scraped agents, ezio handoff/handback rides the
+  structured JSONL protocol: turn completion is an explicit event
+  (`onTurnFinished`), so relay handbacks resolve from real turn boundaries
+  rather than quiescence heuristics (PTY-style quiescence handback is
+  suppressed for protocol-native sessions while auto-accept is preserved).
+  Mount it with `whisper collab mount ezio`, and target it in relay directives
+  as `@@ezio`.
+- **REPL-parity mounted pane for ezio.** A dependency-free markdown→ANSI
+  renderer drives a mounted pane that mirrors the standalone ezio REPL: a status
+  banner on ready, a usage line, a hax-purple prompt, a magenta stripe echo of
+  the operator's submitted input, markdown rendered at turn end, tool calls with
+  diffs, and a thinking spinner.
+- **Line-buffered operator input for protocol-native sessions.** Operator
+  keystrokes are buffered into whole lines before submit; `Ctrl+C` cancels the
+  in-flight turn (or clears the current line) and `Ctrl+D` exits the mount.
+- **Workflow roles resolve from bound agents.** A shared `AgentType` (exported
+  from `@ai-whisper/shared`, with a drift-prevention guard) lets ezio stand in
+  for `codex` or `claude` in any workflow role, so ezio-paired SDD / ralph /
+  bugfix runs work end to end.
+- **`whisper skill install --target ezio`.** The skill installer accepts the
+  ezio target and installs the workflow skills into the ezio engine-visible
+  directory.
+
+### Changed
+
+- **Workflow-launcher readiness gates are ezio-aware.** The bundled
+  `ai-whisper-sdd`, `ai-whisper-ralph`, and `ai-whisper-bugfix` skills now
+  accept `ezio` as a valid replacement agent when checking that the required
+  roles are bound before a workflow starts.
+
+### Fixed
+
+- **Capture learns each agent's `/copy` change-count signature instead of
+  assuming `1`.** Some agents (notably `claude`) emit a multi-write `/copy`,
+  which the capture path previously misread as foreign interference and
+  delivered as an empty handback — halting long autonomous steps. Capture now
+  learns the agent's actual change-count signature, so legitimate multi-write
+  copies are accepted.
+
 ## [0.4.5] - 2026-06-04
 
 ### Added
@@ -351,6 +397,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Claude + Codex) driven by structured workflows, with npm metadata
   (description, repository, homepage).
 
+[0.5.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.0
 [0.4.5]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.4.5
 [0.4.4]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.4.4
 [0.4.3]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.4.3
