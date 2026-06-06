@@ -45,7 +45,8 @@ Parse the JSON. The expected shape is:
   "daemon": { "host": "127.0.0.1", "port": 4311, "pid": 12345 },
   "agents": [
     { "agentType": "codex",  "bindingState": "bound" | "pending_attach" | "unbound" | null },
-    { "agentType": "claude", "bindingState": "bound" | "pending_attach" | "unbound" | null }
+    { "agentType": "claude", "bindingState": "bound" | "pending_attach" | "unbound" | null },
+    { "agentType": "ezio",   "bindingState": "bound" | "pending_attach" | "unbound" | null }
   ],
   "recovery": { "state": "normal" | "recovery_required" | "recovered" },
   "evaluator": { "ready": true | false, "status": "ready" | "missing_anthropic_key" | "invalid_config" | "disabled" | "unknown" }
@@ -56,12 +57,17 @@ Required for readiness:
 - `daemon !== null`
 - `status === "active"`
 - `recovery.state === "normal"`
-- BOTH `agents[*].bindingState === "bound"` (for `codex` AND `claude`)
+- **EXACTLY TWO agents bound** — among `codex`, `claude`, and `ezio`, exactly two
+  must have `bindingState === "bound"` (the implementer + reviewer pair). **`ezio`
+  is a replacement role**: it stands in for `codex` or `claude`, so do NOT require
+  `codex` and `claude` specifically. A pair of `ezio` + `claude`, `ezio` + `codex`,
+  or `codex` + `claude` all pass. (The displaced slot reads `null`/`unbound` and
+  that is expected when `ezio` replaces it.)
 - `evaluator.status` is NOT `"missing_anthropic_key"` or `"invalid_config"` (i.e., `ready`, `disabled`, and `unknown` all pass this gate; only the two true-misconfiguration statuses block)
 
 If the JSON has `{ "error": "no_collab_for_cwd", ... }`:
 
-> No collab found in this workspace. Run `whisper collab mount codex` in one terminal and `whisper collab mount claude` in another, then re-run this skill.
+> No collab found in this workspace. Mount any **two** agents (e.g. `whisper collab mount ezio` in one terminal and `whisper collab mount codex` — or `claude` — in another), then re-run this skill.
 
 If `recovery.state === "recovery_required"`:
 
@@ -71,9 +77,12 @@ If `recovery.state === "recovered"`:
 
 > The collab has been recovered and still needs reconnect. Run `whisper collab reconnect codex` and `whisper collab reconnect claude`, then re-run this skill.
 
-If one agent's `bindingState` is anything but `"bound"`:
+If FEWER than two agents are bound (count `bindingState === "bound"` across
+`codex`/`claude`/`ezio`):
 
-> <Agent> is not mounted (current bindingState: `<state>`). Run `whisper collab mount <agent>` in a separate terminal, then re-run this skill.
+> Only <N> agent(s) bound (<list bound agentTypes>). A workflow needs two — an
+> implementer and a reviewer. Mount another agent (`whisper collab mount <codex|claude|ezio>`)
+> in a separate terminal, then re-run this skill. `ezio` may replace `codex` or `claude`.
 
 (Do NOT append permission flags — mount already spawns the agent in full-permission mode; passing `--dangerously-skip-permissions` / `--dangerously-bypass-approvals-and-sandbox` again can crash the agent on a duplicate-argument error.)
 
