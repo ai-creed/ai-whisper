@@ -256,6 +256,11 @@ export function createMountSessionRuntime(input: {
 
 			try {
 				const turnCapture = createAssistantTurnCapture();
+				// Per-mount learned /copy changeCount signature (one /copy advances
+				// changeCount by a fixed agent-specific amount: codex 1, Claude Code 3).
+				// Persists across captures so a multi-write /copy isn't mistaken for a
+				// foreign write. See captureHandbackText.
+				const copySignature: { delta: number | null } = { delta: null };
 				const bracketedPaste = createBracketedPasteDetector();
 				const codexStrategyOverride = resolveCodexSubmitStrategyOverride();
 				const debugLog = createRuntimeDebugLogger({
@@ -443,6 +448,7 @@ export function createMountSessionRuntime(input: {
 								pid: process.pid,
 								turnText,
 								readChangeCount,
+								copySignature,
 								runCapture: () =>
 									captureClipboardHandback({
 										triggerCopy: () => submitInjectedInput("/copy"),

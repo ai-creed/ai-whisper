@@ -136,6 +136,92 @@ describe("captureHandbackText — interference ladder", () => {
 	});
 });
 
+describe("captureHandbackText — multi-write /copy signature (Claude Code)", () => {
+	// Root cause: one /copy advances NSPasteboard.changeCount by a fixed
+	// agent-specific amount — codex 1, but Claude Code 3 (it writes several
+	// pasteboard representations). The hardcoded `delta == 1` clean gate flagged
+	// claude's own /copy as "interference", and with no PTY turnText to content-
+	// match, the genuine response was rejected → halt. The fix LEARNS the agent's
+	// /copy signature and uses it as the clean threshold; a foreign write (delta >
+	// signature) is still detected.
+	const claudeResponse =
+		"The implementation plan at /Users/x/ezio-smoke/docs/spec.plan.md is finalized with two TDD tasks covering the slugify pipeline and its edge cases.";
+
+	it("calibrates the signature from the first /copy and accepts it (delta 3, empty turnText)", async () => {
+		const db = freshDb();
+		let cc = 100;
+		const sig: { delta: number | null } = { delta: null };
+		const result = await captureHandbackText({
+			db,
+			collabId: "collabA",
+			pid: 100,
+			turnText: "", // Claude Code: PTY turn text is never scraped
+			copySignature: sig,
+			leaseOptions,
+			recaptureAttempts: 2,
+			recaptureBackoffMs: 1,
+			sleep: async () => {},
+			readChangeCount: async () => cc,
+			runCapture: async () => {
+				cc += 3; // one /copy = three pasteboard writes
+				return claudeResponse;
+			},
+		});
+		expect(result.status).toBe("captured");
+		expect(result.text).toBe(claudeResponse);
+		expect(sig.delta).toBe(3); // signature learned for next time
+	});
+
+	it("treats delta == learned signature as clean on later captures", async () => {
+		const db = freshDb();
+		let cc = 100;
+		const sig: { delta: number | null } = { delta: 3 }; // already calibrated
+		const result = await captureHandbackText({
+			db,
+			collabId: "collabA",
+			pid: 100,
+			turnText: "",
+			copySignature: sig,
+			leaseOptions,
+			recaptureAttempts: 2,
+			recaptureBackoffMs: 1,
+			sleep: async () => {},
+			readChangeCount: async () => cc,
+			runCapture: async () => {
+				cc += 3;
+				return claudeResponse;
+			},
+		});
+		expect(result.status).toBe("captured");
+		expect(result.text).toBe(claudeResponse);
+		expect(result.interferenceDetected).toBe(false); // delta 3 <= signature 3
+	});
+
+	it("still detects a foreign write (delta > signature) after calibration", async () => {
+		const db = freshDb();
+		let cc = 100;
+		const sig: { delta: number | null } = { delta: 3 };
+		const result = await captureHandbackText({
+			db,
+			collabId: "collabA",
+			pid: 100,
+			turnText: "",
+			copySignature: sig,
+			leaseOptions,
+			recaptureAttempts: 2,
+			recaptureBackoffMs: 1,
+			sleep: async () => {},
+			readChangeCount: async () => cc,
+			runCapture: async () => {
+				cc += 4; // exceeds the learned signature of 3 → a foreign write raced us
+				return "y".repeat(150);
+			},
+		});
+		expect(result.status).toBe("degraded_pty_only");
+		expect(result.interferenceDetected).toBe(true);
+	});
+});
+
 describe("captureHandbackText — genuine empty capture (no clipboard change)", () => {
 	it("returns captured/null (NOT degraded) when capture is empty and changeCount is clean", async () => {
 		const db = freshDb();

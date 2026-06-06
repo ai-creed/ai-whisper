@@ -19,6 +19,12 @@ export interface CaptureHandbackResult {
 	interferenceDetected: boolean;
 }
 
+/** Mutable, caller-owned holder for the agent's learned /copy changeCount
+ *  signature (see captureHandbackText). One per mount; persists across captures. */
+export interface CopySignature {
+	delta: number | null;
+}
+
 export interface CaptureHandbackInput {
 	db: Database.Database;
 	collabId: string;
@@ -29,6 +35,12 @@ export interface CaptureHandbackInput {
 	runCapture: () => Promise<string | null>;
 	/** Reads NSPasteboard.changeCount, or null when the helper is unavailable. */
 	readChangeCount: () => Promise<number | null>;
+	/** Per-mount learned /copy write-signature. A single /copy advances changeCount
+	 *  by a fixed, agent-specific amount (codex = 1; Claude Code = 3, because its
+	 *  /copy writes several pasteboard representations). Learned from the first
+	 *  ownership-confirmed copy, then used as the clean-accept threshold so a
+	 *  multi-write /copy is not mistaken for a foreign write. */
+	copySignature?: CopySignature;
 	leaseOptions?: LeaseOptions;
 	/** Bounded poll-acquire. */
 	acquireMaxWaitMs?: number;
@@ -38,6 +50,10 @@ export interface CaptureHandbackInput {
 	recaptureBackoffMs?: number;
 	sleep?: (ms: number) => Promise<void>;
 }
+
+/** A clip this long, captured under the held lease, is trusted as the agent's own
+ *  /copy when no PTY turnText is available to content-validate (Claude Code). */
+const MIN_CALIBRATION_CHARS = 100;
 
 const defaultSleep = (ms: number) =>
 	new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -57,10 +73,16 @@ function contentMatches(turnText: string, clip: string): boolean {
 /**
  * Lease-wrapped clipboard capture. Acquires the host-global capture lease (or
  * degrades to PTY-only on timeout — never a racy read), snapshots changeCount
- * (C0), runs the capture, re-reads changeCount (Cn). Cn-C0 == 1 ⇒ clean accept.
- * Cn-C0 > 1 ⇒ interference ladder (re-capture → content-accept → PTY-only).
- * Releases in finally. When readChangeCount yields null the ownership check is
- * skipped and the capture is accepted on the lease alone.
+ * (C0), runs the /copy, re-reads changeCount (Cn).
+ *
+ * The clean-accept threshold is the agent's /copy write-SIGNATURE, not a hardcoded
+ * 1: one /copy advances changeCount by a fixed agent-specific amount (codex 1;
+ * Claude Code 3 — its /copy writes several pasteboard representations). `Cn-C0 <=
+ * signature` ⇒ only our own /copy wrote ⇒ clean accept. `Cn-C0 > signature` ⇒ an
+ * extra (foreign) write raced us ⇒ interference ladder (content-accept → re-capture
+ * → PTY-only). The signature is learned from the first ownership-confirmed copy
+ * (content-match, or — when there's no PTY turnText to match — a substantial clip
+ * captured under the held lease). Releases in finally.
  */
 export async function captureHandbackText(
 	input: CaptureHandbackInput,
@@ -70,6 +92,7 @@ export async function captureHandbackText(
 	const acquireBackoffMs = input.acquireBackoffMs ?? 50;
 	const recaptureAttempts = input.recaptureAttempts ?? 2;
 	const recaptureBackoffMs = input.recaptureBackoffMs ?? 50;
+	const sig = input.copySignature;
 
 	// --- bounded poll-acquire; degrade to PTY-only on timeout (no racy read) ---
 	let acquired = false;
@@ -109,35 +132,53 @@ export async function captureHandbackText(
 
 			// changeCount unavailable on either read → skip the ownership check.
 			const checkAvailable = c0 !== null && cn !== null;
-			const interfered = checkAvailable && cn - c0 > 1;
+			const delta = checkAvailable ? cn - c0 : null;
+			// Clean iff the change is within our /copy's footprint. Default to 1
+			// (a single pasteboard write) until the agent's signature is learned.
+			const threshold = sig?.delta ?? 1;
 
 			if (clip === null || clip.trim().length === 0) {
-				// Empty capture. If interference was detected, a foreign write may have
-				// clobbered our /copy before it landed — re-capture under the held lease.
-				// Otherwise (no interference, or check unavailable) this is a genuine
-				// "no clipboard change": return captured/null so the relay applies the
-				// existing no_response_captured* behavior, NOT a PTY-text degrade.
-				if (interfered) {
+				// Empty capture. If MORE than our /copy wrote (foreign), a write may
+				// have clobbered our /copy before it landed — re-capture under the held
+				// lease. Otherwise this is a genuine "no clipboard change": return
+				// captured/null so the relay applies its no_response_captured* behavior.
+				if (delta !== null && delta > threshold) {
 					interferenceDetected = true;
 					continue;
 				}
 				return { status: "captured", text: null, interferenceDetected };
 			}
 
-			const clean = checkAvailable ? cn - c0 === 1 : true;
-
-			if (clean) {
+			if (delta === null || delta <= threshold) {
+				// changeCount unavailable, or only our own /copy wrote → clean accept.
 				return { status: "captured", text: clip, interferenceDetected };
 			}
 
-			// Interference: accept ONLY on content match (fast-path bypassed).
+			// delta > threshold: either we haven't learned this agent's signature yet
+			// (its /copy writes more than one representation), or a real foreign write
+			// raced us. Confirm ownership, and on success LEARN the signature so the
+			// next capture treats this delta as clean.
 			interferenceDetected = true;
 			if (contentMatches(input.turnText, clip)) {
+				if (sig && sig.delta === null) sig.delta = delta;
 				return { status: "captured", text: clip, interferenceDetected: true };
 			}
-			// else fall through to next re-capture attempt
+			// No PTY turnText to content-match (Claude Code) and no signature yet:
+			// under the held lease a substantial clip is our own /copy, not a foreign
+			// write. Trust it, and calibrate the signature from it. (Agents WITH
+			// turnText fall through to the foreign-write reject below — unchanged.)
+			if (
+				sig?.delta == null &&
+				input.turnText.trim().length === 0 &&
+				clip.trim().length >= MIN_CALIBRATION_CHARS
+			) {
+				if (sig) sig.delta = delta;
+				return { status: "captured", text: clip, interferenceDetected: true };
+			}
+			// Signature known and exceeded with no content match → genuine foreign
+			// write → fall through to re-capture.
 		}
-		// Every attempt showed interference and never content-validated.
+		// Every attempt showed a foreign write and never content-validated.
 		return { status: "degraded_pty_only", text: null, interferenceDetected: true };
 	} finally {
 		releaseCaptureLease(input.db, input.collabId);
