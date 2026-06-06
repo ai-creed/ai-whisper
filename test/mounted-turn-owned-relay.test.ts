@@ -39,8 +39,12 @@ describe("mounted turn-owned relay", () => {
 			broker,
 			collabId: "collab_turn",
 			currentAgent: "claude",
-			writeLocalMessage: (text: string) => { writes.push(text); },
-			writeUserInput: (text: string) => { injected.push(text); },
+			writeLocalMessage: (text: string) => {
+				writes.push(text);
+			},
+			writeUserInput: (text: string) => {
+				injected.push(text);
+			},
 			openComposer,
 		});
 
@@ -89,7 +93,9 @@ describe("mounted turn-owned relay", () => {
 			collabId: "collab_turn",
 			currentAgent: "claude",
 			writeLocalMessage: () => {},
-			writeUserInput: (text: string) => { injected.push(text); },
+			writeUserInput: (text: string) => {
+				injected.push(text);
+			},
 			openComposer: vi.fn(),
 		});
 
@@ -134,7 +140,9 @@ describe("mounted turn-owned relay", () => {
 			broker,
 			collabId: "collab_turn",
 			currentAgent: "claude",
-			writeLocalMessage(text: string) { writes.push(text); },
+			writeLocalMessage(text: string) {
+				writes.push(text);
+			},
 			writeUserInput() {},
 			openComposer: () => Promise.resolve(null),
 		});
@@ -150,7 +158,9 @@ describe("mounted turn-owned relay", () => {
 		expect(rendered).toContain("[ai-whisper] Pending handoff from codex");
 		expect(rendered).toContain("Implement the approved plan");
 		expect(rendered).toContain("Keep commits small.");
-		expect(rendered).toContain("[a] accept  [e] amend  [d] decline  [space] defer");
+		expect(rendered).toContain(
+			"[a] accept  [e] amend  [d] decline  [space] defer",
+		);
 
 		const visibleLines = rendered
 			.split("\n")
@@ -204,7 +214,9 @@ describe("mounted turn-owned relay", () => {
 			broker,
 			collabId: "collab_turn",
 			currentAgent: "claude",
-			writeLocalMessage(text: string) { writes.push(text); },
+			writeLocalMessage(text: string) {
+				writes.push(text);
+			},
 			writeUserInput() {},
 			openComposer: () => Promise.resolve(null),
 		});
@@ -219,7 +231,9 @@ describe("mounted turn-owned relay", () => {
 	it("opens the editor when the owner chooses amend before accepting and injects without submitting", async () => {
 		const injected: string[] = [];
 		const openComposer = vi.fn(() =>
-			Promise.resolve("Implement the approved plan\nKeep commits very small.\n"),
+			Promise.resolve(
+				"Implement the approved plan\nKeep commits very small.\n",
+			),
 		);
 		const broker = {
 			control: {
@@ -250,7 +264,9 @@ describe("mounted turn-owned relay", () => {
 			collabId: "collab_turn",
 			currentAgent: "claude",
 			writeLocalMessage() {},
-			writeUserInput: (text: string) => { injected.push(text); },
+			writeUserInput: (text: string) => {
+				injected.push(text);
+			},
 			openComposer,
 		});
 
@@ -261,7 +277,9 @@ describe("mounted turn-owned relay", () => {
 				initialValue: "Implement the approved plan\nKeep commits small.",
 			}),
 		);
-		expect(injected[0]).toBe("Implement the approved plan\nKeep commits very small.\n");
+		expect(injected[0]).toBe(
+			"Implement the approved plan\nKeep commits very small.\n",
+		);
 	});
 
 	it("declines a pending handoff without requiring a reason", () => {
@@ -374,7 +392,9 @@ describe("mounted turn-owned relay", () => {
 			broker,
 			collabId: "collab_turn",
 			currentAgent: "claude",
-			writeLocalMessage: (text: string) => { writes.push(text); },
+			writeLocalMessage: (text: string) => {
+				writes.push(text);
+			},
 			writeUserInput() {},
 			openComposer: () => Promise.resolve(null),
 		});
@@ -414,7 +434,9 @@ describe("mounted turn-owned relay", () => {
 			broker,
 			collabId: "collab_turn",
 			currentAgent: "claude",
-			writeLocalMessage: (text: string) => { writes.push(text); },
+			writeLocalMessage: (text: string) => {
+				writes.push(text);
+			},
 			writeUserInput() {},
 			openComposer: () => Promise.resolve(null),
 		});
@@ -488,12 +510,16 @@ describe("mounted turn-owned relay", () => {
 			currentAgent: "claude",
 			writeLocalMessage() {},
 			writeUserInput() {},
-			openComposer: ({ initialValue }: { initialValue: string }) => Promise.resolve(initialValue),
+			openComposer: ({ initialValue }: { initialValue: string }) =>
+				Promise.resolve(initialValue),
 			turnCapture: {
 				reset: vi.fn(),
 				finishAssistantTurn: vi.fn(),
 				hasVisibleAssistantTurn: () => true,
-				extractLatestAssistantTurn: () => ({ confidence: "high" as const, text: "Implemented the plan." }),
+				extractLatestAssistantTurn: () => ({
+					confidence: "high" as const,
+					text: "Implemented the plan.",
+				}),
 			},
 		});
 
@@ -545,7 +571,10 @@ describe("mounted turn-owned relay", () => {
 				reset,
 				finishAssistantTurn: vi.fn(),
 				hasVisibleAssistantTurn: () => true,
-				extractLatestAssistantTurn: () => ({ confidence: "high" as const, text: "done" }),
+				extractLatestAssistantTurn: () => ({
+					confidence: "high" as const,
+					text: "done",
+				}),
 			},
 		});
 
@@ -590,7 +619,10 @@ describe("mounted turn-owned relay", () => {
 				reset,
 				finishAssistantTurn: vi.fn(),
 				hasVisibleAssistantTurn: () => true,
-				extractLatestAssistantTurn: () => ({ confidence: "high" as const, text: "some text" }),
+				extractLatestAssistantTurn: () => ({
+					confidence: "high" as const,
+					text: "some text",
+				}),
 			},
 		});
 
@@ -640,7 +672,10 @@ describe("mounted turn-owned relay", () => {
 				reset: vi.fn(),
 				finishAssistantTurn: vi.fn(),
 				hasVisibleAssistantTurn: () => true,
-				extractLatestAssistantTurn: () => ({ confidence: "low" as const, text: null }),
+				extractLatestAssistantTurn: () => ({
+					confidence: "low" as const,
+					text: null,
+				}),
 			},
 		});
 
@@ -697,7 +732,10 @@ describe("mounted turn-owned relay", () => {
 				reset: vi.fn(),
 				finishAssistantTurn: vi.fn(),
 				hasVisibleAssistantTurn: () => true,
-				extractLatestAssistantTurn: () => ({ confidence: "high" as const, text: "noisy terminal output" }),
+				extractLatestAssistantTurn: () => ({
+					confidence: "high" as const,
+					text: "noisy terminal output",
+				}),
 			},
 		});
 
@@ -751,7 +789,10 @@ describe("mounted turn-owned relay", () => {
 				reset: vi.fn(),
 				finishAssistantTurn: vi.fn(),
 				hasVisibleAssistantTurn: () => true,
-				extractLatestAssistantTurn: () => ({ confidence: "high" as const, text: "noisy terminal output" }),
+				extractLatestAssistantTurn: () => ({
+					confidence: "high" as const,
+					text: "noisy terminal output",
+				}),
 			},
 		});
 
@@ -812,7 +853,10 @@ describe("mounted turn-owned relay", () => {
 				reset: vi.fn(),
 				finishAssistantTurn: vi.fn(),
 				hasVisibleAssistantTurn: () => true,
-				extractLatestAssistantTurn: () => ({ confidence: "high" as const, text: "noisy terminal output" }),
+				extractLatestAssistantTurn: () => ({
+					confidence: "high" as const,
+					text: "noisy terminal output",
+				}),
 			},
 		});
 
@@ -852,14 +896,20 @@ describe("mounted turn-owned relay", () => {
 			broker,
 			collabId: "collab_turn",
 			currentAgent: "claude",
-			writeLocalMessage(text: string) { writes.push(text); },
+			writeLocalMessage(text: string) {
+				writes.push(text);
+			},
 			writeUserInput() {},
-			openComposer: ({ initialValue }: { initialValue: string }) => Promise.resolve(initialValue),
+			openComposer: ({ initialValue }: { initialValue: string }) =>
+				Promise.resolve(initialValue),
 			turnCapture: {
 				reset: vi.fn(),
 				finishAssistantTurn: vi.fn(),
 				hasVisibleAssistantTurn: () => true,
-				extractLatestAssistantTurn: () => ({ confidence: "high" as const, text: "Implemented the plan." }),
+				extractLatestAssistantTurn: () => ({
+					confidence: "high" as const,
+					text: "Implemented the plan.",
+				}),
 			},
 		});
 
@@ -868,7 +918,9 @@ describe("mounted turn-owned relay", () => {
 
 		expect(writes.join("")).toContain("Ready to hand back to codex");
 		expect(writes.join("")).toContain("[h] hand back");
-		expect(writes.join("")).not.toContain("Ready to hand back to codex\n[h] hand back");
+		expect(writes.join("")).not.toContain(
+			"Ready to hand back to codex\n[h] hand back",
+		);
 		expect(broker.control.handoffBackRelay).toHaveBeenCalledWith(
 			expect.objectContaining({
 				targetAgent: "codex",
@@ -908,14 +960,20 @@ describe("mounted turn-owned relay", () => {
 			broker,
 			collabId: "collab_turn",
 			currentAgent: "claude",
-			writeLocalMessage(text: string) { writes.push(text); },
+			writeLocalMessage(text: string) {
+				writes.push(text);
+			},
 			writeUserInput() {},
-			openComposer: ({ initialValue }: { initialValue: string }) => Promise.resolve(initialValue),
+			openComposer: ({ initialValue }: { initialValue: string }) =>
+				Promise.resolve(initialValue),
 			turnCapture: {
 				reset: vi.fn(),
 				finishAssistantTurn: vi.fn(),
 				hasVisibleAssistantTurn: () => true,
-				extractLatestAssistantTurn: () => ({ confidence: "high" as const, text: "Implemented the plan." }),
+				extractLatestAssistantTurn: () => ({
+					confidence: "high" as const,
+					text: "Implemented the plan.",
+				}),
 			},
 		});
 
@@ -957,7 +1015,9 @@ describe("mounted turn-owned relay", () => {
 			broker,
 			collabId: "collab_turn",
 			currentAgent: "claude",
-			writeLocalMessage(text: string) { writes.push(text); },
+			writeLocalMessage(text: string) {
+				writes.push(text);
+			},
 			writeUserInput() {},
 			openComposer,
 			captureHandbackText: () => Promise.resolve(null),
@@ -967,7 +1027,10 @@ describe("mounted turn-owned relay", () => {
 				reset: vi.fn(),
 				finishAssistantTurn: vi.fn(),
 				hasVisibleAssistantTurn: () => false,
-				extractLatestAssistantTurn: () => ({ confidence: "low" as const, text: null }),
+				extractLatestAssistantTurn: () => ({
+					confidence: "low" as const,
+					text: null,
+				}),
 			},
 		});
 
@@ -1028,8 +1091,12 @@ describe("mounted turn-owned relay", () => {
 			interactiveSession: {
 				start: () => Promise.resolve(),
 				stop: () => Promise.resolve(),
-				writeUserInput(data: string) { userInputs.push(data); },
-				sendLocalMessage(data: string) { localMessages.push(data); },
+				writeUserInput(data: string) {
+					userInputs.push(data);
+				},
+				sendLocalMessage(data: string) {
+					localMessages.push(data);
+				},
 				onExit() {},
 			},
 			stdin,
@@ -1057,14 +1124,20 @@ describe("mounted turn-owned relay", () => {
 		const stdin = new PassThrough();
 		const localMessages: string[] = [];
 		const userInputs: string[] = [];
-			const handleOwnerInput = vi.fn((text: string) => Promise.resolve(text === "a"));
+		const handleOwnerInput = vi.fn((text: string) =>
+			Promise.resolve(text === "a"),
+		);
 
 		const runtime = createLiveSessionRuntime({
 			interactiveSession: {
 				start: () => Promise.resolve(),
 				stop: () => Promise.resolve(),
-				writeUserInput(data: string) { userInputs.push(data); },
-				sendLocalMessage(data: string) { localMessages.push(data); },
+				writeUserInput(data: string) {
+					userInputs.push(data);
+				},
+				sendLocalMessage(data: string) {
+					localMessages.push(data);
+				},
 				onExit() {},
 			},
 			stdin,
@@ -1088,14 +1161,20 @@ describe("mounted turn-owned relay", () => {
 		const stdin = new PassThrough();
 		const localMessages: string[] = [];
 		const userInputs: string[] = [];
-		const handleOwnerInput = vi.fn((text: string) => Promise.resolve(text === "a"));
+		const handleOwnerInput = vi.fn((text: string) =>
+			Promise.resolve(text === "a"),
+		);
 
 		const runtime = createLiveSessionRuntime({
 			interactiveSession: {
 				start: () => Promise.resolve(),
 				stop: () => Promise.resolve(),
-				writeUserInput(data: string) { userInputs.push(data); },
-				sendLocalMessage(data: string) { localMessages.push(data); },
+				writeUserInput(data: string) {
+					userInputs.push(data);
+				},
+				sendLocalMessage(data: string) {
+					localMessages.push(data);
+				},
 				onExit() {},
 			},
 			stdin,
@@ -1127,7 +1206,8 @@ describe("mounted turn-owned relay", () => {
 			const chainStatus = overrides?.chainStatus ?? "active";
 			const hasMeta = overrides?.hasMeta ?? true;
 			const handoffStatus = overrides?.handoffStatus ?? "pending";
-			const applyOrchestratorVerdict = overrides?.applyOrchestratorVerdict ?? vi.fn();
+			const applyOrchestratorVerdict =
+				overrides?.applyOrchestratorVerdict ?? vi.fn();
 
 			return {
 				control: {
@@ -1172,7 +1252,9 @@ describe("mounted turn-owned relay", () => {
 				broker,
 				collabId: "collab_turn",
 				currentAgent: "claude",
-				writeLocalMessage: (text: string) => { writes.push(text); },
+				writeLocalMessage: (text: string) => {
+					writes.push(text);
+				},
 				writeUserInput() {},
 				openComposer: () => Promise.resolve(null),
 			});
@@ -1192,7 +1274,9 @@ describe("mounted turn-owned relay", () => {
 				broker,
 				collabId: "collab_turn",
 				currentAgent: "claude",
-				writeLocalMessage: (text: string) => { writes.push(text); },
+				writeLocalMessage: (text: string) => {
+					writes.push(text);
+				},
 				writeUserInput() {},
 				openComposer: () => Promise.resolve(null),
 			});
@@ -1210,7 +1294,9 @@ describe("mounted turn-owned relay", () => {
 				broker,
 				collabId: "collab_turn",
 				currentAgent: "claude",
-				writeLocalMessage: (text: string) => { writes.push(text); },
+				writeLocalMessage: (text: string) => {
+					writes.push(text);
+				},
 				writeUserInput() {},
 				openComposer: () => Promise.resolve(null),
 			});
@@ -1251,14 +1337,19 @@ describe("mounted turn-owned relay", () => {
 				broker,
 				collabId: "collab_turn",
 				currentAgent: "claude",
-				writeLocalMessage: (text: string) => { writes.push(text); },
+				writeLocalMessage: (text: string) => {
+					writes.push(text);
+				},
 				writeUserInput() {},
 				openComposer: () => Promise.resolve(null),
 				turnCapture: {
 					reset: vi.fn(),
 					finishAssistantTurn: vi.fn(),
 					hasVisibleAssistantTurn: () => true,
-					extractLatestAssistantTurn: () => ({ confidence: "high" as const, text: "done" }),
+					extractLatestAssistantTurn: () => ({
+						confidence: "high" as const,
+						text: "done",
+					}),
 				},
 			});
 
@@ -1322,7 +1413,10 @@ describe("mounted turn-owned relay", () => {
 
 			// "h" — hand back on an accepted-and-ready handoff (age >= 30s, assistant turn visible)
 			{
-				const broker = makeAutonomousBroker({ workflowStatus: "halted", handoffStatus: "accepted" });
+				const broker = makeAutonomousBroker({
+					workflowStatus: "halted",
+					handoffStatus: "accepted",
+				});
 				const relay = createMountedTurnOwnedRelay({
 					broker,
 					collabId: "collab_turn",
@@ -1334,18 +1428,27 @@ describe("mounted turn-owned relay", () => {
 						reset: vi.fn(),
 						finishAssistantTurn: vi.fn(),
 						hasVisibleAssistantTurn: () => true,
-						extractLatestAssistantTurn: () => ({ confidence: "high" as const, text: "hand-back result" }),
+						extractLatestAssistantTurn: () => ({
+							confidence: "high" as const,
+							text: "hand-back result",
+						}),
 					},
 				});
 				await relay.handleOwnerInput("h");
 				expect(broker.control.handoffBackRelay).toHaveBeenCalledWith(
-					expect.objectContaining({ handoffId: "handoff_1", targetAgent: "codex" }),
+					expect.objectContaining({
+						handoffId: "handoff_1",
+						targetAgent: "codex",
+					}),
 				);
 			}
 
 			// Ctrl+H (\u0008) — force hand back on any accepted handoff
 			{
-				const broker = makeAutonomousBroker({ workflowStatus: "halted", handoffStatus: "accepted" });
+				const broker = makeAutonomousBroker({
+					workflowStatus: "halted",
+					handoffStatus: "accepted",
+				});
 				const relay = createMountedTurnOwnedRelay({
 					broker,
 					collabId: "collab_turn",
@@ -1356,7 +1459,10 @@ describe("mounted turn-owned relay", () => {
 				});
 				await relay.handleOwnerInput("\u0008");
 				expect(broker.control.handoffBackRelay).toHaveBeenCalledWith(
-					expect.objectContaining({ handoffId: "handoff_1", targetAgent: "codex" }),
+					expect.objectContaining({
+						handoffId: "handoff_1",
+						targetAgent: "codex",
+					}),
 				);
 			}
 		});
@@ -1456,7 +1562,10 @@ describe("auto-handback retry on empty capture (Mode C)", () => {
 		reset: vi.fn(),
 		finishAssistantTurn: vi.fn(),
 		hasVisibleAssistantTurn: () => true,
-		extractLatestAssistantTurn: () => ({ confidence: "low" as const, text: null }),
+		extractLatestAssistantTurn: () => ({
+			confidence: "low" as const,
+			text: null,
+		}),
 	});
 
 	const longReply =
@@ -1611,6 +1720,158 @@ describe("auto-handback retry on empty capture (Mode C)", () => {
 // TODO(2026-05-29): RED regression guard — skipped until the Mode A fix lands.
 // Re-enable when classifyCapture trusts a fresh short clipboard. See
 // docs/superpowers/bugs/2026-05-29-handback-capture-failures.md.
+// Bug 2026-06-06 — a stale prior-phase /copy was accepted as the current phase's
+// gate handback. See docs/superpowers/bugs/2026-06-06-code-review-gate-passed-on-
+// stale-prior-phase-review.md. Recorded occurrence wf_433d667d66664446 (SDD
+// code-review phase): the captured reviewer handback (clip_len=3732) was a
+// byte-for-byte duplicate of the reviewer's PRIOR plan-writing review, while the
+// PTY turn was the freshly-injected review prompt (turn_len=68853,
+// turn_confidence=high) and jaccard/containment were NULL — yet capture_status was
+// "ok". The >=100-char fast-path in classifyCapture trusts ANY substantial clip as
+// a fresh /copy, even when high-confidence current-phase turn text is available to
+// validate it against, so prior-phase content resolved the gate before the
+// reviewer's real code review ever landed.
+//
+// The texts below mirror that occurrence: a generic "review the commits, run tests"
+// request (the echoed PTY turn) vs a detailed prior-phase PLAN review (the stale
+// clip). They share almost no >=4-char vocabulary (verified jaccard 0.018,
+// containment 0.177 — both far below the 0.6 / 0.8 accept thresholds), so the only
+// reason today's classifier accepts the clip is the length fast-path.
+const BUG_20260606_INJECTED_REVIEW_REQUEST =
+	"Review the implementer's changes for this phase — the commits in 918ec23..HEAD " +
+	"on branch feat/ezio-surface-extraction. Inspect each diff hunk, check the new " +
+	"code against the spec acceptance criteria, run the project's verification and " +
+	"tests, and report whether the executed code is approved with any blocking findings.";
+const BUG_20260606_STALE_PLAN_REVIEW =
+	"Review matrix: the implementation plan now covers every spec acceptance " +
+	"criterion. Plan extracts the surface module cleanly; Plan lines 24-38 enumerate " +
+	"the migration steps and rollback. Approved — the document sequences the work " +
+	"sensibly and the phasing reads correctly. No blocking concerns with the written plan.";
+
+describe("classifyCapture — stale prior-phase clipboard (Bug 2026-06-06)", () => {
+	it("rejects a substantial clip dissimilar to the high-confidence current-phase turn", () => {
+		// High-confidence current-phase turn text IS available, so the clip can and
+		// must be similarity-validated. A substantial clip that bears no resemblance
+		// to it is stale/unrelated content — not the response to this phase's request
+		// — and must NOT resolve the gate. Today the >=100-char fast-path returns
+		// "ok" with null scores, accepting the stale prior-phase review as the gate
+		// input; that is the defect this guards against.
+		const result = classifyCapture(
+			{ confidence: "high", text: BUG_20260606_INJECTED_REVIEW_REQUEST },
+			BUG_20260606_STALE_PLAN_REVIEW,
+		);
+		expect(result.status).not.toBe("ok");
+	});
+
+	it("still trusts a substantial clip when no high-confidence turn text exists (Claude TUI)", () => {
+		// Regression fence: the fast-path's reason for existing — full-screen TUI
+		// providers (Claude Code) whose PTY turn normalizes to empty/low-confidence,
+		// leaving no text to validate against — must keep working. With no
+		// high-confidence turn text, a substantial fresh clip is still accepted.
+		const result = classifyCapture(
+			{ confidence: "low", text: "" },
+			BUG_20260606_STALE_PLAN_REVIEW,
+		);
+		expect(result.status).toBe("ok");
+	});
+});
+
+describe("auto-handback gate — stale prior-phase clipboard (Bug 2026-06-06)", () => {
+	// codex reviewer hands back to the claude implementer. Mirrors the recorded run:
+	// turnOwner=codex (reviewer), an accepted handoff whose request was the review
+	// prompt, waiting implementer=claude.
+	function makeReviewerBroker() {
+		return {
+			control: {
+				getRelayTurnState: vi.fn(() => ({
+					collabId: "collab_turn",
+					turnOwner: "codex" as const,
+					waitingAgent: "claude" as const,
+					unresolvedHandoffId: "handoff_1",
+					handoffState: "accepted" as const,
+					handoffAgeMs: 35_000,
+				})),
+				getRelayHandoff: vi.fn(() => ({
+					handoffId: "handoff_1",
+					collabId: "collab_turn",
+					senderAgent: "claude" as const,
+					targetAgent: "codex" as const,
+					requestText: BUG_20260606_INJECTED_REVIEW_REQUEST,
+					status: "accepted" as const,
+				})),
+				acceptRelayHandoff: vi.fn(),
+				declineRelayHandoff: vi.fn(),
+				deferRelayHandoff: vi.fn(),
+				handoffBackRelay: vi.fn(),
+				recordCaptureDiagnostic: vi.fn(() => ({ captureId: "cap_1" })),
+				getHandoffWithWorkflowMeta: vi.fn(() => ({
+					workflowId: "wf_test",
+					chainId: "ch_test",
+				})),
+			},
+		};
+	}
+
+	// The reviewer's REAL code review, produced only on a later idle tick. Its PTY
+	// turn text and its /copy clip agree (it is the genuine current-phase response),
+	// so it clears the similarity check and is the handback the gate should deliver.
+	const freshCodeReview =
+		"Reviewed commits 918ec23..HEAD. Finding: the extracted surface drops the " +
+		"error path for an unbound agent, so a mount failure returns success. " +
+		"Not approved until the executed code restores that guard and adds a test.";
+
+	it("does not deliver stale prior-phase clipboard content as the gate handback; loops until the fresh review lands", async () => {
+		const broker = makeReviewerBroker();
+		// Tick 1: reviewer has NOT yet reviewed the code. The PTY turn is the echoed
+		// review prompt (high confidence) and the clipboard still holds its
+		// prior-phase plan review. Tick 2: the reviewer's fresh code review.
+		const turns = [
+			{
+				confidence: "high" as const,
+				text: BUG_20260606_INJECTED_REVIEW_REQUEST,
+			},
+			{ confidence: "high" as const, text: freshCodeReview },
+		];
+		const clips = [BUG_20260606_STALE_PLAN_REVIEW, freshCodeReview];
+		let tick = 0;
+		const relay = createMountedTurnOwnedRelay({
+			broker,
+			collabId: "collab_turn",
+			currentAgent: "codex",
+			writeLocalMessage() {},
+			writeUserInput() {},
+			openComposer: () => Promise.resolve(null),
+			turnCapture: {
+				reset: vi.fn(),
+				finishAssistantTurn: vi.fn(),
+				hasVisibleAssistantTurn: () => true,
+				extractLatestAssistantTurn: () =>
+					turns[Math.min(tick, turns.length - 1)]!,
+			},
+			autoHandbackRetryMs: 0,
+			autoHandbackMaxAttempts: 5,
+			captureHandbackText: () =>
+				Promise.resolve(clips[Math.min(tick, clips.length - 1)] ?? null),
+		});
+
+		// Tick 1 — stale prior-phase content must NOT resolve the gate.
+		await relay.checkIdleActions();
+		expect(broker.control.handoffBackRelay).not.toHaveBeenCalled();
+
+		// Tick 2 — the reviewer's genuine code review lands and is delivered.
+		tick = 1;
+		await relay.checkIdleActions();
+		expect(broker.control.handoffBackRelay).toHaveBeenCalledTimes(1);
+		expect(broker.control.handoffBackRelay).toHaveBeenCalledWith(
+			expect.objectContaining({
+				targetAgent: "claude",
+				requestText: freshCodeReview,
+				captureStatus: "ok",
+			}),
+		);
+	});
+});
+
 describe.skip("classifyCapture — short freshly-captured clipboard (Mode A repro)", () => {
 	it("accepts a short claude reply when PTY turn text is empty/low-confidence (TUI normalization)", () => {
 		const result = classifyCapture(
