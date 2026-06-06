@@ -5,6 +5,23 @@ All notable changes to the `ai-whisper` package are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-06-06
+
+### Fixed
+
+- **Published artifact is now self-contained — fixes `ERR_MODULE_NOT_FOUND`
+  on a fresh install.** 0.5.0 shipped broken: the esbuild bundle inlined only
+  `@ai-whisper/*` workspace packages and externalized everything else,
+  including the `@ai-ezio/harness` + `@ai-ezio/protocol` `file:` dependencies
+  that the ezio adapter imports. Those packages are not published to npm, so a
+  fresh global install threw `ERR_MODULE_NOT_FOUND` on `@ai-ezio/harness` for
+  *every* command (even `--version`); dev checkouts worked only because their
+  `node_modules` carried the `file:` symlinks. The bundle now also inlines the
+  pure-TS `@ai-ezio` packages, leaving only the platform-specific hax *binary*
+  package (`@ai-ezio/hax-<platform>`) runtime-resolved via
+  `createRequire(import.meta.url)` (ESM-safe). Verified against a global
+  install with no `@ai-ezio` present.
+
 ## [0.5.0] - 2026-06-06
 
 ### Added
@@ -397,6 +414,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Claude + Codex) driven by structured workflows, with npm metadata
   (description, repository, homepage).
 
+[0.5.1]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.1
 [0.5.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.0
 [0.4.5]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.4.5
 [0.4.4]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.4.4
