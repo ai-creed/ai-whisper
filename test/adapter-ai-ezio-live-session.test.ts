@@ -73,11 +73,12 @@ describe("createAiEzioLiveSession", () => {
 });
 
 // M8: the live-session no longer renders the pane itself — it delegates every
-// byte of display to the mounted renderer (unit-tested in mounted-renderer.test).
-// These tests assert the SEAM: events reach the renderer (banner on status, a
-// usage line + prompt after a turn) and the handback still fires before the
-// renderer draws the prompt. Detailed look (binary-k usage, ❯ prompt parity,
-// markdown, tool diffs) is covered by mounted-renderer.test.ts.
+// byte of display to the mounted renderer (now @ai-ezio/surface, unit-tested in
+// that package's mounted-renderer.test). These tests assert the SEAM: events
+// reach the renderer (banner on status, a usage line + prompt after a turn) and
+// the handback still fires before the renderer draws the prompt. Detailed look
+// (binary-k usage, ❯ prompt parity, markdown, tool diffs) is covered by
+// @ai-ezio/surface's mounted-renderer.test.ts.
 describe("createAiEzioLiveSession — delegates display to the mounted renderer (M8)", () => {
 	function capturing() {
 		const writes: string[] = [];
