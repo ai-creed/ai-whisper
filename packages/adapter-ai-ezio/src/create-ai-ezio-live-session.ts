@@ -5,7 +5,7 @@ import {
 	type AiEzioEngineSession,
 	type CreateEngineSession,
 } from "./ai-ezio-engine.js";
-import { createMountedRenderer } from "./mounted-renderer.js";
+import { createMountedRenderer } from "@ai-ezio/surface";
 
 export function createAiEzioLiveSession(input: {
 	stdout: NodeJS.WritableStream;
