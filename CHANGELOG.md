@@ -5,6 +5,32 @@ All notable changes to the `ai-whisper` package are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-06-08
+
+### Fixed
+
+- **Relay no longer accepts a stale prior-phase clipboard as the current
+  gate's handback.** At the capture gate, a `/copy` that returned clipboard
+  content left over from an earlier phase could be delivered as the current
+  phase's reply (observed as a code-review gate handing back the *previous*
+  phase's output). The capture gate now rejects clipboard whose provenance
+  does not match the in-flight phase, so a stale read degrades to a re-capture
+  instead of a wrong-phase handback. Covered by a RED reproduction test.
+
+### Changed
+
+- **Mounted markdown renderer now lives in `@ai-ezio/surface`.** The
+  dependency-light markdown→ANSI renderer that drives the ezio mounted pane was
+  extracted out of `@ai-whisper/adapter-ai-ezio` into the shared
+  `@ai-ezio/surface` package; the adapter now consumes it rather than carrying
+  its own copy. The renderer's previously-inlined npm dependencies (`marked`,
+  `marked-terminal`, `string-width`, `cli-table3`) are now externalized by the
+  bundle and declared in the published package's `dependencies`, so the
+  self-contained artifact keeps installing them normally on a fresh install.
+  A repeatable smoke test (`npm pack` + clean install) guards bundle
+  self-containment, and an e2e test asserts markdown tables still render as a
+  grid in the mounted pane.
+
 ## [0.5.1] - 2026-06-06
 
 ### Fixed
@@ -414,6 +440,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Claude + Codex) driven by structured workflows, with npm metadata
   (description, repository, homepage).
 
+[0.5.2]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.2
 [0.5.1]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.1
 [0.5.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.0
 [0.4.5]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.4.5
