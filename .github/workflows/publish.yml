@@ -12,15 +12,15 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      # ai-whisper depends on @ai-ezio/harness + @ai-ezio/protocol via
-      # file:../ai-ezio/packages/* — check out both repos side-by-side so the
+      # ai-whisper depends on @ai-ezio/harness + @ai-ezio/protocol + @ai-ezio/surface
+      # via file:../ai-ezio/packages/* — check out both repos side-by-side so the
       # relative paths resolve (mirrors ci.yml and the local dev layout).
       - name: Checkout ai-whisper
         uses: actions/checkout@v5
         with:
           path: ai-whisper
 
-      - name: Checkout ai-ezio (provides @ai-ezio/harness + @ai-ezio/protocol)
+      - name: Checkout ai-ezio (provides @ai-ezio/harness + @ai-ezio/protocol + @ai-ezio/surface)
         uses: actions/checkout@v5
         with:
           repository: ai-creed/ai-ezio
@@ -41,11 +41,11 @@ jobs:
             ai-ezio/pnpm-lock.yaml
           registry-url: "https://registry.npmjs.org"
 
-      - name: Build ai-ezio harness + protocol
+      - name: Build ai-ezio harness + surface (+ protocol)
         working-directory: ai-ezio
         run: |
           pnpm install --frozen-lockfile
-          pnpm --filter "@ai-ezio/harness..." build
+          pnpm --filter "@ai-ezio/harness..." --filter "@ai-ezio/surface..." build
 
       - name: Install dependencies
         working-directory: ai-whisper

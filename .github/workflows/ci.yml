@@ -10,8 +10,8 @@ jobs:
     name: lint · build · typecheck · test
     runs-on: ubuntu-latest
     steps:
-      # ai-whisper depends on @ai-ezio/harness + @ai-ezio/protocol via
-      # file:../ai-ezio/packages/* (see package.json). Both repos are checked out
+      # ai-whisper depends on @ai-ezio/harness + @ai-ezio/protocol + @ai-ezio/surface
+      # via file:../ai-ezio/packages/* (see package.json). Both repos are checked out
       # side-by-side inside the workspace so those relative paths resolve, mirroring
       # the local dev layout. ai-ezio is public, so the default token is sufficient.
       - name: Checkout ai-whisper
@@ -19,7 +19,7 @@ jobs:
         with:
           path: ai-whisper
 
-      - name: Checkout ai-ezio (provides @ai-ezio/harness + @ai-ezio/protocol)
+      - name: Checkout ai-ezio (provides @ai-ezio/harness + @ai-ezio/protocol + @ai-ezio/surface)
         uses: actions/checkout@v5
         with:
           repository: ai-creed/ai-ezio
@@ -41,11 +41,11 @@ jobs:
             ai-whisper/pnpm-lock.yaml
             ai-ezio/pnpm-lock.yaml
 
-      - name: Build ai-ezio harness + protocol
+      - name: Build ai-ezio harness + surface (+ protocol)
         working-directory: ai-ezio
         run: |
           pnpm install --frozen-lockfile
-          pnpm --filter "@ai-ezio/harness..." build
+          pnpm --filter "@ai-ezio/harness..." --filter "@ai-ezio/surface..." build
 
       - name: Install dependencies
         working-directory: ai-whisper
