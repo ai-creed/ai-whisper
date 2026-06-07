@@ -14,7 +14,7 @@
 	},
 	"dependencies": {
 		"@ai-whisper/shared": "workspace:*",
-		"better-sqlite3": "^11.8.1",
+		"better-sqlite3": "^12.10.0",
 		"fastify": "^5.2.1",
 		"nanoid": "^5.1.5",
 		"zod": "^3.24.2"

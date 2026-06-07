@@ -5,6 +5,20 @@ All notable changes to the `ai-whisper` package are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3] - 2026-06-08
+
+### Fixed
+
+- **`npm install -g ai-whisper` now succeeds on Node 26.** Bumped
+  `better-sqlite3` from `^11.8.1` to `^12.10.0`. `better-sqlite3` 11.x ships no
+  prebuilt binary for Node 26, and its native source fails to compile against
+  Node 26's V8 (it uses the removed `v8::Object::GetPrototype`,
+  `v8::Context::GetIsolate`, and `PropertyCallbackInfo::This` APIs), so a fresh
+  global install on Node 26 aborted in `node-gyp`. 12.10.0 ships a Node 26
+  (ABI 147) prebuilt binary and declares support for `node: 20.x – 26.x`. No
+  API changes in ai-whisper's usage; the full suite (including the SQLite
+  migration / capture-lease / state.db paths) is green on Node 26.
+
 ## [0.5.2] - 2026-06-08
 
 ### Fixed
@@ -440,6 +454,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Claude + Codex) driven by structured workflows, with npm metadata
   (description, repository, homepage).
 
+[0.5.3]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.3
 [0.5.2]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.2
 [0.5.1]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.1
 [0.5.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.0
