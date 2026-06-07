@@ -136,6 +136,9 @@ importers:
       better-sqlite3:
         specifier: ^11.8.1
         version: 11.10.0
+      cli-table3:
+        specifier: ^0.6
+        version: 0.6.5
       commander:
         specifier: ^13.1.0
         version: 13.1.0
@@ -2037,6 +2040,7 @@ snapshots:
   '@ai-ezio/surface@file:../ai-ezio/packages/surface':
     dependencies:
       '@ai-ezio/protocol': file:../ai-ezio/packages/protocol
+      cli-table3: 0.6.5
       marked: 15.0.12
       marked-terminal: 7.3.0(marked@15.0.12)
       string-width: 8.2.1
