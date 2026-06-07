@@ -163,6 +163,9 @@ importers:
       react:
         specifier: ^19.2.6
         version: 19.2.6
+      string-width:
+        specifier: ^8
+        version: 8.2.1
       zod:
         specifier: ^3.24.2
         version: 3.25.76
@@ -2036,6 +2039,7 @@ snapshots:
       '@ai-ezio/protocol': file:../ai-ezio/packages/protocol
       marked: 15.0.12
       marked-terminal: 7.3.0(marked@15.0.12)
+      string-width: 8.2.1
 
   '@alcalzone/ansi-tokenize@0.3.0':
     dependencies:
