@@ -709,6 +709,12 @@ export function createMountedTurnOwnedRelay(input: {
 			let clipboardText: string | null = null;
 			let leaseDegraded = false;
 			let interferenceDetected = false;
+			// True only for a CLEAN captured result whose clip was empty (the
+			// read-before-write race signature — bug 2026-06-08). Deliberately NOT set
+			// for a lease degrade (which delivers the PTY fallback), an exception, or a
+			// null short-circuit — those have their own established handling and must
+			// not be folded into the empty-clip retry.
+			let cleanCaptureEmpty = false;
 			try {
 				const captureResult =
 					(await input.captureHandbackText?.(turnResult.text ?? "")) ?? null;
@@ -718,6 +724,7 @@ export function createMountedTurnOwnedRelay(input: {
 					interferenceDetected = captureResult.interferenceDetected;
 					if (captureResult.status === "captured") {
 						clipboardText = captureResult.text;
+						cleanCaptureEmpty = (captureResult.text ?? "").trim().length === 0;
 					} else {
 						leaseDegraded = true; // degraded_pty_only (timeout or persistent interference)
 						console.warn(
@@ -773,8 +780,21 @@ export function createMountedTurnOwnedRelay(input: {
 			const staleAgainstCurrentTurn =
 				captureStatus === "no_response_captured_confidently" &&
 				classification.jaccardScore !== null;
+			// Bug 2026-06-08 (wf_292cb0933def440b): a CLEAN captured result whose clip was
+			// EMPTY, paired with non-empty HIGH-confidence turn chrome, classifies as
+			// no_response_captured_confidently (jaccardScore null — there is no clip to
+			// score), landing in the same bucket as the Mode A no-retry case. But an empty
+			// clip from a clean capture is a read-before-write race (the /copy had not landed
+			// yet), not a definitive no-response: retry rather than burning the one-shot guard
+			// on an empty handback that escalates/halts the gate. Scoped to cleanCaptureEmpty
+			// so it stays distinct from (a) Mode A, which has a PRESENT short clip — re-/copy
+			// would just re-capture the identical reply; (b) a lease degrade, which already
+			// delivers the PTY fallback; and (c) an exception/null short-circuit.
+			const emptyClipConfidentMiss =
+				captureStatus === "no_response_captured_confidently" &&
+				cleanCaptureEmpty;
 			if (
-				(capturedNothing || staleAgainstCurrentTurn) &&
+				(capturedNothing || staleAgainstCurrentTurn || emptyClipConfidentMiss) &&
 				retryState.attempts + 1 < autoHandbackMaxAttempts
 			) {
 				retryState.attempts += 1;

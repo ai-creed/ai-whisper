@@ -258,6 +258,41 @@ describe("captureHandbackText — genuine empty capture (no clipboard change)", 
 	});
 });
 
+describe("captureHandbackText — slow /copy read-before-write race (Bug 2026-06-08)", () => {
+	// wf_292cb0933def440b halted at the code-review gate: codex's /copy was slow to
+	// land, so the first pbpaste read came back EMPTY while NSPasteboard.changeCount
+	// had not advanced at all (delta 0, no foreign write). The old code treated an
+	// empty clip + delta 0 as a GENUINE "no clipboard change" and returned
+	// captured/null immediately — misclassifying a read-before-write race as a
+	// no-response and halting the workflow. When changeCount shows NO movement, the
+	// /copy simply has not landed yet, so re-poll under the held lease before
+	// concluding no-change.
+	it("re-polls on an empty capture with NO changeCount movement, then captures the late-landing clip", async () => {
+		const db = freshDb();
+		let cc = 10;
+		let attempt = 0;
+		const lateClip =
+			"The reviewer's verdict: approved. All acceptance rows pass and the committed tests cover the exact contract conditions.";
+		const result = await captureHandbackText({
+			db,
+			...baseDeps,
+			recaptureAttempts: 2,
+			recaptureBackoffMs: 1,
+			sleep: async () => {},
+			readChangeCount: async () => cc,
+			runCapture: async () => {
+				attempt += 1;
+				if (attempt < 2) return null; // /copy has not landed → changeCount unchanged
+				cc += 1; // codex's /copy finally writes the pasteboard
+				return lateClip;
+			},
+		});
+		expect(result.status).toBe("captured");
+		expect(result.text).toBe(lateClip);
+		expect(result.interferenceDetected).toBe(false); // delta 0 is not a foreign write
+	});
+});
+
 describe("captureHandbackText — changeCount helper absent", () => {
 	it("skips the ownership check and accepts a clean long capture when readChangeCount returns null", async () => {
 		const db = freshDb();

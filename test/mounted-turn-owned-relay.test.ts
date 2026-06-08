@@ -1702,6 +1702,110 @@ describe("auto-handback retry on empty capture (Mode C)", () => {
 		expect(capture).toHaveBeenCalledTimes(1);
 		expect(broker.control.handoffBackRelay).not.toHaveBeenCalled();
 	});
+
+	// Bug 2026-06-08 (wf_292cb0933def440b): codex's /copy was slow to land, so the
+	// clipboard read came back EMPTY while the PTY scrape held HIGH-confidence turn
+	// text (the /copy echo + "Copied to clipboard" chrome + composer placeholder).
+	// classifyCapture buckets an empty clip + non-empty turn text as
+	// no_response_captured_confidently with a NULL jaccard — the one bucket the
+	// retry guard refused to retry (it was reserved for Mode A: agent replied,
+	// clip present but similarity-rejected). So the relay delivered an empty
+	// handback on the FIRST shot and the code-review gate escalated/halted. An
+	// empty-clip confident miss is a read-before-write race, not a definitive
+	// no-response: it must retry. Mode A (clip PRESENT but short/rejected) still
+	// must NOT retry — re-/copy would just re-capture the identical reply.
+	const codexReview =
+		"Review matrix: every acceptance row passes. Approved. The committed tests cover the exact M9 contract conditions and verification is green across both repos.";
+	// The reviewer's turn IS visible in the PTY (high confidence — codex's
+	// line-based output normalizes cleanly), so the turn scrape matches the
+	// eventual /copy once the slow /copy finally lands. (We model this on the
+	// harness's claude turn owner; the classifier/retry logic is agent-agnostic —
+	// what reproduces the bug is high-confidence turn text paired with an empty
+	// clip, regardless of which provider produced it.)
+	const highConfTurnCapture = () => ({
+		reset: vi.fn(),
+		finishAssistantTurn: vi.fn(),
+		hasVisibleAssistantTurn: () => true,
+		extractLatestAssistantTurn: () => ({
+			confidence: "high" as const,
+			text: codexReview,
+		}),
+	});
+
+	it("retries an empty-clip confident miss (slow /copy) instead of delivering an empty handback", async () => {
+		const broker = makeAcceptedBroker();
+		let calls = 0;
+		const relay = createMountedTurnOwnedRelay({
+			broker,
+			collabId: "collab_turn",
+			currentAgent: "claude",
+			writeLocalMessage() {},
+			writeUserInput() {},
+			openComposer: () => Promise.resolve(null),
+			turnCapture: highConfTurnCapture(),
+			autoHandbackRetryMs: 0,
+			autoHandbackMaxAttempts: 3,
+			captureHandbackText: () => {
+				calls += 1;
+				// First tick: a CLEAN capture whose /copy has not landed yet → empty clip
+				// (the real race signature: {status:"captured", text:null}). Later: it lands.
+				return Promise.resolve(
+					calls === 1
+						? {
+								status: "captured" as const,
+								text: null,
+								interferenceDetected: false,
+							}
+						: codexReview,
+				);
+			},
+		});
+
+		await relay.checkIdleActions();
+		expect(broker.control.handoffBackRelay).not.toHaveBeenCalled();
+
+		await relay.checkIdleActions();
+		expect(broker.control.handoffBackRelay).toHaveBeenCalledTimes(1);
+		expect(broker.control.handoffBackRelay).toHaveBeenCalledWith(
+			expect.objectContaining({
+				handoffId: "handoff_1",
+				targetAgent: "codex",
+				requestText: codexReview,
+				captureStatus: "ok",
+			}),
+		);
+	});
+
+	it("still delivers immediately (no retry) on a Mode A confident miss with a PRESENT short clip", async () => {
+		// Regression guard for the distinction the empty-clip retry hinges on. Mode A:
+		// LOW-confidence turn text (claude full-screen TUI normalizes to empty) + a
+		// short PRESENT clip → no_response_captured_confidently with a NULL jaccard but
+		// a non-empty clip. The agent already replied; re-/copy would re-capture the
+		// identical reply, so it must remain a single-shot delivery. The empty-clip
+		// retry keys on clipboardText.length === 0, so it must NOT widen to this case.
+		const broker = makeAcceptedBroker();
+		const shortMismatch = "ok"; // present but < 100 chars and unlike the turn text
+		const relay = createMountedTurnOwnedRelay({
+			broker,
+			collabId: "collab_turn",
+			currentAgent: "claude",
+			writeLocalMessage() {},
+			writeUserInput() {},
+			openComposer: () => Promise.resolve(null),
+			turnCapture: claudeTurnCapture(),
+			autoHandbackRetryMs: 0,
+			autoHandbackMaxAttempts: 3,
+			captureHandbackText: () => Promise.resolve(shortMismatch),
+		});
+
+		await relay.checkIdleActions();
+		expect(broker.control.handoffBackRelay).toHaveBeenCalledTimes(1);
+		expect(broker.control.handoffBackRelay).toHaveBeenCalledWith(
+			expect.objectContaining({
+				captureStatus: "no_response_captured_confidently",
+			}),
+		);
+	});
 });
 
 // Bug 2026-05-29 — Mode A: short claude reply rejected as low-confidence.

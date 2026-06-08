@@ -138,13 +138,26 @@ export async function captureHandbackText(
 			const threshold = sig?.delta ?? 1;
 
 			if (clip === null || clip.trim().length === 0) {
-				// Empty capture. If MORE than our /copy wrote (foreign), a write may
-				// have clobbered our /copy before it landed — re-capture under the held
-				// lease. Otherwise this is a genuine "no clipboard change": return
-				// captured/null so the relay applies its no_response_captured* behavior.
+				// Empty capture. Three sub-cases:
+				//  - delta > threshold: a foreign write clobbered our /copy before it
+				//    landed → re-capture under the held lease.
+				//  - delta === 0: the pasteboard did not change AT ALL since before our
+				//    /copy, so our /copy has not LANDED yet (a slow provider /copy —
+				//    e.g. codex serializing a large review). This is a read-before-write
+				//    race, NOT a no-response: re-poll under the held lease rather than
+				//    concluding no-change. Returning null here halted wf_292cb0933def440b
+				//    (2026-06-08) — the empty clip was misclassified as a confident
+				//    no-response and the code-review gate escalated. delta 0 is not a
+				//    foreign write, so it must NOT set interferenceDetected.
+				//  - otherwise (delta within 1..threshold, or changeCount unavailable):
+				//    a genuine "no clipboard change" → return captured/null so the relay
+				//    applies its no_response_captured* behavior.
 				if (delta !== null && delta > threshold) {
 					interferenceDetected = true;
 					continue;
+				}
+				if (delta === 0 && attempt < recaptureAttempts) {
+					continue; // /copy not landed yet — retry within the attempt budget
 				}
 				return { status: "captured", text: null, interferenceDetected };
 			}
