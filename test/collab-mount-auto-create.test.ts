@@ -73,6 +73,10 @@ describe("runCollabMount auto-create", () => {
 					ok: true,
 				}) as never,
 			runStartFn: stubbedRunStart,
+			// stubbedRunStart writes a fake daemon pid; treat it as alive so a
+			// re-resolve never revives via the real runCollabRecover →
+			// spawnBrokerDaemon (which would leak a broker process).
+			isDaemonPidAlive: () => true,
 		});
 
 		const db = openDatabase(getSharedSqlitePath());
@@ -104,6 +108,9 @@ describe("runCollabMount auto-create", () => {
 			assessBroker: async () =>
 				({ pidAlive: true, httpReachable: true, ok: true }) as never,
 			runStartFn: stubbedRunStart,
+			// Fake daemon pid → treat as alive so re-resolve skips the real revive
+			// spawn (no leaked broker process).
+			isDaemonPidAlive: () => true,
 		};
 
 		// First mount: auto-creates collab #1.
@@ -162,6 +169,10 @@ describe("runCollabMount auto-create", () => {
 						ok: true,
 					}) as never,
 				runStartFn: stubbedRunStart,
+				// The 2nd iteration re-resolves the existing collab whose fake
+				// daemon pid is dead; treat it as alive so mount reuses it instead
+				// of reviving via the real spawnBrokerDaemon (the original leak).
+				isDaemonPidAlive: () => true,
 			});
 		}
 
@@ -235,6 +246,8 @@ describe("runCollabMount auto-create", () => {
 					ok: true,
 				}) as never,
 			runStartFn,
+			// Fake daemon pid → treat as alive so no real revive spawn leaks.
+			isDaemonPidAlive: () => true,
 		});
 
 		const db = openDatabase(getSharedSqlitePath());

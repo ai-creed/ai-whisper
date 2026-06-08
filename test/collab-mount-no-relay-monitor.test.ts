@@ -29,6 +29,11 @@ describe("runCollabMount no longer requires relay-monitor", () => {
 				resolveCurrentTty: () => "/dev/ttys031",
 				assessBroker,
 				createRuntime: () => fakeRuntime as never,
+				// The seeded daemon pid is fake (not a live process). Without this,
+				// mount's stale-pid check treats it as dead and revives via the real
+				// runCollabRecover → spawnBrokerDaemon, leaking a tsx/node broker
+				// process. Treat the daemon as alive so no real fork happens.
+				isDaemonPidAlive: () => true,
 			}),
 		).resolves.toBeUndefined();
 	});
