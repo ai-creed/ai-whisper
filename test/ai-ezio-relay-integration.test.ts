@@ -20,6 +20,8 @@ function fakeEngine(reply: string) {
 		}),
 		interrupt: vi.fn(),
 		submitAndWait: vi.fn(async () => ({ turnId: "t1", content: reply })),
+		registerDelegatedTools: vi.fn(),
+		sendToolResult: vi.fn(),
 		onExit: vi.fn(),
 		close: vi.fn(),
 	};

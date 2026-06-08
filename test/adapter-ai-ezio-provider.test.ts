@@ -14,6 +14,8 @@ function engineReturning(content: string): AiEzioEngineSession {
 		submit: vi.fn(),
 		interrupt: vi.fn(),
 		submitAndWait: vi.fn(async () => ({ turnId: "t", content })),
+		registerDelegatedTools: vi.fn(),
+		sendToolResult: vi.fn(),
 		onExit: vi.fn(),
 		close: vi.fn(),
 	};
@@ -27,6 +29,8 @@ function engineThrowing(error: Error): AiEzioEngineSession {
 		submitAndWait: vi.fn(async () => {
 			throw error;
 		}),
+		registerDelegatedTools: vi.fn(),
+		sendToolResult: vi.fn(),
 		onExit: vi.fn(),
 		close: vi.fn(),
 	};

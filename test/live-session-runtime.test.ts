@@ -107,6 +107,8 @@ describe("live session runtime", () => {
 				submit: () => {},
 				interrupt: () => {},
 				submitAndWait: () => Promise.resolve({ turnId: "t", content: "" }),
+				registerDelegatedTools: () => {},
+				sendToolResult: () => {},
 				onExit: () => {},
 				close: () => {},
 			}),

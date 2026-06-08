@@ -1,5 +1,6 @@
 import type { InteractiveSessionController } from "@ai-whisper/shared";
 import type { ProtocolEvent } from "@ai-ezio/protocol";
+import { loadMcpHost, type McpHost } from "@ai-ezio/mcp-host";
 import {
 	defaultCreateEngineSession,
 	type AiEzioEngineSession,
@@ -10,8 +11,16 @@ import { createMountedRenderer } from "@ai-ezio/surface";
 export function createAiEzioLiveSession(input: {
 	stdout: NodeJS.WritableStream;
 	createEngineSession?: CreateEngineSession;
+	/** Injectable MCP host (tests); defaults to loadMcpHost from mcp.json. The
+	 * SAME factory the standalone CLI uses — this is what gives mounted ezio MCP
+	 * tools (M9). */
+	mcpHost?: McpHost;
 }): InteractiveSessionController {
 	const create = input.createEngineSession ?? defaultCreateEngineSession;
+	// Mounted posture: confirm degrades to deny (no human to prompt in a pane).
+	// cwd = the mounted process's workspace, from which cortex derives the repo.
+	const host =
+		input.mcpHost ?? loadMcpHost({ mode: "mounted", cwd: process.cwd() });
 
 	let session: AiEzioEngineSession | null = null;
 	let lastContent = "";
@@ -54,7 +63,10 @@ export function createAiEzioLiveSession(input: {
 			default:
 				break;
 		}
-		// 2) Display — the renderer owns all pane output.
+		// 2) MCP host — services delegated tool calls (tool_call_requested →
+		//    sendToolResult). No-op for non-delegated events.
+		void host.handleEvent(event);
+		// 3) Display — the renderer owns all pane output.
 		renderer.handle(event);
 	};
 
@@ -65,11 +77,12 @@ export function createAiEzioLiveSession(input: {
 				for (const h of exitHandlers) h();
 			});
 			await session.start();
+			// Register delegated (MCP) tools BEFORE any submit, so the first turn
+			// sees them. Same loadMcpHost factory + host.start sequence as standalone.
+			await host.start(session);
 		},
-		// async to satisfy InteractiveSessionController.stop(): Promise<void>; the
-		// protocol close is synchronous.
-		// eslint-disable-next-line @typescript-eslint/require-await
 		async stop() {
+			await host.stop();
 			session?.close();
 			session = null;
 		},

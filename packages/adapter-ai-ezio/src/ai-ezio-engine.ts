@@ -1,5 +1,5 @@
 import { Session } from "@ai-ezio/harness";
-import type { ProtocolEvent } from "@ai-ezio/protocol";
+import type { DelegatedToolDef, ProtocolEvent } from "@ai-ezio/protocol";
 
 /** The subset of the harness Session the adapter drives. */
 export interface AiEzioEngineSession {
@@ -9,7 +9,16 @@ export interface AiEzioEngineSession {
 	 *  between turns). */
 	interrupt(): void;
 	submitAndWait(text: string): Promise<{ turnId: string; content: string }>;
-	onExit(handler: (info: { code: number | null; signal: NodeJS.Signals | null }) => void): void;
+	/** M9: advertise host-delegated (MCP) tools before the first submit. */
+	registerDelegatedTools(tools: DelegatedToolDef[]): void;
+	/** M9: reply to a `tool_call_requested` (correlated by callId). */
+	sendToolResult(callId: string, output: string, status: "ok" | "error"): void;
+	onExit(
+		handler: (info: {
+			code: number | null;
+			signal: NodeJS.Signals | null;
+		}) => void,
+	): void;
 	close(): void;
 }
 
