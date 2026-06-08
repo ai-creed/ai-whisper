@@ -1,6 +1,6 @@
 {
 	"name": "ai-whisper",
-	"version": "0.5.4",
+	"version": "0.5.5",
 	"description": "Terminal-first relay for paired AI coding agents (Claude + Codex), driven by structured workflows.",
 	"license": "Apache-2.0",
 	"repository": {
@@ -31,6 +31,7 @@
 	},
 	"dependencies": {
 		"@anthropic-ai/sdk": "^0.88.0",
+		"@modelcontextprotocol/sdk": "^1.0.0",
 		"better-sqlite3": "^12.10.0",
 		"cli-table3": "^0.6",
 		"commander": "^13.1.0",

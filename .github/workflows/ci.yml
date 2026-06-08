@@ -69,3 +69,9 @@ jobs:
       - name: Test
         working-directory: ai-whisper
         run: pnpm -s test
+
+      # Catches the ERR_MODULE_NOT_FOUND class where a bundle-externalized dep
+      # is not declared in CLI dependencies (mirrors the publish gate).
+      - name: Bundle self-containment smoke
+        working-directory: ai-whisper
+        run: node scripts/bundle-selfcontained-smoke.mjs

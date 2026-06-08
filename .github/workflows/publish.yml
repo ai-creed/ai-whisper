@@ -63,6 +63,14 @@ jobs:
         working-directory: ai-whisper
         run: pnpm -s test
 
+      # Packs the tarball, installs it in a clean dir (no workspace symlinks),
+      # and runs `whisper --version` — catches the ERR_MODULE_NOT_FOUND class
+      # where a bundle-externalized dep (e.g. @modelcontextprotocol/sdk, pulled
+      # in by the inlined @ai-ezio/mcp-host) is not declared in CLI dependencies.
+      - name: Bundle self-containment smoke
+        working-directory: ai-whisper
+        run: node scripts/bundle-selfcontained-smoke.mjs
+
       - name: Publish to npm
         working-directory: ai-whisper/packages/cli
         run: |

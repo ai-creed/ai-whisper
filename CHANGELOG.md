@@ -5,6 +5,20 @@ All notable changes to the `ai-whisper` package are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.5] - 2026-06-09
+
+### Fixed
+
+- **`ai-whisper` failed to start with `ERR_MODULE_NOT_FOUND:
+  @modelcontextprotocol/sdk` after a clean global install (0.5.4 regression).**
+  The mounted ai-ezio MCP host (inlined into the bundle from
+  `@ai-ezio/mcp-host`) imports `@modelcontextprotocol/sdk`, which the CLI
+  bundle externalizes but did not declare as a runtime dependency — so npm
+  never installed it. Added it to the published package's `dependencies`, and
+  wired the existing bundle self-containment smoke test (`npm pack` → install
+  in a clean dir → `whisper --version`) into both CI and the publish workflow
+  so an undeclared externalized dependency can no longer reach the registry.
+
 ## [0.5.4] - 2026-06-09
 
 ### Fixed
@@ -470,6 +484,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Claude + Codex) driven by structured workflows, with npm metadata
   (description, repository, homepage).
 
+[0.5.5]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.5
 [0.5.4]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.4
 [0.5.3]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.3
 [0.5.2]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.2
