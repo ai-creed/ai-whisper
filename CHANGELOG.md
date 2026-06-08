@@ -5,6 +5,22 @@ All notable changes to the `ai-whisper` package are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.4] - 2026-06-09
+
+### Fixed
+
+- **Autonomous workflows no longer halt when a mounted agent's `/copy` is slow
+  to reach the clipboard.** A read-before-write race in the relay capture
+  pipeline could read an empty clipboard before the target agent's `/copy`
+  finished writing it, classify the empty clip as a confident "no response",
+  and deliver an empty handback that escalated the review gate and halted the
+  workflow. The capture layer now re-polls under the held lease while the
+  pasteboard change-count has not advanced (the `/copy` is still in flight),
+  and the relay retries an empty-clip confident-miss instead of burning its
+  one-shot guard — kept distinct from a present-but-rejected clip, a lease
+  degrade, or a capture exception, which retain their existing single-shot
+  behavior.
+
 ## [0.5.3] - 2026-06-08
 
 ### Fixed
@@ -454,6 +470,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Claude + Codex) driven by structured workflows, with npm metadata
   (description, repository, homepage).
 
+[0.5.4]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.4
 [0.5.3]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.3
 [0.5.2]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.2
 [0.5.1]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.1
