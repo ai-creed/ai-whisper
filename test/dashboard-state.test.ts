@@ -157,6 +157,55 @@ describe("buildWallState", () => {
 		expect(w).toMatchObject({ panes: [], page: 0, pageCount: 0, totalRuns: 0, selected: 0 });
 	});
 
+	it("projects startIso (workflowCreatedAt) and artifact (specPath) onto the pane", () => {
+		const s = sum({
+			collabId: "c1",
+			workflowCreatedAt: "2026-05-20T00:00:00.000Z",
+			specPath: "docs/specs/foo-design.md",
+		});
+		const w = buildWallState({
+			summaries: [s],
+			now: "2026-05-20T00:01:00.000Z",
+			idleThresholdMs: 60_000,
+			capacity: 10,
+			page: 0,
+			selected: 0,
+			snapshots: { c1: emptySnap },
+		});
+		const pane = w.panes[0]!;
+		expect(pane.startIso).toBe("2026-05-20T00:00:00.000Z");
+		expect(pane.artifact).toBe("docs/specs/foo-design.md");
+	});
+
+	it("manual-relay pane has null startIso and artifact", () => {
+		const s = sum({
+			collabId: "m",
+			workflowId: null,
+			workflowType: null,
+			workflowStatus: null,
+			currentPhaseRunId: null,
+			phaseIndex: null,
+			phaseName: null,
+			currentRound: null,
+			maxRounds: null,
+			chainStatus: null,
+			workflowCreatedAt: null,
+			specPath: null,
+		});
+		const w = buildWallState({
+			summaries: [s],
+			now: "2026-05-20T00:01:00.000Z",
+			idleThresholdMs: 60_000,
+			capacity: 10,
+			page: 0,
+			selected: 0,
+			snapshots: { m: emptySnap },
+		});
+		const pane = w.panes[0]!;
+		expect(pane.startIso).toBeNull();
+		expect(pane.artifact).toBeNull();
+	});
+
 	// Bug C / Task 8b: the Wall path must feed the active step into the liveness
 	// snapshot so the phase-aware budget applies on the Wall too (the pane still
 	// renders P/R only). An execute step idle over the 5-min baseline but under

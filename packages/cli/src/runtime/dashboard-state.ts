@@ -31,6 +31,8 @@ export type WallPaneState = {
 	stuckWhy: string | null;
 	events: WallEvent[]; // newest first, length ≤ 2
 	elapsed: string; // for compact card line 2
+	startIso: string | null; // workflow start (workflowCreatedAt) — UTC HH:MM on the card
+	artifact: string | null; // repo-relative spec/goal/bug-report path
 	cardKind: "full" | "compact";
 };
 export type WallStateSection = {
@@ -650,6 +652,8 @@ function projectPane(
 		stuckWhy: rv.stuck ? rv.why : null,
 		events,
 		elapsed,
+		startIso: s.workflowCreatedAt,
+		artifact: s.specPath,
 		cardKind,
 	};
 }

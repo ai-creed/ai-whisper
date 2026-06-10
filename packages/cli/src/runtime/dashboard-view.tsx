@@ -43,6 +43,26 @@ function progressBar(progress: { current: number; total: number }): string {
 	return BAR_FILLED.repeat(current) + BAR_EMPTY.repeat(total - current);
 }
 
+// Middle-ellipsis: keep the END of the path (the filename — the most identifying
+// part) and as much of the head as fits. Returns the string unchanged when it
+// already fits, or a hard slice when the budget is too small for an ellipsis.
+export function midEllipsis(path: string, width: number): string {
+	if (width <= 1 || path.length <= width) return path;
+	if (width <= 3) return path.slice(0, width);
+	const keepEnd = Math.ceil((width - 1) / 2);
+	const keepStart = width - 1 - keepEnd;
+	return path.slice(0, keepStart) + "…" + path.slice(path.length - keepEnd);
+}
+
+// Start time as UTC HH:MM (matches the relay logs' UTC timestamps). Null when
+// the timestamp is missing/unparseable so the caller can omit the segment.
+export function hhmmUTC(iso: string): string | null {
+	const d = new Date(iso);
+	if (Number.isNaN(d.getTime())) return null;
+	const p = (n: number) => String(n).padStart(2, "0");
+	return `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+}
+
 function dotForHealth(h: "healthy" | "degraded" | "dead"): {
 	glyph: string;
 	color: string;
@@ -128,6 +148,22 @@ function FullCard(props: {
 	const roundText =
 		pane.round != null ? `  R${pane.round.current}/${pane.round.max}` : "";
 
+	const startHHMM = pane.startIso ? hhmmUTC(pane.startIso) : null;
+	// Trim defensively: a whitespace-only artifact must omit the subline (and keep
+	// both event rows), never render an empty arrow. The broker/builders already
+	// normalize via displayArtifactPath; this is belt-and-braces at the view.
+	const artifactText = pane.artifact?.trim() || null;
+	// Wide cards show " · HH:MM · elapsed"; narrow cards drop the time tail so the
+	// artifact gets the full width.
+	const timeTail = isWide
+		? startHHMM
+			? ` · ${startHHMM} · ${pane.elapsed}`
+			: ` · ${pane.elapsed}`
+		: "";
+	// Budget for the artifact: inner width minus border, indent, "→ ", and the tail.
+	const artifactBudget = Math.max(8, props.width - 2 - 2 - 2 - timeTail.length);
+	const eventCount = artifactText ? 1 : 2; // subline displaces the older event row
+
 	return (
 		<Box
 			flexDirection="column"
@@ -145,6 +181,12 @@ function FullCard(props: {
 				{typeText ? <Text color={THEME.muted}> {typeText}</Text> : null}
 				{roundText ? <Text color={THEME.muted}>{roundText}</Text> : null}
 			</Text>
+			{artifactText ? (
+				<Text wrap="truncate" color={THEME.muted}>
+					{"  "}→ {midEllipsis(artifactText, artifactBudget)}
+					{timeTail}
+				</Text>
+			) : null}
 			<Text wrap="truncate">
 				{"  "}
 				<Text color={THEME.muted}>{progressText}</Text>{" "}
@@ -160,7 +202,7 @@ function FullCard(props: {
 					);
 				})}
 			</Text>
-			{pane.events.slice(0, 2).map((e, i) => (
+			{pane.events.slice(0, eventCount).map((e, i) => (
 				<Text key={i} wrap="truncate" color={THEME.muted}>
 					{"  "}
 					{padRight(e.step, 9)} {padRight(e.route, 13)} {padRight(e.verdict, 9)}
@@ -211,6 +253,10 @@ function CompactCard(props: {
 	const progressText = pane.progress
 		? `P${pane.progress.current}/${pane.progress.total}`
 		: "—";
+	const tail = `${progressText} · ${statusWord} · ${pane.elapsed}`;
+	const artBudget = Math.max(8, props.width - 2 - 2 - 4 - tail.length);
+	const compactArtifact = pane.artifact?.trim() || null; // whitespace → omit (no empty arrow)
+	const artifactPrefix = compactArtifact ? `→ ${midEllipsis(compactArtifact, artBudget)} · ` : "";
 	return (
 		<Box
 			flexDirection="column"
@@ -229,6 +275,7 @@ function CompactCard(props: {
 			</Text>
 			<Text wrap="truncate" color={THEME.muted}>
 				{"  "}
+				{artifactPrefix}
 				{progressText} · {statusWord} · {pane.elapsed}
 			</Text>
 		</Box>

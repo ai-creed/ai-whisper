@@ -4,6 +4,7 @@ import {
 	Wall,
 	gridCapacity,
 	Inspector,
+	midEllipsis,
 } from "../packages/cli/src/runtime/dashboard-view.tsx";
 import type {
 	InspectorState,
@@ -40,6 +41,8 @@ function mkPane(p: PaneOverrides): WallPaneState {
 			{ step: "execute", route: "claude→codex", verdict: "-" },
 		],
 		elapsed: "1m23s",
+		startIso: null,
+		artifact: null,
 		cardKind: "full",
 		...p,
 	};
@@ -745,5 +748,228 @@ describe("Inspector polish (Task 13)", () => {
 		expect(out).toMatch(/⚠/); // halted
 		expect(out).toMatch(/✖/); // canceled
 		expect(out).not.toContain("⏸"); // paused deferred
+	});
+});
+
+describe("Wall — artifact subline + started-at (Fix 2/3)", () => {
+	it("full ACTIVE card renders the artifact subline, HH:MM (UTC), elapsed, and real agent dots", () => {
+		const state = mkWallState({
+			sections: [
+				mkSection({
+					group: "active",
+					panes: [
+						mkPane({
+							collabId: "c1",
+							statusKey: "running",
+							label: "mylabel",
+							artifact: "docs/foo.md",
+							startIso: "2026-06-10T09:15:00.000Z",
+							elapsed: "1m23s",
+							agentHealth: [
+								{ agent: "ezio", health: "healthy" },
+								{ agent: "claude", health: "healthy" },
+							],
+							events: [
+								{ step: "review", route: "ezio→claude", verdict: "pass" },
+								{ step: "draft", route: "claude→ezio", verdict: "-" },
+							],
+						}),
+					],
+				}),
+			],
+			selected: 0,
+		});
+		const { lastFrame } = render(<Wall state={state} cols={100} rows={20} />);
+		const out = stripAnsi(lastFrame() ?? "");
+		expect(out).toContain("→ docs/foo.md");
+		expect(out).toContain("09:15"); // UTC HH:MM from startIso
+		expect(out).toContain("1m23s");
+		expect(out).toContain("ezio");
+		expect(out).not.toContain("codex"); // no phantom agent anywhere on the card
+		// event tail reduced 2 → 1: only the most recent event row renders
+		expect(out).toContain("review");
+		expect(out).toContain("ezio→claude");
+		expect(out).not.toContain("draft");
+		expect(out).not.toContain("claude→ezio");
+	});
+
+	it("full card stays the same height with the artifact subline (event tail 2→1, no 5th line)", () => {
+		const mk = (artifact: string | null) =>
+			mkWallState({
+				sections: [
+					mkSection({
+						group: "active",
+						panes: [
+							mkPane({
+								collabId: "c1",
+								statusKey: "running",
+								label: "mylabel",
+								artifact,
+								startIso: "2026-06-10T09:15:00.000Z",
+								events: [
+									{ step: "review", route: "ezio→claude", verdict: "pass" },
+									{ step: "draft", route: "claude→ezio", verdict: "-" },
+								],
+							}),
+						],
+					}),
+				],
+			});
+		const lineCount = (s: string) => stripAnsi(s).split("\n").length;
+		const withArtifact = lineCount(render(<Wall state={mk("docs/foo.md")} cols={100} rows={20} />).lastFrame() ?? "");
+		const without = lineCount(render(<Wall state={mk(null)} cols={100} rows={20} />).lastFrame() ?? "");
+		// Adding the subline must NOT grow the card: it displaces the older event row.
+		expect(withArtifact).toBe(without);
+	});
+
+	it("narrow full card drops the time tail but keeps the artifact basename", () => {
+		const state = mkWallState({
+			sections: [
+				mkSection({
+					group: "active",
+					panes: [
+						mkPane({
+							collabId: "c1",
+							statusKey: "running",
+							label: "mylabel",
+							artifact: "docs/superpowers/specs/2026-06-10-foo-design.md",
+							startIso: "2026-06-10T09:15:00.000Z",
+							elapsed: "1m23s",
+						}),
+					],
+				}),
+			],
+		});
+		// cols=45 → single 45-col pane (< NARROW_PANE_COLS=48) → time tail dropped.
+		const { lastFrame } = render(<Wall state={state} cols={45} rows={20} />);
+		const out = stripAnsi(lastFrame() ?? "");
+		expect(out).toContain("→");
+		expect(out).toContain("design.md"); // basename survives middle-ellipsis
+		expect(out).not.toContain("09:15"); // time tail dropped on the narrow card
+	});
+
+	it("full card with no artifact falls back to the prior shape (no empty subline, two events)", () => {
+		const state = mkWallState({
+			sections: [
+				mkSection({
+					group: "active",
+					panes: [
+						mkPane({
+							collabId: "c1",
+							statusKey: "running",
+							label: "mylabel",
+							artifact: null,
+							events: [
+								{ step: "review", route: "ezio→claude", verdict: "pass" },
+								{ step: "draft", route: "claude→ezio", verdict: "-" },
+							],
+						}),
+					],
+				}),
+			],
+		});
+		const { lastFrame } = render(<Wall state={state} cols={100} rows={20} />);
+		const out = stripAnsi(lastFrame() ?? "");
+		expect(out).not.toContain("→ "); // no artifact subline (event routes' bare "→" are fine)
+		// both events retained when there is no subline
+		expect(out).toContain("review");
+		expect(out).toContain("draft");
+	});
+
+	it("compact card line 2 prepends the artifact and RETAINS P/x", () => {
+		const state = mkWallState({
+			sections: [
+				mkSection({
+					group: "doneCanceled",
+					panes: [
+						mkPane({
+							collabId: "d1",
+							statusKey: "done",
+							label: "donelabel",
+							round: null,
+							progress: { current: 5, total: 5 },
+							elapsed: "4m12s",
+							artifact: "docs/foo.md",
+							cardKind: "compact",
+							events: [],
+						}),
+					],
+				}),
+			],
+		});
+		const { lastFrame } = render(<Wall state={state} cols={100} rows={20} />);
+		const out = stripAnsi(lastFrame() ?? "");
+		expect(out).toContain("→ docs/foo.md");
+		expect(out).toContain("P5/5"); // progress token retained
+		expect(out).toContain("done");
+		expect(out).toContain("4m12s");
+	});
+
+	it("compact card with no artifact keeps today's line 2 (no leading arrow)", () => {
+		const state = mkWallState({
+			sections: [
+				mkSection({
+					group: "doneCanceled",
+					panes: [
+						mkPane({
+							collabId: "d2",
+							statusKey: "done",
+							label: "donelabel",
+							round: null,
+							progress: { current: 5, total: 5 },
+							elapsed: "4m12s",
+							artifact: null,
+							cardKind: "compact",
+							events: [],
+						}),
+					],
+				}),
+			],
+		});
+		const { lastFrame } = render(<Wall state={state} cols={100} rows={20} />);
+		const out = stripAnsi(lastFrame() ?? "");
+		expect(out).not.toContain("→");
+		expect(out).toContain("P5/5");
+		expect(out).toContain("done");
+	});
+
+	it("whitespace-only artifact omits the subline and keeps both event rows (full card)", () => {
+		const state = mkWallState({
+			sections: [
+				mkSection({
+					group: "active",
+					panes: [
+						mkPane({
+							collabId: "c1",
+							statusKey: "running",
+							label: "mylabel",
+							artifact: "   ",
+							events: [
+								{ step: "review", route: "ezio→claude", verdict: "pass" },
+								{ step: "draft", route: "claude→ezio", verdict: "-" },
+							],
+						}),
+					],
+				}),
+			],
+		});
+		const { lastFrame } = render(<Wall state={state} cols={100} rows={20} />);
+		const out = stripAnsi(lastFrame() ?? "");
+		expect(out).not.toContain("→ "); // no empty-arrow subline (event routes' bare "→" are fine)
+		expect(out).toContain("review");
+		expect(out).toContain("draft"); // both events retained (fallback shape)
+	});
+});
+
+describe("midEllipsis", () => {
+	it("keeps the basename and fits the budget", () => {
+		const r = midEllipsis("docs/superpowers/specs/2026-06-10-foo-design.md", 24);
+		expect(r.length).toBeLessThanOrEqual(24);
+		expect(r).toContain("…");
+		expect(r.endsWith("design.md")).toBe(true);
+	});
+
+	it("returns the string unchanged when it already fits", () => {
+		expect(midEllipsis("docs/foo.md", 40)).toBe("docs/foo.md");
 	});
 });
