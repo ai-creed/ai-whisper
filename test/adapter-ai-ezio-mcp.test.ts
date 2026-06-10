@@ -54,7 +54,7 @@ describe("adapter-ai-ezio mounted MCP wiring", () => {
 	it("registers delegated tools before any submit and routes a delegated call", async () => {
 		const fake = fakeEngine();
 		const host = createMcpHost(
-			{ servers: [{ name: "stub", command: "x", args: [] }], toolPolicy: {} },
+			{ servers: [{ name: "stub", command: "x", args: [] }], toolPolicy: {}, hostPrivateTools: [] },
 			{ mode: "mounted", cwd: "/repo", connect: async () => fakeClient() },
 		);
 		const controller = createAiEzioLiveSession({
