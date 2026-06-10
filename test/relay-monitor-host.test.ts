@@ -26,8 +26,16 @@ function fakeBroker(
 			listWorkflows: vi.fn(() => workflows),
 			getWorkflow: vi.fn((id: string) => {
 				const w = workflows.find((x) => x.workflowId === id);
-				return w ? { ...w, createdAt: "2026-05-19T08:00:00.000Z", haltReason: w.status === "halted" ? "max-rounds-reached (phase plan-writing)" : null } : null;
+				return w
+					? {
+							...w,
+							createdAt: "2026-05-19T08:00:00.000Z",
+							specPath: "/repo/docs/superpowers/specs/2026-06-10-foo-design.md",
+							haltReason: w.status === "halted" ? "max-rounds-reached (phase plan-writing)" : null,
+						}
+					: null;
 			}),
+			getCollab: vi.fn(() => ({ workspaceRoot: "/repo" })),
 			getWorkflowPhaseRuns: vi.fn(() => [
 				{ phaseRunId: "pr1", phaseIndex: 1, phaseName: "plan-writing", chainId: "ch1",
 				  startedAt: "2026-05-19T08:00:00.000Z", endedAt: "2026-05-19T08:11:40.000Z", outcome: "escalated (max rounds)" },
@@ -62,6 +70,29 @@ describe("relay-monitor host", () => {
 
 		expect(buf).toContain("wf │");
 		expect(buf).toContain("health │");
+	});
+
+	it("renders the full workflow id and repo-relative artifact in the wf row", async () => {
+		const stdout = new PassThrough();
+		(stdout as unknown as { columns: number }).columns = 120;
+		(stdout as unknown as { rows: number }).rows = 24;
+		let buf = "";
+		stdout.on("data", (c) => (buf += String(c)));
+		const m = createRelayMonitorRuntime({
+			broker: fakeBroker([], [
+				{ workflowId: "wf_5dde51ed96d449bd", workflowType: "spec-driven-development", name: null, status: "running" },
+			]) as never,
+			collabId: "c1",
+			monitorId: "mon1",
+			stdout: stdout as unknown as NodeJS.WritableStream,
+			pollIntervalMs: 10,
+		});
+		m.start();
+		await new Promise((r) => setTimeout(r, 50));
+		await m.stop();
+		expect(buf).toContain("wf_5dde51ed96d449bd"); // full id, not truncated
+		expect(buf).not.toContain("wf_5dde51ed9…"); // never the truncated form
+		expect(buf).toContain("→ docs/superpowers/specs/2026-06-10-foo-design.md");
 	});
 
 	it("re-reads the relay feed on every poll", async () => {
@@ -388,6 +419,7 @@ function stepBroker(handoffs: Array<Record<string, unknown>>) {
 				workflowId: "wf1", workflowType: "spec-driven-development", name: "x",
 				status: "running", createdAt: "2026-05-19T08:00:00.000Z", haltReason: null,
 			})),
+			getCollab: vi.fn(() => ({ workspaceRoot: "/repo" })),
 			getWorkflowPhaseRuns: vi.fn(() => [
 				{ phaseRunId: "pr1", phaseIndex: 1, phaseName: "plan-writing", chainId: "ch1",
 				  startedAt: "2026-05-19T08:00:00.000Z", endedAt: null, outcome: null },

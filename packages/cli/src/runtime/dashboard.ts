@@ -3,6 +3,7 @@ import { createElement } from "react";
 import type { ReactElement } from "react";
 import type { BrokerRuntime } from "@ai-whisper/broker";
 import { getWorkflowDefinition } from "@ai-whisper/broker";
+import { displayArtifactPath } from "@ai-whisper/shared";
 import {
 	Wall,
 	Inspector,
@@ -186,6 +187,7 @@ export function createDashboardRuntime(input: {
 				: { manualOnly: true },
 		});
 		const wf = inspectorWorkflowId ? c.getWorkflow(inspectorWorkflowId) : null;
+		const inspectorWorkspaceRoot = wf ? (c.getCollab(collabId)?.workspaceRoot ?? null) : null;
 		const phaseRaw = inspectorWorkflowId
 			? c.getWorkflowPhaseRuns(inspectorWorkflowId)
 			: [];
@@ -264,6 +266,7 @@ export function createDashboardRuntime(input: {
 						status: wf.status,
 						createdAt: wf.createdAt,
 						haltReason: wf.haltReason,
+						artifact: displayArtifactPath(wf.specPath ?? "", inspectorWorkspaceRoot ?? ""),
 					}
 				: null,
 			phaseRuns,

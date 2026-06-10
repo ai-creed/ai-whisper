@@ -3,6 +3,7 @@ import { createElement } from "react";
 import type { BrokerRuntime } from "@ai-whisper/broker";
 import { getWorkflowDefinition } from "@ai-whisper/broker";
 import type { RelayHandoffLogRow } from "@ai-whisper/broker";
+import { displayArtifactPath } from "@ai-whisper/shared";
 import { STATUS_ROWS, logViewportHeight, type Viewport } from "./relay-view.js";
 import { RelayViewApp } from "./relay-view-input.js";
 import {
@@ -149,6 +150,7 @@ export function createRelayMonitorRuntime(input: {
 					}
 				}
 			}
+			const workspaceRoot = c.getCollab(input.collabId)?.workspaceRoot ?? null;
 			const status = (wf?.status ?? wfRow.status) as
 				| "running"
 				| "done"
@@ -163,6 +165,7 @@ export function createRelayMonitorRuntime(input: {
 					status,
 					createdAt: wf?.createdAt ?? new Date().toISOString(),
 					haltReason: wf?.haltReason ?? null,
+					artifact: displayArtifactPath(wf?.specPath ?? "", workspaceRoot ?? ""),
 				},
 				phaseRuns: phaseRuns.map((p) => ({
 					phaseRunId: p.phaseRunId,

@@ -11,6 +11,7 @@ function fakeBroker(summaries: unknown[] = []) {
 		),
 		listRelayHandoffs: vi.fn(() => []),
 		getWorkflow: vi.fn(() => null),
+		getCollab: vi.fn(() => ({ workspaceRoot: "/repo" })),
 		getWorkflowPhaseRuns: vi.fn(() => []),
 		getRelayChain: vi.fn(() => null),
 		getRelayTurnState: vi.fn(() => ({ turnOwner: "none", waitingAgent: null, handoffState: "idle" })),
@@ -214,6 +215,33 @@ describe("dashboard host", () => {
 		await m.stop();
 		expect(buf).toContain("Step review"); // latest handoff step (h2)
 		expect(buf).not.toContain("Step implement"); // NOT plan-writing's initialHandoffStep
+	});
+
+	it("F4: Inspector Live wf row shows the full workflow id and the repo-relative artifact", async () => {
+		const phaseRuns = [{ phaseRunId: "pr1", phaseIndex: 1, phaseName: "plan-writing", chainId: "ch1", startedAt: "2026-05-20T00:00:00.000Z", endedAt: null, outcome: null }];
+		const handoffs = [
+			{ handoffId: "h1", createdAt: "2026-05-20T00:01:00.000Z", collabId: "c1", senderAgent: "codex", targetAgent: "claude", status: "handed_back", captureStatus: "ok", chainId: "ch1", roundNumber: 1, handoffStep: "implement", workflowId: "wf_5dde51ed96d449bd", phaseRunId: "pr1", handbackText: "x", evaluatorVerdict: "delivered", evaluatorConfidence: 0.6, evaluatorReason: "r", lastActivityAt: "2026-05-20T00:01:00.000Z" },
+		];
+		const broker = fakeBroker([S({ collabId: "c1", workflowId: "wf_5dde51ed96d449bd", workflowType: "spec-driven-development", phaseIndex: 1, currentRound: 1, maxRounds: 5, chainStatus: "active" })]);
+		broker.control.listRelayHandoffs = vi.fn(() => handoffs.map((h) => ({ ...h }))) as never;
+		broker.control.getWorkflow = vi.fn(() => ({ workflowId: "wf_5dde51ed96d449bd", workflowType: "spec-driven-development", name: null, status: "running", createdAt: "2026-05-20T00:00:00.000Z", haltReason: null, specPath: "/repo/docs/foo.md" })) as never;
+		broker.control.getCollab = vi.fn(() => ({ workspaceRoot: "/repo" })) as never;
+		broker.control.getWorkflowPhaseRuns = vi.fn(() => phaseRuns.map((p) => ({ ...p }))) as never;
+		broker.control.getRelayChain = vi.fn(() => ({ chainId: "ch1", currentRound: 1, maxRounds: 5, status: "active" })) as never;
+		const stdout = new PassThrough();
+		(stdout as unknown as { columns: number }).columns = 120;
+		(stdout as unknown as { rows: number }).rows = 24;
+		let buf = "";
+		stdout.on("data", (c) => (buf += String(c)));
+		const m = createDashboardRuntime({ broker: broker as never, dashboardId: "d1", stdout: stdout as unknown as NodeJS.WritableStream, pollIntervalMs: 10 }) as never as { start(): void; stop(): Promise<void>; __handleKey(ev: { key?: string }): void };
+		m.start();
+		await new Promise((r) => setTimeout(r, 30));
+		m.__handleKey({ key: "\r" }); // Enter → Inspector (live)
+		await new Promise((r) => setTimeout(r, 20));
+		await m.stop();
+		expect(buf).toContain("wf_5dde51ed96d449bd"); // full id, not truncated
+		expect(buf).not.toContain("wf_5dde51ed9…");
+		expect(buf).toContain("→ docs/foo.md"); // repo-relative artifact in the wf row
 	});
 
 	it("F3: Inspector Live g/G/↑/f scroll-follow behaves like relay-monitor", async () => {
