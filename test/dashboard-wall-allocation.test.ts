@@ -24,6 +24,7 @@ function s(p: Partial<CollabSummary>): CollabSummary {
 			{ agentType: "claude", healthState: "healthy", mountAlive: true },
 		],
 		workflowCreatedAt: p.workflowCreatedAt ?? "2026-05-20T00:00:00.000Z",
+		specPath: null,
 		lastActivityAt: p.lastActivityAt ?? "2026-05-20T00:00:00.000Z",
 		...p,
 	};
