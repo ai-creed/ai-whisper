@@ -1,6 +1,6 @@
 # ai-whisper
 
-ai-whisper turns two coding agents — Claude and Codex — into a terminal-native pair that hand work back and forth under a single baton, so one agent implements while the other reviews, and a structured workflow drives the loop to a finished, reviewed deliverable without a human babysitting every round.
+ai-whisper pairs two coding agents — mount any two of Claude, Codex, and ezio — into a terminal-native pair that hand work back and forth under a single baton, so one agent implements while the other reviews, and a structured workflow drives the loop to a finished, reviewed deliverable without a human babysitting every round.
 
 ## Magic moment
 
@@ -52,10 +52,11 @@ It is **not** for:
 
 ## Prerequisites
 
-ai-whisper drives the *real* Claude and Codex CLIs, so you need both installed and authenticated first:
+You pair any two of three agents — `claude`, `codex`, and `ezio`. ai-whisper drives the *real* Claude and Codex CLIs, so install and authenticate whichever of those two you plan to mount first; `ezio` is protocol-native and ships with ai-whisper, so it needs no separate CLI.
 
 - **[Claude Code CLI](https://claude.com/claude-code)** — the `claude` command, signed in.
 - **[Codex CLI](https://github.com/openai/codex)** — the `codex` command, signed in.
+- **ezio** *(optional)* — bundled with ai-whisper; mount it with `whisper collab mount ezio`, no separate install.
 - **Node.js 22+**.
 - **An LLM evaluator with credentials** — workflows are gated by it and refuse to start without it. See [Evaluator configuration](docs/evaluator-configuration.md).
 - **tmux** *(optional)* — only for `whisper collab start`, which auto-arranges both agents into panes. The mount flow below does not need it.
@@ -110,9 +111,9 @@ A run that stops short usually **escalates** — it does not crash. When the eva
 
 ## Core concepts
 
-ai-whisper is **not a swarm**. The agents never type at once — work moves by a single baton, one owner at a time. Mounted sessions are *real* Claude and Codex sessions in your terminal, and those sessions are the source of truth. Autonomy is supervised: every handoff, verdict, and round is inspectable, and runs are resumable rather than fire-and-forget. Work is organized as structured workflows — explicit loops and state transitions, not a free-form chat.
+ai-whisper is **not a swarm**. The agents never type at once — work moves by a single baton, one owner at a time. Mounted sessions are *real* agent sessions in your terminal — Claude or Codex CLIs, or ezio — and those sessions are the source of truth. Autonomy is supervised: every handoff, verdict, and round is inspectable, and runs are resumable rather than fire-and-forget. Work is organized as structured workflows — explicit loops and state transitions, not a free-form chat.
 
-Claude and Codex are supported today; the architecture is provider-agnostic by design, so other coding-agent CLIs can be added behind the same relay.
+Claude, Codex, and ezio are supported today — you mount any two of them; the architecture is provider-agnostic by design, so other coding-agent CLIs can be added behind the same relay.
 
 For the full mental model, read [Concepts](docs/concepts.md).
 

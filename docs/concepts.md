@@ -27,7 +27,7 @@ Think of it as a strict baton pass, not two live sessions talking over each othe
 
 ## Mounted sessions are real provider sessions — and the source of truth
 
-When you run `whisper collab mount claude` or `whisper collab mount codex`, ai-whisper claims the current terminal and launches the *actual* provider CLI in it. It does not simulate the agent or proxy a hidden API conversation. What you see in the terminal is the real session, and that session's state is the source of truth.
+When you run `whisper collab mount claude`, `whisper collab mount codex`, or `whisper collab mount ezio`, ai-whisper claims the current terminal and launches the *actual* agent in it — the real Claude or Codex CLI, or the protocol-native ezio engine. It does not simulate the agent or proxy a hidden API conversation. What you see in the terminal is the real session, and that session's state is the source of truth.
 
 This matters for two reasons:
 

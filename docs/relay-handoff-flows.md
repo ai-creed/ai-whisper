@@ -1,6 +1,6 @@
 # Relay Handoff Flows
 
-ai-whisper uses a turn-based relay between two mounted agent panes (claude and codex). A "handoff" is one unit of that turn — a request from a sender to a target, optionally judged by an orchestrator and either resolved, looped, or escalated.
+ai-whisper uses a turn-based relay between two mounted agent panes (any two of `claude`, `codex`, and `ezio`). A "handoff" is one unit of that turn — a request from a sender to a target, optionally judged by an orchestrator and either resolved, looped, or escalated.
 
 This document explains the two flows the relay supports today:
 
