@@ -219,10 +219,11 @@ describe("buildRelayViewState — status", () => {
 		);
 	});
 
-	it("empty sessions → both health dots render dead", () => {
+	it("empty sessions → no health dots (no synthesized dead peers)", () => {
 		const s = buildRelayViewState({ ...baseSnapshot, sessions: [] });
-		expect(s.health).toContain("●(dead) codex");
-		expect(s.health).toContain("●(dead) claude");
+		expect(s.health).not.toContain("codex");
+		expect(s.health).not.toContain("claude");
+		expect(s.health).not.toContain("(dead)");
 	});
 
 	it("health dots: healthy → ●, degraded → distinct ◐(degraded), offline → ●(dead) (Bug A)", () => {
@@ -267,6 +268,65 @@ describe("buildRelayViewState — status", () => {
 			}],
 		});
 		expect(s.last).toBe('delivered 0.95 · capture ok · "looks good"');
+	});
+});
+
+describe("buildRelayViewState — wf row (Fix 4)", () => {
+	const wfSnap: RelayViewSnapshot = {
+		...baseSnapshot,
+		workflow: {
+			workflowId: "wf_5dde51ed96d449bd",
+			workflowType: "spec-driven-development",
+			name: null,
+			status: "running",
+			createdAt: "2026-05-19T08:22:48.000Z",
+			haltReason: null,
+			artifact: "docs/superpowers/specs/2026-06-10-foo-design.md",
+		},
+	};
+
+	it("leads with the FULL workflow id, then the type once, then the artifact", () => {
+		const s = buildRelayViewState(wfSnap);
+		expect(s.wf).toContain("wf_5dde51ed96d449bd");
+		expect(s.wf).not.toContain("…"); // id never truncated
+		expect(s.wf).toContain("→ docs/superpowers/specs/2026-06-10-foo-design.md");
+		// type appears exactly once (the quoted name-fallback duplicate is gone)
+		expect(s.wf.split("spec-driven-development").length - 1).toBe(1);
+		expect(s.wf).not.toContain('"');
+		// order: id < type < artifact arrow
+		expect(s.wf.indexOf("wf_5dde51ed96d449bd")).toBeLessThan(
+			s.wf.indexOf("spec-driven-development"),
+		);
+		expect(s.wf.indexOf("spec-driven-development")).toBeLessThan(s.wf.indexOf("→"));
+	});
+
+	it("omits the artifact arrow when no artifact is present", () => {
+		const s = buildRelayViewState({
+			...wfSnap,
+			workflow: { ...wfSnap.workflow!, artifact: null },
+		});
+		expect(s.wf).toContain("wf_5dde51ed96d449bd");
+		expect(s.wf).toContain("spec-driven-development");
+		expect(s.wf).not.toContain("→");
+	});
+
+	it("omits the artifact arrow for a whitespace-only artifact (no empty arrow)", () => {
+		const s = buildRelayViewState({
+			...wfSnap,
+			workflow: { ...wfSnap.workflow!, artifact: "   " },
+		});
+		expect(s.wf).not.toContain("→");
+	});
+
+	it("manual relay (workflow null) keeps the existing string", () => {
+		const s = buildRelayViewState({
+			...wfSnap,
+			workflow: null,
+			chain: null,
+			currentPhaseRunId: null,
+			currentStep: null,
+		});
+		expect(s.wf).toBe("(no workflow — manual relay)");
 	});
 });
 
@@ -463,7 +523,7 @@ describe("agentHealth structured field", () => {
 		]);
 	});
 
-	it("agentHealth treats missing session as dead", () => {
+	it("agentHealth is empty when there are no sessions (no synthesized dead peers)", () => {
 		const state = buildRelayViewState({
 			now: "2026-05-28T00:00:00.000Z",
 			idleThresholdMs: 60_000,
@@ -478,9 +538,49 @@ describe("agentHealth structured field", () => {
 			lastActivityAt: null,
 			handoffs: [],
 		});
-		expect(state.agentHealth).toEqual([
-			{ agent: "codex", health: "dead" },
-			{ agent: "claude", health: "dead" },
+		expect(state.agentHealth).toEqual([]);
+	});
+
+	it("derives agentHealth from real sessions incl. ezio (repro: ezio+claude, no phantom codex)", () => {
+		const s = buildRelayViewState({
+			...baseSnapshot,
+			turn: { turnOwner: "ezio", waitingAgent: "claude", handoffState: "accepted" },
+			sessions: [
+				{ agentType: "ezio", healthState: "healthy" },
+				{ agentType: "claude", healthState: "healthy" },
+			],
+		});
+		expect(s.agentHealth).toEqual([
+			{ agent: "ezio", health: "healthy" },
+			{ agent: "claude", health: "healthy" },
 		]);
+		expect(s.health).toContain("ezio");
+		expect(s.health).not.toContain("codex");
+	});
+
+	it("codex+claude keeps canonical [codex, claude] order regardless of session order", () => {
+		const s = buildRelayViewState({
+			...baseSnapshot,
+			sessions: [
+				{ agentType: "claude", healthState: "healthy" },
+				{ agentType: "codex", healthState: "healthy" },
+			],
+		});
+		expect(s.agentHealth).toEqual([
+			{ agent: "codex", health: "healthy" },
+			{ agent: "claude", health: "healthy" },
+		]);
+	});
+
+	it("filters out sessions with an unrecognized agentType", () => {
+		const s = buildRelayViewState({
+			...baseSnapshot,
+			sessions: [
+				{ agentType: "ezio", healthState: "healthy" },
+				{ agentType: "gremlin", healthState: "healthy" },
+				{ agentType: "claude", healthState: "healthy" },
+			],
+		});
+		expect(s.agentHealth.map((a) => a.agent)).toEqual(["ezio", "claude"]);
 	});
 });

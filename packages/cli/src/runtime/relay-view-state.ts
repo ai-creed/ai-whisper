@@ -1,5 +1,5 @@
 import type { RelayHandoffLogRow } from "@ai-whisper/broker";
-import type { AgentType } from "@ai-whisper/shared";
+import { agentTypes, type AgentType } from "@ai-whisper/shared";
 
 // Fixed column widths for the workflow event line (kept here so Task 5/6
 // renderers stay aligned with this producer).
@@ -145,6 +145,9 @@ export type RelayViewSnapshot = {
 		status: "running" | "paused" | "done" | "halted" | "canceled";
 		createdAt: string;
 		haltReason?: string | null;
+		// Repo-relative spec/goal/bug-report path; threaded by the snapshot
+		// builders (Fix 4). Absent/null → omitted from the wf row.
+		artifact?: string | null;
 	} | null;
 	phaseRuns: Array<{
 		phaseRunId: string;
@@ -214,10 +217,23 @@ export type RelayViewState = {
 
 // `fmtDur` is already defined in this file (Task 4) — do NOT redefine it here.
 
-// Canonical relay agent pair (order = display order). Task 6 liveness reuses this.
-const RELAY_AGENTS = ["codex", "claude"] as const;
+// Display order for the per-agent health dots: the driver agent (codex|ezio)
+// first, then claude. Stable tiebreak by agentType keeps output deterministic.
+const AGENT_DISPLAY_RANK: Record<AgentType, number> = { codex: 0, ezio: 0, claude: 1 };
 
-const WF_ID_DISPLAY_LEN = 12;
+function isAgentType(s: string): s is AgentType {
+	return (agentTypes as readonly string[]).includes(s);
+}
+
+// wf row (Fix 4): full id first (never truncated under width pressure), the
+// type once, then the repo-relative artifact when present. The artifact is
+// trimmed defensively so a whitespace value never renders an empty arrow
+// (the builders normalize via displayArtifactPath, but this is belt-and-braces).
+function buildWfRow(w: NonNullable<RelayViewSnapshot["workflow"]>): string {
+	const base = `${w.workflowId}  ${w.workflowType}`;
+	const artifact = w.artifact?.trim();
+	return artifact ? `${base}  → ${artifact}` : base;
+}
 
 // Returns a formatted elapsed string, or "—" if either timestamp is unparseable
 // (broker/DB timestamps are trusted, but a malformed one must not render "NaNs"
@@ -330,9 +346,7 @@ export function computeLiveness(snap: RelayViewSnapshot): {
 }
 
 export function buildRelayViewState(snap: RelayViewSnapshot): RelayViewState {
-	const wf = snap.workflow
-		? `${snap.workflow.workflowType}  ${snap.workflow.workflowId.slice(0, WF_ID_DISPLAY_LEN)}…  "${snap.workflow.name ?? snap.workflow.workflowType}"`
-		: "(no workflow — manual relay)";
+	const wf = snap.workflow ? buildWfRow(snap.workflow) : "(no workflow — manual relay)";
 
 	const cur = snap.phaseRuns.find((p) => p.phaseRunId === snap.currentPhaseRunId) ?? null;
 	const round = snap.chain?.currentRound ?? 1;
@@ -347,19 +361,25 @@ export function buildRelayViewState(snap: RelayViewSnapshot): RelayViewState {
 
 	const turn = `${snap.turn.turnOwner} · waiting ${snap.turn.waitingAgent ?? "none"} · handoff ${snap.turn.handoffState}`;
 
-	// Three-way health glyph (Bug A): a bound, non-offline agent must NOT read
-	// as dead. healthy → "●"; degraded (alive but impaired) → "◐(degraded)";
-	// offline / missing session → "●(dead)".
-	const agentHealth = RELAY_AGENTS.map((a) => {
-		const sess = snap.sessions.find((x) => x.agentType === a);
-		const health: "healthy" | "degraded" | "dead" =
-			sess?.healthState === "healthy"
-				? "healthy"
-				: sess?.healthState === "degraded"
-					? "degraded"
-					: "dead";
-		return { agent: a, health };
-	});
+	// Bug A / agent identity: derive the health dots from the REAL session rows
+	// (so ezio shows and a never-present codex does not), filtering unknown
+	// agent types and sorting into canonical driver-first order. healthy → "●";
+	// degraded (alive but impaired) → "◐(degraded)"; offline → "●(dead)".
+	const agentHealth = snap.sessions
+		.filter((x) => isAgentType(x.agentType))
+		.map((x) => {
+			const health: "healthy" | "degraded" | "dead" =
+				x.healthState === "healthy"
+					? "healthy"
+					: x.healthState === "degraded"
+						? "degraded"
+						: "dead";
+			return { agent: x.agentType as AgentType, health };
+		})
+		.sort((a, b) => {
+			const r = AGENT_DISPLAY_RANK[a.agent] - AGENT_DISPLAY_RANK[b.agent];
+			return r !== 0 ? r : a.agent < b.agent ? -1 : a.agent > b.agent ? 1 : 0;
+		});
 
 	const dots = agentHealth
 		.map(({ agent, health }) => {
