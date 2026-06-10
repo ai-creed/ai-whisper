@@ -26,6 +26,7 @@ function sum(p: Partial<CollabSummary>): CollabSummary {
 		turn: { owner: "codex", waiting: "claude", handoffState: "accepted" },
 		sessions: [{ agentType: "codex", healthState: "healthy" }, { agentType: "claude", healthState: "healthy" }],
 		workflowCreatedAt: "2026-05-20T00:00:00.000Z",
+		specPath: null,
 		lastActivityAt: "2026-05-20T00:00:00.000Z", ...p,
 	};
 }

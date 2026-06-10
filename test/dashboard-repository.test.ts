@@ -22,11 +22,11 @@ function insCollab(db: ReturnType<typeof freshDb>, id: string, name = id) {
 		 VALUES (?,?,?,'active','2026-05-20T00:00:00.000Z','2026-05-20T00:00:00.000Z',0,3)`,
 	).run(id, `/tmp/${id}`, name);
 }
-function insWorkflow(db: ReturnType<typeof freshDb>, w: { id: string; collab: string; type?: string; name?: string | null; status?: string; phaseIdx?: number; createdAt?: string }) {
+function insWorkflow(db: ReturnType<typeof freshDb>, w: { id: string; collab: string; type?: string; name?: string | null; status?: string; phaseIdx?: number; createdAt?: string; specPath?: string }) {
 	db.prepare(
 		`INSERT INTO workflows (workflow_id,collab_id,workflow_type,name,spec_path,role_bindings,status,current_phase_index,halt_reason,workflow_context,created_at,updated_at)
-		 VALUES (?,?,?,?, '/s', '{}', ?, ?, NULL, '{}', ?, ?)`,
-	).run(w.id, w.collab, w.type ?? "spec-driven-development", w.name ?? null, w.status ?? "running", w.phaseIdx ?? 1, w.createdAt ?? "2026-05-20T00:01:00.000Z", w.createdAt ?? "2026-05-20T00:01:00.000Z");
+		 VALUES (?,?,?,?, ?, '{}', ?, ?, NULL, '{}', ?, ?)`,
+	).run(w.id, w.collab, w.type ?? "spec-driven-development", w.name ?? null, w.specPath ?? "/s", w.status ?? "running", w.phaseIdx ?? 1, w.createdAt ?? "2026-05-20T00:01:00.000Z", w.createdAt ?? "2026-05-20T00:01:00.000Z");
 }
 function insPhase(db: ReturnType<typeof freshDb>, p: { id: string; wf: string; idx: number; name: string; chain: string; started: string; ended?: string | null; outcome?: string | null }) {
 	db.prepare(
@@ -227,6 +227,43 @@ describe("listActiveCollabSummaries", () => {
 		const row = rows.find((r) => r.collabId === "c2");
 		expect(row?.workflowId).toBeNull();
 		expect(row?.workflowCreatedAt).toBeNull();
+	});
+
+	it("projects specPath repo-relative to the collab workspace_root", () => {
+		const db = freshDb();
+		insCollab(db, "c1"); // workspace_root = /tmp/c1
+		insWorkflow(db, { id: "wf1", collab: "c1", specPath: "/tmp/c1/docs/specs/foo-design.md", createdAt: "2026-05-20T00:50:00.000Z" });
+		insHandoff(db, { id: "h1", collab: "c1", wf: "wf1", createdAt: "2026-05-20T00:55:00.000Z", lastAct: "2026-05-20T00:59:30.000Z" });
+		const row = listActiveCollabSummaries(db, { sinceMs, now: NOW }).find((r) => r.collabId === "c1");
+		expect(row?.specPath).toBe("docs/specs/foo-design.md");
+	});
+
+	it("specPath falls back to the absolute path when spec_path is outside workspace_root", () => {
+		const db = freshDb();
+		insCollab(db, "c2"); // workspace_root = /tmp/c2
+		insWorkflow(db, { id: "wf2", collab: "c2", specPath: "/elsewhere/bar.md", createdAt: "2026-05-20T00:50:00.000Z" });
+		insHandoff(db, { id: "h2", collab: "c2", wf: "wf2", createdAt: "2026-05-20T00:55:00.000Z", lastAct: "2026-05-20T00:59:30.000Z" });
+		const row = listActiveCollabSummaries(db, { sinceMs, now: NOW }).find((r) => r.collabId === "c2");
+		expect(row?.specPath).toBe("/elsewhere/bar.md");
+	});
+
+	it("specPath is null for a manual-relay collab (no workflow)", () => {
+		const db = freshDb();
+		insCollab(db, "c3");
+		insHandoff(db, { id: "h3", collab: "c3", createdAt: "2026-05-20T00:50:00.000Z", lastAct: "2026-05-20T00:58:00.000Z" });
+		const row = listActiveCollabSummaries(db, { sinceMs, now: NOW }).find((r) => r.collabId === "c3");
+		expect(row?.workflowId).toBeNull();
+		expect(row?.specPath).toBeNull();
+	});
+
+	it("specPath is null for a whitespace-only spec_path (omit rather than render an empty artifact)", () => {
+		const db = freshDb();
+		insCollab(db, "c4"); // workspace_root = /tmp/c4
+		insWorkflow(db, { id: "wf4", collab: "c4", specPath: "   ", createdAt: "2026-05-20T00:50:00.000Z" });
+		insHandoff(db, { id: "h4", collab: "c4", wf: "wf4", createdAt: "2026-05-20T00:55:00.000Z", lastAct: "2026-05-20T00:59:30.000Z" });
+		const row = listActiveCollabSummaries(db, { sinceMs, now: NOW }).find((r) => r.collabId === "c4");
+		expect(row?.workflowId).toBe("wf4");
+		expect(row?.specPath).toBeNull();
 	});
 });
 

@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import type { AgentType } from "@ai-whisper/shared";
+import { displayArtifactPath } from "@ai-whisper/shared";
 import { basename } from "node:path";
 
 export type CollabSummary = {
@@ -24,6 +25,7 @@ export type CollabSummary = {
 	// so the Wall path can feed it into computeLiveness.
 	sessions: Array<{ agentType: string; healthState: string; mountAlive?: boolean }>;
 	workflowCreatedAt: string | null; // additive — see spec Non-Goals
+	specPath: string | null; // additive — repo-relative artifact path (Fix 3)
 	lastActivityAt: string;
 };
 
@@ -128,7 +130,7 @@ function buildCollabSummary(db: Database.Database, collabId: string): CollabSumm
 			.prepare(
 				`SELECT workflow_id AS workflowId, workflow_type AS workflowType,
 				        name, status, current_phase_index AS currentPhaseIndex,
-				        created_at AS createdAt
+				        created_at AS createdAt, spec_path AS specPath
 				   FROM workflows WHERE collab_id = ?
 				  ORDER BY (status = 'running') DESC, created_at DESC
 				  LIMIT 1`,
@@ -141,6 +143,7 @@ function buildCollabSummary(db: Database.Database, collabId: string): CollabSumm
 					status: "running" | "done" | "halted" | "canceled";
 					currentPhaseIndex: number;
 					createdAt: string;
+					specPath: string;
 				}
 			| undefined;
 
@@ -269,6 +272,7 @@ function buildCollabSummary(db: Database.Database, collabId: string): CollabSumm
 			},
 			sessions,
 			workflowCreatedAt: wf?.createdAt ?? null,
+			specPath: wf ? displayArtifactPath(wf.specPath, collab?.workspaceRoot ?? "") : null,
 			lastActivityAt: runLastAct,
 		};
 	}
