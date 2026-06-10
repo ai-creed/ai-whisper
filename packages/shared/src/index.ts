@@ -36,6 +36,7 @@ export {
 	transitionIntents,
 	workItemStates,
 } from "./literals.js";
+export { repoRelativePath, displayArtifactPath } from "./repo-relative-path.js";
 export { brokerStatusSchema, type BrokerStatus } from "./broker-status.js";
 export { collabSchema, type Collab } from "./collab.js";
 export { sessionSchema, type Session } from "./session.js";
