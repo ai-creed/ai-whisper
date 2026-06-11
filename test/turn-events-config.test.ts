@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,8 +13,10 @@ describe("turn-events config injection", () => {
     const file = writeClaudeSettingsFile({
       stateRoot, workspaceId: "ws1", shimPath: "/bin/shim", socketsDir: "/s", logsDir: "/l",
     });
-    const parsed = JSON.parse(readFileSync(file, "utf8"));
-    const cmd = parsed.hooks.Stop[0].hooks[0].command;
+    const parsed = JSON.parse(readFileSync(file, "utf8")) as {
+      hooks: { Stop: Array<{ hooks: Array<{ command: string }> }> };
+    };
+    const cmd = parsed.hooks.Stop[0]!.hooks[0]!.command;
     expect(cmd).toContain("/bin/shim");
     expect(cmd).toContain("--provider claude");
     expect(cmd).toContain("--socket-dir /s");

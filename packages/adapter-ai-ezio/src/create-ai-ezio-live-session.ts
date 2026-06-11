@@ -37,7 +37,6 @@ export function createAiEzioLiveSession(input: {
 		input.mcpHost ?? loadMcpHost({ mode: "mounted", cwd: process.cwd() });
 
 	let session: AiEzioEngineSession | null = null;
-	let lastContent = "";
 	let sawTurn = false; // guards against the startup idle firing a handback
 	// Settle-on-last (spec §4.3): the last finished-turn content awaiting a
 	// genuine idle. A newer assistant_turn_finished supersedes an older candidate
@@ -69,7 +68,6 @@ export function createAiEzioLiveSession(input: {
 				break;
 			case "assistant_turn_finished":
 				sawTurn = true;
-				lastContent = event.content;
 				// Re-arm on each completion: a newer turn supersedes an older
 				// candidate that has not yet settled into a genuine idle. If a
 				// prior candidate is still pending here, the new completion arrived
@@ -94,12 +92,10 @@ export function createAiEzioLiveSession(input: {
 							verdict: candidate.trim().length === 0 ? "empty" : "mid_composition",
 						});
 						pendingContent = null;
-						lastContent = "";
 						sawTurn = false;
 						break;
 					}
 					pendingContent = null;
-					lastContent = "";
 					sawTurn = false;
 					input.onFidelityDecision?.({ action: "delivered", verdict: "clean" });
 					for (const h of turnFinishedHandlers) h(candidate);

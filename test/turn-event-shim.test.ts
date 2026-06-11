@@ -71,8 +71,8 @@ describe("turn-event-shim", () => {
 				],
 				{ stdio: ["pipe", "inherit", "inherit"] },
 			);
-			child.stdin!.write(payload);
-			child.stdin!.end();
+			child.stdin.write(payload);
+			child.stdin.end();
 			child.on("exit", () => resolve());
 			child.on("error", reject);
 		});
@@ -84,10 +84,17 @@ describe("turn-event-shim", () => {
 		// normalization (incl. claude transcript read) happens mount-side in the
 		// listener via the EventReceiver, NOT in the dependency-free shim.
 		expect(received).toHaveLength(1);
-		const envelope = JSON.parse(received[0]!);
+		const envelope = JSON.parse(received[0]!) as {
+			provider: string;
+			raw: string;
+			receivedAt: string;
+		};
 		expect(envelope.provider).toBe("claude");
 		expect(typeof envelope.raw).toBe("string");
-		expect(JSON.parse(envelope.raw).last_assistant_message).toBe("done");
+		expect(
+			(JSON.parse(envelope.raw) as { last_assistant_message: string })
+				.last_assistant_message,
+		).toBe("done");
 		expect(envelope.receivedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 
 		// An arrival log line was appended.
@@ -95,7 +102,7 @@ describe("turn-event-shim", () => {
 		expect(logFile).toBeDefined();
 		const logLine = JSON.parse(
 			readFileSync(join(logsDir, logFile!), "utf8").trim(),
-		);
+		) as { provider: string; connect: string };
 		expect(logLine.provider).toBe("claude");
 		expect(logLine.connect).toBe("ok");
 	});
