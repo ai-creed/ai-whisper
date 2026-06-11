@@ -117,7 +117,9 @@ describe("createAiEzioLiveSession — delegates display to the mounted renderer 
 		const live = createAiEzioLiveSession({ createEngineSession: f.create, stdout });
 		live.onTurnFinished?.(() => order.push("handback"));
 		await live.start();
-		f.emit({ type: "assistant_turn_finished", turnId: "t", content: "done" });
+		// Use a clean, completed-answer content: the §4.3 shape guard now defers
+		// drafting/empty fragments, so the timing fixture must be a real handback.
+		f.emit({ type: "assistant_turn_finished", turnId: "t", content: "the task is done" });
 		f.emit({ type: "idle" });
 		expect(order).toEqual(["handback", "prompt"]);
 	});
