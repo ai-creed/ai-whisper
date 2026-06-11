@@ -28,6 +28,7 @@ import {
 } from "./providers.js";
 import { createContextInjector } from "./context-injector.js";
 import { createCliSessionId } from "./id-factory.js";
+import { runEzioStalenessCheck } from "../ezio-staleness-check.js";
 import { recordMountedSession } from "../commands/collab/mount.js";
 import { createRelayPaneWriter } from "./relay-pane-writer.js";
 import { createMountedTurnOwnedRelay } from "./mounted-turn-owned-relay.js";
@@ -435,6 +436,13 @@ export function createMountSessionRuntime(input: {
 					lineBufferedInput:
 						typeof interactiveSession.onTurnFinished === "function",
 				});
+
+				// Protocol-native targets (ai-ezio) run a bundled snapshot of the ezio
+				// TS layer; warn (non-blocking) if that snapshot is behind the user's
+				// installed ezio or a newer published whisper. Returns fast.
+				if (typeof interactiveSession.onTurnFinished === "function") {
+					await runEzioStalenessCheck();
+				}
 
 				// Start the live session — this launches the provider in the current terminal.
 				await liveSession.start();
