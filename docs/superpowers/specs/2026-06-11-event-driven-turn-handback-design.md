@@ -188,7 +188,12 @@ active — e.g. an operator interjection).
   codex provides `input-messages` directly; claude's triggering user message is
   read from `transcript_path`. A sequence backstop ("first Stop since our
   injection for this accepted handoff") covers the case where the transcript read
-  is unavailable. Match is by normalized identity or containment.
+  is unavailable. Match is by normalized identity or containment. The correlation
+  yields one of three states, routed differently in Outcomes below: a read that
+  succeeds and matches is **relevant**; a read that succeeds but does *not* match
+  is a **positive mismatch** (a turn the relay can affirmatively classify as
+  unrelated — e.g. an operator interjection); a read that is unavailable *and*
+  whose sequence backstop is inconclusive is **indeterminate**.
 - **Output corroboration (codex bonus).** Where a reliable PTY scrape is available
   (codex), additionally require `containment(message, scrapedTurnText)` to clear a
   threshold. This is deliberately **not** applied to claude: claude's full-screen
@@ -198,13 +203,33 @@ active — e.g. an operator interjection).
 
 **Outcomes:**
 
-- **Relevant** → deliver the event's `message` via `handbackResolvedContent`
-  (`captureStatus: "ok"`), burn the `autoHandbackFiredFor` guard, log `delivered`.
-- **Irrelevant** → log `fallback_to_copy`, do **not** burn the guard; the existing
-  idle-poll + `/copy` auto-handback path runs unchanged.
+- **Relevant** (input correlation matches our injected request) → deliver the
+  event's `message` via `handbackResolvedContent` (`captureStatus: "ok"`), burn the
+  `autoHandbackFiredFor` guard, log `delivered`.
+- **Positively unrelated** (input correlation produces an *active mismatch* — the
+  turn's triggering input does not match our injected request; the
+  operator-interjection case) → log `ignored_unrelated_turn`, do **not** burn the
+  guard, and do **not** release the idle-poll `/copy` path for this turn. The
+  `/copy` quiescence handback is **not input-correlated** — it delivers whatever the
+  pane scrapes after idle (the existing idle-poll path in
+  `packages/cli/src/runtime/mounted-turn-owned-relay.ts`), so releasing it here
+  would let this very operator turn become a false handback. Instead the relay keeps
+  `/copy` suppressed and waits for a later turn-complete that *does* correlate. This
+  is what makes the Section 8 operator-interjection guarantee ("no false handback")
+  structurally hold rather than merely assert it.
+- **Indeterminate** (relevance cannot be established — the transcript read is
+  unavailable *and* the sequence backstop is inconclusive, or no event arrives
+  within the idle window) → log `fallback_indeterminate`, do **not** burn the guard,
+  and release the idle-poll + `/copy` path to deliver. Here the event path has *no*
+  usable signal, so the proven path must remain in control.
 
-The event path is strictly an optimization over the proven path: any miss, doubt,
-or absent event leaves the existing mechanism in control.
+The distinction is deliberate: **a positive mismatch is not a miss.** The event
+path is an optimization over the proven path for the *miss / doubt / absent-event*
+cases — those release `/copy`. But a turn the relay can *positively* classify as
+unrelated is suppressed outright, because the non-input-correlated `/copy` path
+cannot itself tell that turn apart from the real handback. Only the
+relevance-**indeterminate** path (here) and the fidelity-**exhaustion** path
+(Section 4.3) hand control back to `/copy`.
 
 ### 4.3 Turn-selection / handback fidelity
 
@@ -242,6 +267,23 @@ The shape guard is a capture-side belt; the evaluator's drafting-notes rejection
 remains the authoritative backstop. The point is that the capture layer should
 *retry* on an obvious mid-composition handback instead of delivering it and
 forcing the evaluator to halt.
+
+**Every fidelity decision is logged.** Each outcome in this gate writes its own
+`relay_turn_event_diagnostics` row (Section 7) so the 2026-06-10 failure class is
+reconstructable after the fact — re-arming and deferral are **not** silent:
+
+- A candidate superseded by a newer turn-complete before idle settled logs
+  `deferred_rearmed` (`fidelity_verdict: superseded`).
+- A shape-guard rejection logs `rejected_mid_composition` (`fidelity_verdict:
+  mid_composition` or `empty`), retaining the rejected message sample so the exact
+  drafting fragment is queryable.
+- Retry-budget exhaustion logs `fallback_exhausted`.
+- The delivered turn logs `delivered` with `fidelity_verdict: clean` and the
+  `defer_count` it took to settle.
+
+So "which turn was chosen, and why the earlier candidates were not" is answerable
+from the table alone — closing the diagnostic blind spot the 2026-06-10 incident
+exposed.
 
 **Applied to `ezio`'s existing handler (the 2026-06-10 fix).**
 `create-ai-ezio-live-session.ts` currently fires the handback on the first `idle`
@@ -339,12 +381,32 @@ Two persistent layers, covering both "what the relay decided" and "did the event
 even arrive".
 
 - **Mount-side decision log (DB, primary).** A new `relay_turn_event_diagnostics`
-  table in `state.db`, mirroring `relay_capture_diagnostics`. Columns: `received_at`,
-  `provider`, `workspace_id`, `cwd`, `session_or_thread_id`, `turn_id`,
-  `workflow_active`, `collab_id`, `workflow_id`, `chain_id`, `handoff_id`,
-  relevance verdict and scores (`input_correlated`, `containment_score`), `action`
-  (`delivered` | `ignored_no_workflow` | `fallback_to_copy`), message length, and
-  a 200-char message sample gated by the existing `AI_WHISPER_NO_CAPTURE_SAMPLES`.
+  table in `state.db`, mirroring `relay_capture_diagnostics`. **Every received event
+  writes exactly one row**, whatever gate it terminates in, so the goal's "queryable
+  logging of every received event" holds across the *full* decision space —
+  including the Section 4.3 fidelity outcomes (re-arm, shape-rejection, exhaustion),
+  which were the diagnostic blind spot in the 2026-06-10 failure. Columns:
+  `received_at`, `provider`, `workspace_id`, `cwd`, `session_or_thread_id`,
+  `turn_id`, `workflow_active`, `collab_id`, `workflow_id`, `chain_id`, `handoff_id`,
+  relevance verdict and scores (`input_correlated`, `containment_score`),
+  `fidelity_verdict` (`clean` | `mid_composition` | `empty` | `superseded` | `n/a`),
+  `defer_count` (times this handoff's candidate was deferred/re-armed before it
+  resolved), `action`, message length, and a 200-char message sample gated by the
+  existing `AI_WHISPER_NO_CAPTURE_SAMPLES`. The `action` enum spans all three gates
+  so no received event is dropped or misclassified:
+  - `delivered` — relevant, clean, completed turn delivered (Section 4.2 / 4.3).
+  - `ignored_no_workflow` — workflow gate failed; dropped (Section 4.1).
+  - `ignored_unrelated_turn` — relevance gate positive mismatch; idle-poll `/copy`
+    kept suppressed, no fallback (Section 4.2, operator-interjection case).
+  - `deferred_rearmed` — a candidate completed turn was superseded by a newer
+    turn-complete before idle settled (Section 4.3, settle-on-last).
+  - `rejected_mid_composition` — shape guard rejected a drafting/empty candidate;
+    retried/deferred to a later turn-complete (Section 4.3, shape guard).
+  - `fallback_indeterminate` — relevance could not be established; idle-poll `/copy`
+    released to deliver (Section 4.2).
+  - `fallback_exhausted` — no clean completed turn within the retry budget; for
+    `claude`/`codex` falls back to `/copy`, for `ezio` delivers the last settled
+    turn under the evaluator backstop (Section 4.3, exhaustion).
 - **Shim-side arrival log (file, belt-and-suspenders).** The critical silent
   failure is an event that fires but never reaches the mount (stale socket, mount
   down, wrong path) — which produces no mount-side row. The dependency-free shim
@@ -365,17 +427,20 @@ files older than the window are unlinked (whole-file delete, no rewrite).
 |---|---|
 | Stale socket / mount down | Shim connect fails → logs `refused` → exits → existing idle-poll/`/copy` delivers. Self-healing. |
 | claude `StopFailure` (API error) | No `Stop` fires → no event → idle-poll/`/copy` handles as today. |
-| Empty / tool-only final turn | Empty `message` → fallback to `/copy`, whose retry ladder already handles empties. |
+| Empty / tool-only final turn | Empty `message` → shape guard rejects (`rejected_mid_composition`) → retry/defer; on exhaustion fall back to `/copy` (`fallback_exhausted`), whose retry ladder already handles empties. |
 | Intermediate drafting/planning turn completes before the answer (2026-06-10 ezio class) | Turn-selection settles on the last turn before idle; shape guard rejects mid-composition fragments → retry/defer to a later turn-complete, never deliver the scratchpad (Section 4.3). |
-| Operator interjects mid-workflow | Extra turn-complete fires → input correlation mismatch → ignored; no false handback. |
+| Operator interjects mid-workflow | Extra turn-complete fires → input correlation *positive mismatch* → `ignored_unrelated_turn`; idle-poll `/copy` is kept suppressed for this turn so the operator turn cannot leak through the non-input-correlated `/copy` path as a false handback; relay waits for a later correlated turn (Section 4.2). |
 | Event with no accepted handoff | Workflow gate drops it (`ignored_no_workflow`). |
 | Double delivery (event + idle-poll race) | Shared `autoHandbackFiredFor` one-shot guard — whichever resolves first sets it; the other sees it set and no-ops. |
 | Crash teardown | Socket orphan swept on broker startup; config flags process-scoped (nothing to restore); logs age-pruned. |
 
 When the event path is enabled for a provider, the relay sets
 `suppressQuiescenceHandback`-equivalent behavior so the quiescence handback does
-not *also* fire — but the explicit idle-poll/`/copy` fallback remains reachable
-for the relevance-miss and no-event cases. (Exact interaction with the existing
+not *also* fire by default. The explicit idle-poll/`/copy` fallback is then
+released only for the relevance-**indeterminate** (Section 4.2) and
+fidelity-**exhaustion** (Section 4.3) cases — **not** for a positive relevance
+mismatch, which stays suppressed so an operator turn cannot leak through the
+non-input-correlated `/copy` path. (Exact interaction with the existing
 `suppressQuiescenceHandback` flag, today set only for protocol-native sessions, is
 settled in the implementation plan.)
 
@@ -425,22 +490,45 @@ settled in the implementation plan.)
 ## 11. Testing
 
 - **Unit:** `EventReceiver` normalization per provider, using fixtures captured
-  from the real smoke payloads; relevance gate (input match/miss, codex
-  containment corroboration); socket-path derivation including the two-worktrees
-  no-collision case; retention prune (DB age delete, dated-file unlink).
+  from the real smoke payloads; relevance gate — input match → `delivered`; positive
+  mismatch → `ignored_unrelated_turn` *and assert the idle-poll `/copy` path is NOT
+  released* (the operator-interjection no-false-handback guarantee, Section 4.2);
+  indeterminate → `fallback_indeterminate` *and assert `/copy` IS released*; codex
+  containment corroboration. **Diagnostics rows for every received-event outcome:**
+  assert each terminal `action` (`delivered`, `ignored_no_workflow`,
+  `ignored_unrelated_turn`, `deferred_rearmed`, `rejected_mid_composition`,
+  `fallback_indeterminate`, `fallback_exhausted`) writes exactly one
+  `relay_turn_event_diagnostics` row with the expected `fidelity_verdict` and
+  `defer_count` — no received event is dropped or misclassified. Socket-path
+  derivation including the two-worktrees no-collision case; retention prune (DB age
+  delete, dated-file unlink).
 - **Integration:** socket receipt → gate → `handbackResolvedContent` against a
   mock broker; the fallback path when the gate rejects or no event arrives.
 - **Turn fidelity (RED-first, reproducing the 2026-06-10 ezio halt):** drive the
   recorded sequence into `create-ai-ezio-live-session.ts` — a drafting
   `assistant_turn_finished` ("Let's draft", "Maybe", "..."), a transient `idle`,
   then the real-answer `assistant_turn_finished` — and assert the delivered
-  handback is the real answer, never the scratchpad. This RED test is what fixes
-  the reported bug; the same fidelity assertion is then parameterized across
-  `codex` (multiple `agent-turn-complete`) and `claude`.
+  handback is the real answer, never the scratchpad, **and that the rejected
+  drafting candidate left a `rejected_mid_composition` (or `deferred_rearmed`)
+  diagnostics row rather than being dropped silently** (the queryability the
+  2026-06-10 incident lacked). This RED test is what fixes the reported bug; the
+  same fidelity assertion — including the per-candidate diagnostics-row assertion —
+  is then parameterized across `codex` (multiple `agent-turn-complete`) and
+  `claude`.
 - **End-to-end:** real claude `Stop` hook and codex `notify` driving a mounted
   session through to workflow delivery, formalizing the throwaway smoke. RED-first
-  per provider: an event with non-matching input asserts fallback rather than a
-  false handback.
+  per provider, covering both non-matching paths distinctly (Section 4.2):
+  - **Positive mismatch** (an affirmatively unrelated input — e.g. an operator
+    interjection fires a turn whose input does not match the injected request):
+    assert the event logs `ignored_unrelated_turn`, the idle-poll `/copy` path stays
+    **suppressed** (no fallback delivery, no false handback), and the handback is
+    delivered only once a *later, correlated* turn arrives. This is the no-false-
+    handback contract; it must **not** be satisfiable by a fallback-on-mismatch
+    delivery.
+  - **Indeterminate / no signal** (relevance unestablishable — no event arrives, or
+    the input read is unavailable and the sequence backstop is inconclusive): assert
+    the event logs `fallback_indeterminate` and the idle-poll `/copy` path **is**
+    released to deliver, preserving the proven-path safety net.
 
 ---
 
