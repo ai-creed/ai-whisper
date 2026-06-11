@@ -30,7 +30,7 @@ jobs:
           path: ai-whisper
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Checkout ai-ezio (pinned ref — provides the @ai-ezio/* file: deps)
+      - name: "Checkout ai-ezio (pinned ref — provides the @ai-ezio/* file: deps)"
         uses: actions/checkout@v5
         with:
           repository: ai-creed/ai-ezio
