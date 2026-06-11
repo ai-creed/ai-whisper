@@ -10,7 +10,7 @@
 		"e2e:ai-ezio-mount": "node scripts/ai-ezio-mount-relay-e2e.mjs",
 		"e2e:ai-ezio-workflow": "node scripts/ai-ezio-full-workflow-e2e.mjs",
 		"smoke:bundle": "node scripts/bundle-selfcontained-smoke.mjs",
-		"typecheck": "tsc --noEmit -p tsconfig.json && pnpm -r --if-present typecheck",
+		"typecheck": "node packages/cli/scripts/stamp-ezio-provenance.mjs && tsc --noEmit -p tsconfig.json && pnpm -r --if-present typecheck",
 		"lint": "eslint .",
 		"lint:fix": "eslint . --fix",
 		"format": "prettier --check \"{package.json,pnpm-workspace.yaml,tsconfig*.json,vitest.config.ts,eslint.config.mjs,prettier.config.mjs}\" \"packages/*/{package.json,tsconfig.json}\" \"packages/*/src/**/*.ts\" \"test/**/*.ts\"",

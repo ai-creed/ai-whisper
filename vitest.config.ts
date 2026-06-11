@@ -46,6 +46,7 @@ export default defineConfig({
 		environment: "node",
 		include: ["test/**/*.test.ts", "test/**/*.test.tsx"],
 		setupFiles: ["test/setup-color.ts"],
+		globalSetup: ["test/setup/stamp-ezio-provenance.ts"],
 		// Several integration tests spawn processes / poll real DBs and brokers.
 		// The 5s default flakes for them under full-suite parallel contention
 		// (they pass in isolation), so raise the ceiling while staying low enough
