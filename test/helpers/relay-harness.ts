@@ -12,6 +12,7 @@ type AcceptedHandoff = {
 
 type RecordedTurnEventDiagnostic = {
 	action: TurnEventAction;
+	provider: string;
 	workflowActive: boolean;
 	fidelityVerdict: string;
 	inputCorrelated: boolean | null;

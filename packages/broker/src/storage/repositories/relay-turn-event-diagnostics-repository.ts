@@ -41,13 +41,20 @@ export type RelayTurnEventDiagnosticRecord = {
 
 type InsertInput = Omit<RelayTurnEventDiagnosticRecord, "eventId">;
 
+// Monotonic per-process counter so every received event yields a UNIQUE
+// event_id even when two events share the same millisecond + handoff + action.
+// Combined with process.pid it is unique across the broker process lifetime;
+// with a plain INSERT (not INSERT OR REPLACE) it guarantees exactly one row per
+// received event (spec §7: "every received event writes exactly one DB row").
+let insertSeq = 0;
+
 export function insertTurnEventDiagnostic(
 	db: Database.Database,
 	input: InsertInput,
 ): { eventId: string } {
-	const eventId = `tevt_${input.receivedAt.replace(/[^0-9]/g, "")}_${(input.handoffId ?? input.workspaceId).slice(-8)}_${input.action}`;
+	const eventId = `tevt_${input.receivedAt.replace(/[^0-9]/g, "")}_${(input.handoffId ?? input.workspaceId).slice(-8)}_${input.action}_${process.pid}_${(insertSeq++).toString(36)}`;
 	db.prepare(
-		`INSERT OR REPLACE INTO relay_turn_event_diagnostics (
+		`INSERT INTO relay_turn_event_diagnostics (
 			event_id, received_at, provider, workspace_id, cwd,
 			session_or_thread_id, turn_id, workflow_active, collab_id, workflow_id,
 			chain_id, handoff_id, input_correlated, containment_score,

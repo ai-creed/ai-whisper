@@ -1028,6 +1028,49 @@ export function createMountedTurnOwnedRelay(input: {
 			return idleElapsedMs >= TURN_EVENT_NO_EVENT_GRACE_MS;
 		},
 
+		/** Persist an ezio turn-fidelity decision (spec §4.3 / §7) as a
+		 *  relay_turn_event_diagnostics row, so ezio's rejections/deferrals/
+		 *  deliveries are queryable in the SAME table as claude/codex. The ezio
+		 *  handler is protocol-native and has no TurnEvent, so this writes a minimal
+		 *  row keyed to the in-flight accepted handoff for workflow context. The
+		 *  mount registers this via interactiveSession.onFidelityDecision. */
+		recordEzioFidelityDecision(decision: {
+			action: "rejected_mid_composition" | "deferred_rearmed" | "delivered";
+			verdict: "clean" | "mid_composition" | "empty" | "superseded";
+		}): void {
+			const accepted = getAcceptedHandoff();
+			const handoffId = accepted?.handoffId ?? null;
+			const meta = handoffId
+				? (input.broker.control.getHandoffWithWorkflowMeta?.(handoffId) ?? null)
+				: null;
+			try {
+				input.broker.control.recordTurnEventDiagnostic?.({
+					receivedAt: new Date().toISOString(),
+					provider: "ezio",
+					workspaceId: input.workspaceId ?? "",
+					cwd: "",
+					sessionOrThreadId: null,
+					turnId: null,
+					workflowActive: meta?.workflowId != null,
+					collabId: input.collabId,
+					workflowId: meta?.workflowId ?? null,
+					chainId: meta?.chainId ?? null,
+					handoffId,
+					inputCorrelated: null,
+					containmentScore: null,
+					fidelityVerdict: decision.verdict,
+					deferCount: 0,
+					action: decision.action,
+					messageLen: 0,
+					messageSample: null,
+				});
+			} catch (err) {
+				console.warn(
+					`[ai-whisper] ezio fidelity diagnostic write failed: ${err instanceof Error ? err.message : String(err)}`,
+				);
+			}
+		},
+
 		async checkIdleActions(idleElapsedMs = 0) {
 			// Auto-accept: pending (not deferred) handoff, guard not set, not paused.
 			// Autonomous handoffs (workflow=running, chain=active) also flow through

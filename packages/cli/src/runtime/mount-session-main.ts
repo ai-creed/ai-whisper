@@ -176,6 +176,7 @@ export function createMountSessionRuntime(input: {
 	createLiveSession?: typeof createLiveSessionRuntime;
 	runLoop?: typeof runCompanionAgentLoop;
 	createTurnRelay?: typeof createMountedTurnOwnedRelay;
+	createTurnEventListener?: typeof createTurnEventListener;
 }) {
 	return {
 		async start() {
@@ -455,10 +456,27 @@ export function createMountSessionRuntime(input: {
 					collabId: resolvedClaim.collabId,
 				});
 
+				// The turn-event path is enabled for THIS mount only when the rollout
+				// flag/env enabled it AND the target is a PTY provider (claude/codex).
+				const eventPathEnabled =
+					_eventEnabled &&
+					(input.target === "claude" || input.target === "codex");
 				turnRelay = (input.createTurnRelay ?? createMountedTurnOwnedRelay)({
 					broker: input.broker,
 					collabId: resolvedClaim.collabId,
 					currentAgent: input.target,
+					// Safe even when the workspace path does not exist on disk (only
+					// event-enabled / ezio mounts consume this id; production always has a
+					// real workspace root). workspaceIdFromPath realpaths, which throws on
+					// a missing path — degrade to "" rather than failing the mount.
+					workspaceId: (() => {
+						try {
+							return workspaceIdFromPath(input.workspaceRoot);
+						} catch {
+							return "";
+						}
+					})(),
+					eventPathEnabled,
 					writeLocalMessage: (text) => interactiveSession.sendLocalMessage(text),
 					writeUserInput: (text) => writeInjectedInput("mounted-inject", text),
 					submitUserInput: submitInjectedInput,
@@ -547,18 +565,27 @@ export function createMountSessionRuntime(input: {
 					),
 					// Protocol-native providers (ai-ezio) expose onTurnFinished; for them
 					// the quiescence /copy auto-handback is skipped (handback comes from
-					// the explicit idle event). Auto-ACCEPT still runs.
+					// the explicit idle event). Event-enabled claude/codex ALSO suppress it
+					// by default — the turn-event path drives /copy via checkIdleActions's
+					// settle → consume-armed → no-event-grace consult, falling back to /copy
+					// only for indeterminate / fidelity-exhaustion / no-event cases, never a
+					// positive mismatch (the no-false-handback contract). Auto-ACCEPT still runs.
 					suppressQuiescenceHandback:
-						typeof interactiveSession.onTurnFinished === "function",
+						typeof interactiveSession.onTurnFinished === "function" ||
+						eventPathEnabled,
 				});
 				const mountedTurnRelay = turnRelay;
 
 				// Turn-event listener: only for claude/codex when event path is enabled.
 				// Starts the unix-socket server that receives shim-forwarded payloads and
 				// routes them to the relay's handleTurnEvent. No-op when eventEnabled is false.
-				if (_eventEnabled && (input.target === "claude" || input.target === "codex")) {
+				if (
+					eventPathEnabled &&
+					(input.target === "claude" || input.target === "codex")
+				) {
 					const capturedRelay = mountedTurnRelay;
-					turnEventListener = await createTurnEventListener({
+					turnEventListener = await (input.createTurnEventListener ??
+						createTurnEventListener)({
 						socketsDir: getStateSocketsDir(),
 						workspaceId: workspaceIdFromPath(input.workspaceRoot),
 						provider: input.target,
@@ -570,6 +597,15 @@ export function createMountSessionRuntime(input: {
 				// the authoritative content straight to the original sender.
 				interactiveSession.onTurnFinished?.((content) => {
 					void mountedTurnRelay.handbackResolvedContent(content);
+				});
+
+				// Persist ezio's turn-fidelity decisions (reject/defer/deliver) as
+				// relay_turn_event_diagnostics rows so the 2026-06-10 drafting-notes
+				// path leaves a queryable audit trail in the REAL mount (spec §4.3/§7).
+				// Byte/PTY providers omit onFidelityDecision (their decisions flow
+				// through the relay gate), so this is a no-op for claude/codex.
+				interactiveSession.onFidelityDecision?.((decision) => {
+					mountedTurnRelay.recordEzioFidelityDecision(decision);
 				});
 
 				// Degrade if the provider exits unexpectedly (e.g. user Ctrl+C inside the provider,
@@ -587,8 +623,13 @@ export function createMountSessionRuntime(input: {
 					ownerRefreshTimer = setInterval(() => {
 						void (async () => {
 							mountedTurnRelay.refreshOwnerView();
-							if (Date.now() - lastActivityAt >= idleThresholdMs) {
-								await mountedTurnRelay.checkIdleActions();
+							// Pass the real idle-elapsed clock so the relay's no-event grace
+							// fallback (noEventFallbackDue) can fire in production — without it
+							// the suppressed /copy path would never run and a dropped event
+							// would halt the workflow.
+							const idleElapsedMs = Date.now() - lastActivityAt;
+							if (idleElapsedMs >= idleThresholdMs) {
+								await mountedTurnRelay.checkIdleActions(idleElapsedMs);
 							}
 						})();
 					}, 1000);

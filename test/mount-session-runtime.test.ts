@@ -1,7 +1,37 @@
 import { describe, expect, it, vi } from "vitest";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createMountSessionRuntime } from "../packages/cli/src/runtime/mount-session-main.ts";
 import { createMountedTurnOwnedRelay } from "../packages/cli/src/runtime/mounted-turn-owned-relay.ts";
 import { createCli } from "../packages/cli/src/create-cli.ts";
+
+// Full fake relay api (all methods createMountedTurnOwnedRelay returns), so a
+// test can inject `createTurnRelay` and capture the relay INPUT.
+function fakeRelayApi(): ReturnType<typeof createMountedTurnOwnedRelay> {
+	return {
+		getWaitingGate: () => ({
+			isBlocked: () => false,
+			renderBlockedMessage: () => "",
+			onCancel: () => {},
+		}),
+		refreshOwnerView: vi.fn(),
+		checkIdleActions: vi.fn(() => Promise.resolve()),
+		handbackResolvedContent: vi.fn(async () => {}),
+		handleTurnEvent: vi.fn(async () => {}),
+		settleHeldTurnEvent: vi.fn(),
+		isCopyFallbackArmed: vi.fn(() => false),
+		noEventFallbackDue: vi.fn(() => false),
+		recordEzioFidelityDecision: vi.fn(),
+		acceptPendingHandoff: vi.fn(),
+		amendPendingHandoff: vi.fn(),
+		declinePendingHandoff: vi.fn(),
+		deferPendingHandoff: vi.fn(),
+		handBackTo: vi.fn(),
+		handleOwnerDisconnect: vi.fn(),
+		handleOwnerInput: vi.fn(async () => false),
+	} as unknown as ReturnType<typeof createMountedTurnOwnedRelay>;
+}
 
 describe("mount session runtime", () => {
 	it("starts the live session before completing the claim and records mounted session metadata", async () => {
@@ -215,6 +245,7 @@ describe("mount session runtime — idle timer", () => {
 			settleHeldTurnEvent: vi.fn(),
 			isCopyFallbackArmed: vi.fn(() => false),
 			noEventFallbackDue: vi.fn(() => false),
+			recordEzioFidelityDecision: vi.fn(),
 			acceptPendingHandoff: vi.fn(),
 			amendPendingHandoff: vi.fn(),
 			declinePendingHandoff: vi.fn(),
@@ -286,6 +317,118 @@ describe("mount session runtime — idle timer", () => {
 		expect(checkIdleActions).toHaveBeenCalled();
 
 		vi.useRealTimers();
+	});
+});
+
+describe("mount session runtime — turn-event production wiring", () => {
+	it("event-enabled claude mount passes eventPathEnabled + suppressQuiescenceHandback to the relay and supplies idleElapsedMs", async () => {
+		const prevRoot = process.env["AI_WHISPER_STATE_ROOT"];
+		process.env["AI_WHISPER_STATE_ROOT"] = mkdtempSync(
+			join(tmpdir(), "aiw-mount-wire-"),
+		);
+		const workspaceRoot = mkdtempSync(join(tmpdir(), "aiw-ws-evt-"));
+		vi.useFakeTimers();
+		try {
+			let capturedRelayInput: Record<string, unknown> | undefined;
+			const checkIdleActions = vi.fn((_idleElapsedMs?: number) =>
+				Promise.resolve(),
+			);
+			const createTurnRelay: typeof createMountedTurnOwnedRelay = (relayInput) => {
+				capturedRelayInput = relayInput as unknown as Record<string, unknown>;
+				return { ...fakeRelayApi(), checkIdleActions };
+			};
+			const runtime = createMountSessionRuntime({
+				target: "claude",
+				ttyPath: "/dev/ttys032",
+				workspaceRoot,
+				claimId: "claim_evt",
+				secret: "secret_evt",
+				// Rollout enablement ON for claude — this is what production resolves
+				// from the --turn-events flag / AI_WHISPER_TURN_EVENTS env.
+				turnEventsEnablement: { claude: true, codex: false },
+				broker: {
+					control: {
+						completeAttachClaim: vi.fn(() => ({
+							collabId: "collab_evt",
+							sessionId: "session_evt",
+							agentType: "claude",
+						})),
+						listSessionBindings: () => [],
+						listSessions: () => [],
+						markSessionDegraded: vi.fn(),
+						getRelayTurnState: () => ({
+							collabId: "collab_evt",
+							turnOwner: "none" as const,
+							waitingAgent: null,
+							unresolvedHandoffId: null,
+							handoffState: "idle" as const,
+							handoffAgeMs: null,
+						}),
+						getRelayHandoff: () => null,
+					},
+					stop: () => Promise.resolve(),
+				} as never,
+				// claude-like session: NO onTurnFinished (so suppression can only come
+				// from the event-path enablement, exactly the bug under test).
+				createInteractiveSession: () => ({
+					start: () => Promise.resolve(),
+					stop: () => Promise.resolve(),
+					writeUserInput: vi.fn(),
+					sendLocalMessage: vi.fn(),
+					onProviderOutput: vi.fn(),
+					onExit: vi.fn(),
+				}),
+				createProvider: () =>
+					({
+						getIdentity: () => ({
+							providerId: "claude",
+							toolFamily: "claude",
+							providerVersion: "1",
+						}),
+						getCapabilities: () => ({
+							supportsDirectPackets: false,
+							supportsNormalization: false,
+							supportsRelayInterception: false,
+							supportsLocalBuffering: false,
+							supportsLaunchHooks: false,
+							extensions: {},
+						}),
+					}) as never,
+				createLiveSession: () =>
+					({
+						start: () => Promise.resolve(),
+						stop: () => Promise.resolve(),
+						withPausedInput: async <T>(fn: () => Promise<T>) => fn(),
+						isPaused: () => false,
+					}) as never,
+				runLoop: () => Promise.resolve(() => Promise.resolve()),
+				createTurnRelay,
+				// Fake listener: avoid opening a real unix socket in the unit test.
+				createTurnEventListener: (async () => ({
+					socketPath: "/tmp/fake.sock",
+					close: async () => {},
+				})) as never,
+			});
+
+			void runtime.start();
+			await vi.advanceTimersByTimeAsync(31_000); // past the 30s idle threshold
+
+			// THE regression: production must enable suppression + the event path, or a
+			// positive-mismatch turn could still trigger the unsuppressed /copy handback.
+			expect(capturedRelayInput?.["eventPathEnabled"]).toBe(true);
+			expect(capturedRelayInput?.["suppressQuiescenceHandback"]).toBe(true);
+			expect(capturedRelayInput?.["workspaceId"]).toBeTruthy();
+			// And the idle timer must pass a real elapsed clock (not the 0 default), so
+			// the no-event grace fallback can actually fire in production.
+			expect(checkIdleActions).toHaveBeenCalled();
+			const elapsedArg = checkIdleActions.mock.calls[0]?.[0];
+			expect(typeof elapsedArg).toBe("number");
+			expect(elapsedArg).toBeGreaterThan(0);
+		} finally {
+			vi.useRealTimers();
+			if (prevRoot === undefined) delete process.env["AI_WHISPER_STATE_ROOT"];
+			else process.env["AI_WHISPER_STATE_ROOT"] = prevRoot;
+		}
 	});
 });
 

@@ -1,4 +1,7 @@
-import type { InteractiveSessionController } from "@ai-whisper/shared";
+import type {
+	InteractiveSessionController,
+	TurnFidelityDecision,
+} from "@ai-whisper/shared";
 import type { ProtocolEvent } from "@ai-ezio/protocol";
 import { loadMcpHost, type McpHost } from "@ai-ezio/mcp-host";
 import {
@@ -13,10 +16,7 @@ import { isMidCompositionShape } from "./mid-composition-shape.js";
  * (spec §4.3). Wired by the mount to `relay.recordTurnEventDiagnostic` so ezio's
  * decisions land in the same `relay_turn_event_diagnostics` table as
  * claude/codex. */
-export type EzioFidelityDecision = {
-	action: "rejected_mid_composition" | "deferred_rearmed" | "delivered";
-	verdict: "clean" | "mid_composition" | "empty" | "superseded";
-};
+export type EzioFidelityDecision = TurnFidelityDecision;
 
 export function createAiEzioLiveSession(input: {
 	stdout: NodeJS.WritableStream;
@@ -25,10 +25,6 @@ export function createAiEzioLiveSession(input: {
 	 * SAME factory the standalone CLI uses — this is what gives mounted ezio MCP
 	 * tools (M9). */
 	mcpHost?: McpHost;
-	/** Optional sink for turn-fidelity decisions (spec §4.3). The mount wires this
-	 * to `relay.recordTurnEventDiagnostic({ provider: "ezio", ... })` so every
-	 * rejection/deferral/delivery is logged, not silent. */
-	onFidelityDecision?: (decision: EzioFidelityDecision) => void;
 }): InteractiveSessionController {
 	const create = input.createEngineSession ?? defaultCreateEngineSession;
 	// Mounted posture: confirm degrades to deny (no human to prompt in a pane).
@@ -46,6 +42,9 @@ export function createAiEzioLiveSession(input: {
 
 	const outputHandlers: Array<(data: string) => void> = [];
 	const turnFinishedHandlers: Array<(content: string) => void> = [];
+	const fidelityDecisionHandlers: Array<
+		(decision: TurnFidelityDecision) => void
+	> = [];
 	const exitHandlers: Array<() => void> = [];
 
 	// M8: all pane presentation (banner / spinner / markdown-at-turn-end / tool
@@ -73,10 +72,8 @@ export function createAiEzioLiveSession(input: {
 				// prior candidate is still pending here, the new completion arrived
 				// before idle settled — log the supersession so it is not silent.
 				if (pendingContent !== null) {
-					input.onFidelityDecision?.({
-						action: "deferred_rearmed",
-						verdict: "superseded",
-					});
+					for (const h of fidelityDecisionHandlers)
+						h({ action: "deferred_rearmed", verdict: "superseded" });
 				}
 				pendingContent = event.content;
 				break;
@@ -87,17 +84,20 @@ export function createAiEzioLiveSession(input: {
 					// A rejected candidate defers — the next real turn replaces it —
 					// instead of being delivered and forcing an evaluator halt.
 					if (isMidCompositionShape(candidate)) {
-						input.onFidelityDecision?.({
-							action: "rejected_mid_composition",
-							verdict: candidate.trim().length === 0 ? "empty" : "mid_composition",
-						});
+						for (const h of fidelityDecisionHandlers)
+							h({
+								action: "rejected_mid_composition",
+								verdict:
+									candidate.trim().length === 0 ? "empty" : "mid_composition",
+							});
 						pendingContent = null;
 						sawTurn = false;
 						break;
 					}
 					pendingContent = null;
 					sawTurn = false;
-					input.onFidelityDecision?.({ action: "delivered", verdict: "clean" });
+					for (const h of fidelityDecisionHandlers)
+						h({ action: "delivered", verdict: "clean" });
 					for (const h of turnFinishedHandlers) h(candidate);
 				}
 				break;
@@ -153,6 +153,9 @@ export function createAiEzioLiveSession(input: {
 		},
 		onTurnFinished(handler: (content: string) => void) {
 			turnFinishedHandlers.push(handler);
+		},
+		onFidelityDecision(handler: (decision: TurnFidelityDecision) => void) {
+			fidelityDecisionHandlers.push(handler);
 		},
 	};
 }

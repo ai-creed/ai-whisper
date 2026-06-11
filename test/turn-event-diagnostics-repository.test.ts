@@ -52,6 +52,17 @@ describe("relay-turn-event-diagnostics-repository", () => {
     db.close();
   });
 
+  it("writes ONE row per received event — same-ms, same-handoff, same-action duplicates do NOT overwrite (spec §7)", () => {
+    const db = freshDb();
+    // Two events that collide on receivedAt + handoff + action: the old
+    // timestamp-derived id + INSERT OR REPLACE would collapse these into one row.
+    const a = insertTurnEventDiagnostic(db, base);
+    const b = insertTurnEventDiagnostic(db, base);
+    expect(a.eventId).not.toBe(b.eventId); // unique per received event
+    expect(listTurnEventDiagnosticsByCollab(db, "collab1", null)).toHaveLength(2);
+    db.close();
+  });
+
   it("deletes rows older than a cutoff", () => {
     const db = freshDb();
     insertTurnEventDiagnostic(db, { ...base, receivedAt: "2026-06-01T00:00:00.000Z" });
