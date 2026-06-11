@@ -20,7 +20,7 @@ describe("workspace foundation", () => {
 		expect(pkg.scripts?.build).toBe("pnpm -r --if-present build");
 		expect(pkg.scripts?.test).toBe("vitest run");
 		expect(pkg.scripts?.typecheck).toBe(
-			"tsc --noEmit -p tsconfig.json && pnpm -r --if-present typecheck",
+			"node packages/cli/scripts/stamp-ezio-provenance.mjs && tsc --noEmit -p tsconfig.json && pnpm -r --if-present typecheck",
 		);
 		expect(pkg.scripts?.lint).toBe("eslint .");
 	});
