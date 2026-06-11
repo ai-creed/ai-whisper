@@ -1,4 +1,7 @@
-import type { InteractiveSessionController } from "@ai-whisper/shared";
+import type {
+	InteractiveSessionController,
+	TurnFidelityDecision,
+} from "@ai-whisper/shared";
 import type { ProtocolEvent } from "@ai-ezio/protocol";
 import { loadMcpHost, type McpHost } from "@ai-ezio/mcp-host";
 import {
@@ -7,6 +10,13 @@ import {
 	type CreateEngineSession,
 } from "./ai-ezio-engine.js";
 import { createMountedRenderer } from "@ai-ezio/surface";
+import { isMidCompositionShape } from "./mid-composition-shape.js";
+
+/** The turn-fidelity outcome the handback handler emits per candidate turn
+ * (spec §4.3). Wired by the mount to `relay.recordTurnEventDiagnostic` so ezio's
+ * decisions land in the same `relay_turn_event_diagnostics` table as
+ * claude/codex. */
+export type EzioFidelityDecision = TurnFidelityDecision;
 
 export function createAiEzioLiveSession(input: {
 	stdout: NodeJS.WritableStream;
@@ -23,11 +33,18 @@ export function createAiEzioLiveSession(input: {
 		input.mcpHost ?? loadMcpHost({ mode: "mounted", cwd: process.cwd() });
 
 	let session: AiEzioEngineSession | null = null;
-	let lastContent = "";
 	let sawTurn = false; // guards against the startup idle firing a handback
+	// Settle-on-last (spec §4.3): the last finished-turn content awaiting a
+	// genuine idle. A newer assistant_turn_finished supersedes an older candidate
+	// before idle settles, so a transient idle between a drafting turn and the
+	// real answer never relays the drafting turn.
+	let pendingContent: string | null = null;
 
 	const outputHandlers: Array<(data: string) => void> = [];
 	const turnFinishedHandlers: Array<(content: string) => void> = [];
+	const fidelityDecisionHandlers: Array<
+		(decision: TurnFidelityDecision) => void
+	> = [];
 	const exitHandlers: Array<() => void> = [];
 
 	// M8: all pane presentation (banner / spinner / markdown-at-turn-end / tool
@@ -50,14 +67,44 @@ export function createAiEzioLiveSession(input: {
 				break;
 			case "assistant_turn_finished":
 				sawTurn = true;
-				lastContent = event.content;
+				// Re-arm on each completion: a newer turn supersedes an older
+				// candidate that has not yet settled into a genuine idle. If a
+				// prior candidate is still pending here, the new completion arrived
+				// before idle settled — log the supersession so it is not silent.
+				if (pendingContent !== null) {
+					const superseded = pendingContent;
+					for (const h of fidelityDecisionHandlers)
+						h({
+							action: "deferred_rearmed",
+							verdict: "superseded",
+							content: superseded,
+						});
+				}
+				pendingContent = event.content;
 				break;
 			case "idle":
-				if (sawTurn) {
-					const content = lastContent;
-					lastContent = "";
+				if (sawTurn && pendingContent !== null) {
+					const candidate = pendingContent;
+					// Shape guard (spec §4.3): never relay a drafting/empty fragment.
+					// A rejected candidate defers — the next real turn replaces it —
+					// instead of being delivered and forcing an evaluator halt.
+					if (isMidCompositionShape(candidate)) {
+						for (const h of fidelityDecisionHandlers)
+							h({
+								action: "rejected_mid_composition",
+								verdict:
+									candidate.trim().length === 0 ? "empty" : "mid_composition",
+								content: candidate,
+							});
+						pendingContent = null;
+						sawTurn = false;
+						break;
+					}
+					pendingContent = null;
 					sawTurn = false;
-					for (const h of turnFinishedHandlers) h(content);
+					for (const h of fidelityDecisionHandlers)
+						h({ action: "delivered", verdict: "clean", content: candidate });
+					for (const h of turnFinishedHandlers) h(candidate);
 				}
 				break;
 			default:
@@ -112,6 +159,9 @@ export function createAiEzioLiveSession(input: {
 		},
 		onTurnFinished(handler: (content: string) => void) {
 			turnFinishedHandlers.push(handler);
+		},
+		onFidelityDecision(handler: (decision: TurnFidelityDecision) => void) {
+			fidelityDecisionHandlers.push(handler);
 		},
 	};
 }

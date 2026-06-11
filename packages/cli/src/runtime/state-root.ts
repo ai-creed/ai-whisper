@@ -8,3 +8,11 @@ export function getStateRoot(): string {
 export function getSharedSqlitePath(): string {
 	return path.join(getStateRoot(), "state.db");
 }
+
+export function getStateSocketsDir(): string {
+	return path.join(getStateRoot(), "sockets");
+}
+
+export function getStateLogsDir(): string {
+	return path.join(getStateRoot(), "logs");
+}

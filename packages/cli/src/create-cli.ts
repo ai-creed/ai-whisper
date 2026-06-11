@@ -268,15 +268,20 @@ export function createCli(): Command {
 		)
 		.option("--workspace <path>", "Workspace root", process.cwd())
 		.option("--collab <id>", "Target a specific collab id (defaults to the active collab for cwd)")
+		.option(
+			"--turn-events <providers>",
+			"Enable push turn-completion events for the given providers (comma-separated: claude,codex). Overrides AI_WHISPER_TURN_EVENTS. Default: off.",
+		)
 		.action(
 			async (
 				target: AgentType,
 				passthroughArgs: string[],
-				opts: WorkspaceOpts & { collab?: string },
+				opts: WorkspaceOpts & { collab?: string; turnEvents?: string },
 			) => {
 				await runCollabMount({
 					workspaceRoot: opts.workspace,
 					...(opts.collab ? { collabIdOverride: opts.collab } : {}),
+					...(opts.turnEvents !== undefined ? { turnEventsFlag: opts.turnEvents } : {}),
 					target,
 					passthroughArgs,
 					now: new Date().toISOString(),

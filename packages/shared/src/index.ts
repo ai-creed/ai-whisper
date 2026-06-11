@@ -91,7 +91,10 @@ export {
 	relayTargets,
 	type RelayDirective,
 } from "./relay-host.js";
-export type { InteractiveSessionController } from "./interactive-session.js";
+export type {
+	InteractiveSessionController,
+	TurnFidelityDecision,
+} from "./interactive-session.js";
 export {
 	appendInteractiveBrokerChunk,
 	beginBrokerReply,

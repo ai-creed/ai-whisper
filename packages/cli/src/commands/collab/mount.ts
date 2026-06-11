@@ -22,7 +22,14 @@ import { isPortFree } from "../../runtime/port-utils.js";
 import {
 	getSharedSqlitePath,
 	getStateRoot,
+	getStateSocketsDir,
+	getStateLogsDir,
 } from "../../runtime/state-root.js";
+import {
+	formatTurnEventsStartupLine,
+	resolveTurnEvents,
+	type TurnEventsEnablement,
+} from "../../runtime/turn-events-config.js";
 import { waitForBrokerReady } from "../../runtime/wait-for-broker-ready.js";
 import { runCollabRecover } from "./recover.js";
 import { runCollabStart } from "./start.js";
@@ -82,6 +89,12 @@ export async function runCollabMount(input: {
 	 * on commander 13's variadic positional to yield a clean string[].
 	 */
 	passthroughArgs?: string[];
+	/**
+	 * Override value for AI_WHISPER_TURN_EVENTS (flag > env > default OFF).
+	 * Comma-separated provider names: "claude", "codex", or "claude,codex".
+	 * When absent, falls through to the env var (then defaults to off).
+	 */
+	turnEventsFlag?: string;
 	now: string;
 	resolveCurrentTty?: () => string;
 	createRuntime?: typeof createMountSessionRuntime;
@@ -126,6 +139,12 @@ export async function runCollabMount(input: {
 			db.close();
 		}
 	}
+
+	// Turn-events: resolve enablement (flag > env > default OFF); ensure dirs; startup log.
+	const enablement: TurnEventsEnablement = resolveTurnEvents(input.turnEventsFlag);
+	mkdirSync(getStateSocketsDir(), { recursive: true });
+	mkdirSync(getStateLogsDir(), { recursive: true });
+	console.error(formatTurnEventsStartupLine(enablement));
 
 	const tryResolve = () => {
 		const db = openDatabase(getSharedSqlitePath());
@@ -346,6 +365,7 @@ export async function runCollabMount(input: {
 			secret: claim.secret,
 			broker,
 			passthroughArgs: input.passthroughArgs ?? [],
+			turnEventsEnablement: enablement,
 		});
 
 		brokerHandedOff = true;

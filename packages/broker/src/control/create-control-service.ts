@@ -119,6 +119,14 @@ import {
 	type EvaluatorDiagnosticsWorkflowFilter,
 } from "../storage/repositories/relay-evaluator-diagnostics-repository.js";
 import {
+	insertTurnEventDiagnostic,
+	listTurnEventDiagnosticsByCollab as queryListTurnEventDiagnosticsByCollab,
+	deleteTurnEventDiagnosticsOlderThan,
+	type RelayTurnEventDiagnosticRecord,
+	type TurnEventAction,
+	type TurnEventFidelityVerdict,
+} from "../storage/repositories/relay-turn-event-diagnostics-repository.js";
+import {
 	createRelayHandoffTxn,
 	acceptRelayHandoffTxn,
 	deferRelayHandoffTxn,
@@ -1346,6 +1354,37 @@ export function createControlService(db: Database.Database, events: BrokerEventB
 		},
 		sweepEvaluatorDiagnostics(input: { cutoffIso: string }): number {
 			return deleteEvaluatorDiagnosticsOlderThan(db, input.cutoffIso);
+		},
+		recordTurnEventDiagnostic(input: {
+			receivedAt: string;
+			provider: AgentType;
+			workspaceId: string;
+			cwd: string;
+			sessionOrThreadId: string | null;
+			turnId: string | null;
+			workflowActive: boolean;
+			collabId: string | null;
+			workflowId: string | null;
+			chainId: string | null;
+			handoffId: string | null;
+			inputCorrelated: boolean | null;
+			containmentScore: number | null;
+			fidelityVerdict: TurnEventFidelityVerdict;
+			deferCount: number;
+			action: TurnEventAction;
+			messageLen: number;
+			messageSample: string | null;
+		}): { eventId: string } {
+			return insertTurnEventDiagnostic(db, input);
+		},
+		listTurnEventDiagnosticsByCollab(
+			collabId: string,
+			limit: number | null,
+		): RelayTurnEventDiagnosticRecord[] {
+			return queryListTurnEventDiagnosticsByCollab(db, collabId, limit);
+		},
+		sweepTurnEventDiagnostics(input: { cutoffIso: string }): number {
+			return deleteTurnEventDiagnosticsOlderThan(db, input.cutoffIso);
 		},
 		cleanupOrchestration(input: { collabId: string; reason: string; now: string }) {
 			return cleanupOrchestrationOnShutdownTxn(db, input);

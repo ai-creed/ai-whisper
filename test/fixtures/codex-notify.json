@@ -1,0 +1,9 @@
+{
+  "type": "agent-turn-complete",
+  "thread-id": "thread-xyz",
+  "turn-id": "turn-7",
+  "cwd": "/private/tmp/repo",
+  "client": "codex-tui",
+  "input-messages": ["Please review the spec and produce a matrix."],
+  "last-assistant-message": "Review matrix:\n| Requirement | ... |"
+}

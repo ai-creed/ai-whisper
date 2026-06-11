@@ -27,7 +27,8 @@
 	"type": "module",
 	"bin": {
 		"whisper": "./dist/bin/whisper.js",
-		"whisper-relay-monitor": "./dist/bin/relay-monitor.js"
+		"whisper-relay-monitor": "./dist/bin/relay-monitor.js",
+		"whisper-turn-event-shim": "./dist/bin/turn-event-shim.js"
 	},
 	"dependencies": {
 		"@anthropic-ai/sdk": "^0.88.0",

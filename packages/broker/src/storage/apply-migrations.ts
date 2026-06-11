@@ -7,7 +7,7 @@ import { sweepStaleCaptureLease } from "./clipboard-capture-lease.js";
 // ALTERs), so a persisted DB at an older user_version safely re-runs it and
 // picks up the additions. Forgetting to bump means a persisted DB never gets
 // the new schema (it only worked for freshly-created DBs).
-export const CURRENT_SCHEMA_VERSION = 5;
+export const CURRENT_SCHEMA_VERSION = 6;
 
 const initMigrationSql = `
 CREATE TABLE IF NOT EXISTS broker_state (
@@ -570,4 +570,36 @@ function runMigrationBody(db: Database.Database): void {
 	if (!brokerDaemonColumns.some((column) => column.name === "evaluator_status")) {
 		db.exec("ALTER TABLE broker_daemon ADD COLUMN evaluator_status TEXT");
 	}
+
+	db.exec(`
+		CREATE TABLE IF NOT EXISTS relay_turn_event_diagnostics (
+			event_id TEXT PRIMARY KEY,
+			received_at TEXT NOT NULL,
+			provider TEXT NOT NULL,
+			workspace_id TEXT NOT NULL,
+			cwd TEXT NOT NULL,
+			session_or_thread_id TEXT,
+			turn_id TEXT,
+			workflow_active INTEGER NOT NULL DEFAULT 0,
+			collab_id TEXT,
+			workflow_id TEXT,
+			chain_id TEXT,
+			handoff_id TEXT,
+			input_correlated INTEGER,
+			containment_score REAL,
+			fidelity_verdict TEXT NOT NULL DEFAULT 'n/a',
+			defer_count INTEGER NOT NULL DEFAULT 0,
+			action TEXT NOT NULL,
+			message_len INTEGER NOT NULL DEFAULT 0,
+			message_sample TEXT
+		);
+		CREATE INDEX IF NOT EXISTS idx_relay_turn_event_diag_collab_received
+			ON relay_turn_event_diagnostics (collab_id, received_at DESC);
+		CREATE INDEX IF NOT EXISTS idx_relay_turn_event_diag_handoff
+			ON relay_turn_event_diagnostics (handoff_id);
+		CREATE INDEX IF NOT EXISTS idx_relay_turn_event_diag_action
+			ON relay_turn_event_diagnostics (action);
+		CREATE INDEX IF NOT EXISTS idx_relay_turn_event_diag_received
+			ON relay_turn_event_diagnostics (received_at);
+	`);
 }

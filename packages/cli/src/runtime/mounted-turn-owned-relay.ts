@@ -1,5 +1,6 @@
 import type { CaptureHandbackResult } from "./capture-handback-text.js";
 import type { AgentType } from "@ai-whisper/shared";
+import { isMidCompositionShape } from "./mid-composition-shape.js";
 
 type RelayTurnState = {
 	collabId: string;
@@ -60,8 +61,51 @@ type BrokerLike = {
 		getRelayChain?(id: string): { status: string } | null;
 		applyOrchestratorVerdict?(input: { handoffId: string; verdict: string; confidence: number; reason: string; now: string }): void;
 		isWorkflowDeliverySuspended?(handoffId: string): boolean;
+		recordTurnEventDiagnostic?(input: {
+			receivedAt: string;
+			provider: AgentType;
+			workspaceId: string;
+			cwd: string;
+			sessionOrThreadId: string | null;
+			turnId: string | null;
+			workflowActive: boolean;
+			collabId: string | null;
+			workflowId: string | null;
+			chainId: string | null;
+			handoffId: string | null;
+			inputCorrelated: boolean | null;
+			containmentScore: number | null;
+			fidelityVerdict: "clean" | "mid_composition" | "empty" | "superseded" | "n/a";
+			deferCount: number;
+			action:
+				| "delivered"
+				| "ignored_no_workflow"
+				| "ignored_unrelated_turn"
+				| "deferred_rearmed"
+				| "rejected_mid_composition"
+				| "fallback_indeterminate"
+				| "fallback_exhausted";
+			messageLen: number;
+			messageSample: string | null;
+		}): { eventId: string };
 	};
 };
+
+type TurnEventAction = NonNullable<
+	BrokerLike["control"]["recordTurnEventDiagnostic"]
+> extends (input: infer I) => unknown
+	? I extends { action: infer A }
+		? A
+		: never
+	: never;
+
+type TurnEventFidelityVerdict = NonNullable<
+	BrokerLike["control"]["recordTurnEventDiagnostic"]
+> extends (input: infer I) => unknown
+	? I extends { fidelityVerdict: infer V }
+		? V
+		: never
+	: never;
 
 const CLEAR_LINE = "\r\u001b[2K";
 const CURSOR_UP = "\u001b[1A";
@@ -263,6 +307,13 @@ export function createMountedTurnOwnedRelay(input: {
 	 *  (handbackResolvedContent), so the quiescence /copy auto-handback must be
 	 *  skipped. Auto-ACCEPT still runs — it is the delivery path. */
 	suppressQuiescenceHandback?: boolean;
+	/** Workspace id (sha256 of the canonical worktree root) for turn-event
+	 *  diagnostics. Threaded from the mount; only used by handleTurnEvent. */
+	workspaceId?: string;
+	/** Whether the push-based turn-event path is enabled for this provider
+	 *  (claude/codex). Gates the /copy fallback in the suppressed idle branch so
+	 *  protocol-native ezio (suppress + no event path) keeps today's hard-return. */
+	eventPathEnabled?: boolean;
 }) {
 	function resolveCols(): number {
 		const c = input.getTerminalCols?.() ?? process.stdout.columns;
@@ -289,6 +340,297 @@ export function createMountedTurnOwnedRelay(input: {
 	let renderedOwnerCardLines = 0;
 	let autoAcceptFiredFor: string | null = null;
 	let autoHandbackFiredFor: string | null = null;
+
+	// ----- Turn-event gate state (push-based handback, §4.1-4.3) -----------------
+	// Per-handoff defer count (fidelity gate): bumped on each rejected/superseded
+	// candidate, reported in diagnostics, reset on delivery.
+	const turnEventDeferals = new Map<string, number>();
+	// Latest clean codex candidate per handoff (settle-on-last). claude delivers on
+	// arrival (Stop is structurally the last turn) so it never populates this.
+	const heldClean = new Map<
+		string,
+		{ event: import("./turn-event.js").TurnEvent; containment: number | null }
+	>();
+	// Sequence backstop: handoffIds expecting their FIRST post-injection turn-event.
+	// Populated in acceptPendingHandoff (right after the request is injected) and
+	// consumed by the first no-input event in correlateInput, which then treats that
+	// turn as the response. Never seeded by the harness, so a unit no-input event is
+	// `indeterminate` there.
+	const sequenceBackstop = new Set<string>();
+
+	const TURN_EVENT_INPUT_MATCH_MIN = 0.9; // §12 Q3
+	const TURN_EVENT_CODEX_CORROBORATION_MIN = 0.5; // §12 Q5 (codex output corroboration)
+	const TURN_EVENT_MAX_DEFERS = (() => {
+		const raw = process.env["AI_WHISPER_TURN_EVENT_MAX_DEFERS"];
+		return raw && Number(raw) > 0 ? Number(raw) : 3;
+	})();
+	const TURN_EVENT_NO_EVENT_GRACE_MS = (() => {
+		const raw = process.env["AI_WHISPER_TURN_EVENT_NO_EVENT_GRACE_MS"];
+		return raw && Number(raw) > 0 ? Number(raw) : 8000;
+	})();
+
+	type RelevanceState = "relevant" | "positive_mismatch" | "indeterminate";
+
+	// Copy-fallback reservation: a RELAY-INTERNAL one-shot flag (no input callback).
+	// The indeterminate (§4.2) and fidelity-exhausted (§4.3) paths arm it; the idle
+	// path (checkIdleActions, Task 16) consumes it to release the proven /copy path
+	// for one cycle. isCopyFallbackArmed() is a read-only peek exposed on the api for
+	// tests; consumeCopyFallbackArmed() reads-and-resets for the idle path.
+	let copyFallbackArmed = false;
+	function armCopyFallbackOnce(): void {
+		copyFallbackArmed = true;
+	}
+	function consumeCopyFallbackArmed(): boolean {
+		const armed = copyFallbackArmed;
+		copyFallbackArmed = false;
+		return armed;
+	}
+
+	function normalizeForMatch(s: string): string {
+		return s.trim().replace(/\s+/g, " ").toLowerCase();
+	}
+
+	function correlateInput(
+		injectedRequest: string,
+		handoffId: string,
+		event: import("./turn-event.js").TurnEvent,
+	): { state: RelevanceState; containment: number | null } {
+		const candidates = event.inputMessages.map(normalizeForMatch).filter((s) => s.length > 0);
+		const req = normalizeForMatch(injectedRequest);
+		if (candidates.length === 0) {
+			// No usable input (claude transcript read unavailable AND no event input).
+			// Sequence backstop: the FIRST post-injection turn-event for this accepted
+			// handoff is the response; consume the flag. Once consumed (or never set), a
+			// no-input event is indeterminate → release the proven /copy path.
+			if (sequenceBackstop.has(handoffId)) {
+				sequenceBackstop.delete(handoffId);
+				return { state: "relevant", containment: null };
+			}
+			return { state: "indeterminate", containment: null };
+		}
+		for (const c of candidates) {
+			if (c === req) return { state: "relevant", containment: 1 };
+			const containment = computeContainment(req, c);
+			if (containment >= TURN_EVENT_INPUT_MATCH_MIN) return { state: "relevant", containment };
+		}
+		// Input present but does not match → affirmatively unrelated.
+		return { state: "positive_mismatch", containment: computeContainment(req, candidates[0]!) };
+	}
+
+	// §4.2 relevance gate. Routes a workflow-gated event into deliver / suppress /
+	// release-/copy by input correlation (both providers) and codex output
+	// corroboration (codex only — claude's full-screen TUI scrape is lossy).
+	async function routeRelevance(
+		accepted: RelayHandoff,
+		event: import("./turn-event.js").TurnEvent,
+	): Promise<void> {
+		const { state, containment } = correlateInput(accepted.requestText, accepted.handoffId, event);
+
+		if (state === "positive_mismatch") {
+			// Operator-interjection class: suppress, do NOT arm /copy, wait for a later
+			// correlated turn. This is the no-false-handback guarantee.
+			logTurnEvent(event, "ignored_unrelated_turn", {
+				workflowActive: true,
+				handoffId: accepted.handoffId,
+				inputCorrelated: false,
+				containmentScore: containment,
+				fidelityVerdict: "n/a",
+				deferCount: turnEventDeferals.get(accepted.handoffId) ?? 0,
+			});
+			return;
+		}
+
+		if (state === "indeterminate") {
+			logTurnEvent(event, "fallback_indeterminate", {
+				workflowActive: true,
+				handoffId: accepted.handoffId,
+				inputCorrelated: null,
+				containmentScore: containment,
+				fidelityVerdict: "n/a",
+				deferCount: turnEventDeferals.get(accepted.handoffId) ?? 0,
+			});
+			armCopyFallbackOnce(); // release the proven path for one idle cycle
+			return;
+		}
+
+		// Relevant. §4.2 codex output corroboration: where a reliable PTY scrape is
+		// available (codex), additionally require containment(message, scrape) to clear
+		// a threshold. NOT applied to claude — its full-screen TUI scrape is lossy and
+		// would false-negative a correct event.
+		if (event.provider === "codex") {
+			const scraped = input.turnCapture?.extractLatestAssistantTurn?.()?.text ?? "";
+			if (scraped.length > 0) {
+				const corr = computeContainment(event.message, scraped);
+				if (corr < TURN_EVENT_CODEX_CORROBORATION_MIN) {
+					logTurnEvent(event, "fallback_indeterminate", {
+						workflowActive: true,
+						handoffId: accepted.handoffId,
+						inputCorrelated: true,
+						containmentScore: corr,
+						fidelityVerdict: "n/a",
+						deferCount: turnEventDeferals.get(accepted.handoffId) ?? 0,
+					});
+					armCopyFallbackOnce();
+					return;
+				}
+			}
+		}
+
+		await acceptCandidate(accepted, event, containment);
+	}
+
+	// §4.3 candidate acceptance. claude delivers on arrival (Stop is structurally the
+	// last turn); codex holds the latest clean candidate (settle-on-last) and delivers
+	// on settleHeldTurnEvent. Task 12 prepends the mid-composition shape guard.
+	// eslint-disable-next-line @typescript-eslint/require-await
+	async function acceptCandidate(
+		accepted: RelayHandoff,
+		event: import("./turn-event.js").TurnEvent,
+		containment: number | null,
+	): Promise<void> {
+		if (autoHandbackFiredFor === accepted.handoffId) return;
+		const deferCount = turnEventDeferals.get(accepted.handoffId) ?? 0;
+
+		// Mid-composition shape guard (both providers): reject empty / drafting
+		// fragments → retry/defer to a later turn-complete, never deliver the
+		// scratchpad (the 2026-06-10 ezio halt class). On budget exhaustion, hand
+		// control back to the proven /copy path (armCopyFallbackOnce).
+		if (isMidCompositionShape(event.message)) {
+			const verdict = event.message.trim().length === 0 ? "empty" : "mid_composition";
+			if (deferCount + 1 >= TURN_EVENT_MAX_DEFERS) {
+				logTurnEvent(event, "fallback_exhausted", {
+					workflowActive: true,
+					handoffId: accepted.handoffId,
+					inputCorrelated: true,
+					containmentScore: containment,
+					fidelityVerdict: verdict,
+					deferCount: deferCount + 1,
+				});
+				turnEventDeferals.delete(accepted.handoffId);
+				heldClean.delete(accepted.handoffId);
+				armCopyFallbackOnce();
+				return;
+			}
+			turnEventDeferals.set(accepted.handoffId, deferCount + 1);
+			logTurnEvent(event, "rejected_mid_composition", {
+				workflowActive: true,
+				handoffId: accepted.handoffId,
+				inputCorrelated: true,
+				containmentScore: containment,
+				fidelityVerdict: verdict,
+				deferCount: deferCount + 1,
+			});
+			return; // wait for a later, cleaner turn-complete
+		}
+
+		if (event.provider === "claude") {
+			// Stop fires once per submitted prompt → the turn IS the final answer.
+			deliverClean(accepted, event, containment, deferCount);
+			return;
+		}
+		// codex: settle-on-last. A newer clean completion supersedes the held one.
+		const prior = heldClean.get(accepted.handoffId);
+		if (prior) {
+			const next = deferCount + 1;
+			turnEventDeferals.set(accepted.handoffId, next);
+			logTurnEvent(prior.event, "deferred_rearmed", {
+				workflowActive: true,
+				handoffId: accepted.handoffId,
+				inputCorrelated: true,
+				containmentScore: prior.containment,
+				fidelityVerdict: "superseded",
+				deferCount: next,
+			});
+		}
+		heldClean.set(accepted.handoffId, { event, containment });
+		// Delivery happens on settleHeldTurnEvent (driven by genuine idle, Task 15).
+	}
+
+	function deliverClean(
+		accepted: RelayHandoff,
+		event: import("./turn-event.js").TurnEvent,
+		containment: number | null,
+		deferCount: number,
+	): void {
+		if (autoHandbackFiredFor === accepted.handoffId) return;
+		autoHandbackFiredFor = accepted.handoffId;
+		const now = new Date().toISOString();
+		logTurnEvent(event, "delivered", {
+			workflowActive: true,
+			handoffId: accepted.handoffId,
+			inputCorrelated: true,
+			containmentScore: containment,
+			fidelityVerdict: "clean",
+			deferCount,
+		});
+		input.broker.control.handoffBackRelay?.({
+			handoffId: accepted.handoffId,
+			nextHandoffId: `handoff_${now.replace(/[^0-9]/g, "")}`,
+			senderAgent: input.currentAgent,
+			targetAgent: accepted.senderAgent,
+			requestText: event.message,
+			captureStatus: "ok",
+			now,
+		});
+		input.turnCapture?.reset();
+		turnEventDeferals.delete(accepted.handoffId);
+		heldClean.delete(accepted.handoffId);
+	}
+
+	// Called by the mount's idle detector when the session goes genuinely idle: the
+	// held clean codex candidate (settle-on-last) is delivered.
+	function settleHeldTurnEvent(handoffId: string): void {
+		const held = heldClean.get(handoffId);
+		if (!held) return;
+		heldClean.delete(handoffId);
+		const accepted = getAcceptedHandoff();
+		if (!accepted || accepted.handoffId !== handoffId) return;
+		deliverClean(accepted, held.event, held.containment, turnEventDeferals.get(handoffId) ?? 0);
+	}
+
+	function logTurnEvent(
+		event: import("./turn-event.js").TurnEvent,
+		action: TurnEventAction,
+		extra: {
+			workflowActive: boolean;
+			handoffId: string | null;
+			inputCorrelated: boolean | null;
+			containmentScore: number | null;
+			fidelityVerdict: TurnEventFidelityVerdict;
+			deferCount: number;
+		},
+	): void {
+		const meta = extra.handoffId
+			? (input.broker.control.getHandoffWithWorkflowMeta?.(extra.handoffId) ?? null)
+			: null;
+		const samplesAllowed = process.env["AI_WHISPER_NO_CAPTURE_SAMPLES"] !== "1";
+		try {
+			input.broker.control.recordTurnEventDiagnostic?.({
+				receivedAt: event.receivedAt,
+				provider: event.provider,
+				workspaceId: event.workspaceId,
+				cwd: event.cwd,
+				sessionOrThreadId: event.sessionOrThreadId || null,
+				turnId: event.turnId,
+				workflowActive: extra.workflowActive,
+				collabId: input.collabId,
+				workflowId: meta?.workflowId ?? null,
+				chainId: meta?.chainId ?? null,
+				handoffId: extra.handoffId,
+				inputCorrelated: extra.inputCorrelated,
+				containmentScore: extra.containmentScore,
+				fidelityVerdict: extra.fidelityVerdict,
+				deferCount: extra.deferCount,
+				action,
+				messageLen: event.message.length,
+				messageSample: samplesAllowed ? event.message.slice(0, 200) : null,
+			});
+		} catch (err) {
+			console.warn(
+				`[ai-whisper] turn-event diagnostic write failed: ${err instanceof Error ? err.message : String(err)}`,
+			);
+		}
+	}
 
 	function clearOwnerCard() {
 		if (renderedOwnerCardLines === 0) {
@@ -494,6 +836,10 @@ export function createMountedTurnOwnedRelay(input: {
 			} else {
 				submitInjectedInput(input.writeUserInput, handoff.requestText);
 			}
+			// Seed the turn-event sequence backstop: the FIRST post-injection turn-event
+			// for this handoff whose input cannot be read (claude transcript unavailable)
+			// is treated as the response (correlateInput consumes this flag once).
+			sequenceBackstop.add(handoff.handoffId);
 			input.broker.control.acceptRelayHandoff({
 				handoffId: handoff.handoffId,
 				acceptedAt: new Date().toISOString(),
@@ -633,7 +979,106 @@ export function createMountedTurnOwnedRelay(input: {
 			input.turnCapture?.reset();
 		},
 
-		async checkIdleActions() {
+		/** Push-based turn-completion handback gate (§4.1-4.3). Routes a normalized
+		 *  TurnEvent through the workflow gate, then (Task 11) the relevance gate and
+		 *  (Task 12) the fidelity gate. Every received event writes exactly one
+		 *  relay_turn_event_diagnostics row via logTurnEvent. */
+		async handleTurnEvent(event: import("./turn-event.js").TurnEvent): Promise<void> {
+			// §4.1 workflow gate: deliver only when an accepted, autonomous handoff is
+			// awaiting handback for this collab and the handback has not already fired.
+			const accepted = getAcceptedHandoff();
+			const autonomous = accepted
+				? isAutonomousHandoff(accepted.handoffId, input.broker)
+				: false;
+			if (accepted === null || autoHandbackFiredFor === accepted.handoffId || !autonomous) {
+				logTurnEvent(event, "ignored_no_workflow", {
+					workflowActive: false,
+					handoffId: accepted?.handoffId ?? null,
+					inputCorrelated: null,
+					containmentScore: null,
+					fidelityVerdict: "n/a",
+					deferCount: 0,
+				});
+				return;
+			}
+			// §4.2 relevance gate (+ §4.3 fidelity gate inside acceptCandidate).
+			await routeRelevance(accepted, event);
+		},
+
+		/** Deliver a held clean codex candidate once the session settles (idle). */
+		settleHeldTurnEvent(handoffId: string): void {
+			settleHeldTurnEvent(handoffId);
+		},
+
+		/** Read-only peek for tests/diagnostics — does NOT reset the armed flag. */
+		isCopyFallbackArmed(): boolean {
+			return copyFallbackArmed;
+		},
+
+		/** True when the idle detector should release the proven /copy path because the
+		 *  event path produced nothing usable within the grace window. The mount calls
+		 *  settleHeldTurnEvent() FIRST (delivering a held clean codex turn), then
+		 *  consults this. Returns false while a clean candidate is held (settle owns
+		 *  delivery), false once a handback has fired, and false within the grace window
+		 *  — so the event path keeps its head start, but a truly absent event can never
+		 *  halt. (§2 / §8: a missed or dropped event never halts a workflow.) */
+		noEventFallbackDue(handoffId: string, idleElapsedMs: number): boolean {
+			if (autoHandbackFiredFor === handoffId) return false; // already delivered
+			if (heldClean.has(handoffId)) return false; // settle will deliver it
+			return idleElapsedMs >= TURN_EVENT_NO_EVENT_GRACE_MS;
+		},
+
+		/** Persist an ezio turn-fidelity decision (spec §4.3 / §7) as a
+		 *  relay_turn_event_diagnostics row, so ezio's rejections/deferrals/
+		 *  deliveries are queryable in the SAME table as claude/codex. The ezio
+		 *  handler is protocol-native and has no TurnEvent, so this writes a minimal
+		 *  row keyed to the in-flight accepted handoff for workflow context. The
+		 *  mount registers this via interactiveSession.onFidelityDecision. */
+		recordEzioFidelityDecision(decision: {
+			action: "rejected_mid_composition" | "deferred_rearmed" | "delivered";
+			verdict: "clean" | "mid_composition" | "empty" | "superseded";
+			content: string;
+		}): void {
+			const accepted = getAcceptedHandoff();
+			const handoffId = accepted?.handoffId ?? null;
+			// Retain the candidate content as a (gated) sample so a rejected
+			// mid-composition fragment is queryable after the fact (spec §4.3/§7).
+			const samplesAllowed =
+				process.env["AI_WHISPER_NO_CAPTURE_SAMPLES"] !== "1";
+			const meta = handoffId
+				? (input.broker.control.getHandoffWithWorkflowMeta?.(handoffId) ?? null)
+				: null;
+			try {
+				input.broker.control.recordTurnEventDiagnostic?.({
+					receivedAt: new Date().toISOString(),
+					provider: "ezio",
+					workspaceId: input.workspaceId ?? "",
+					cwd: "",
+					sessionOrThreadId: null,
+					turnId: null,
+					workflowActive: meta?.workflowId != null,
+					collabId: input.collabId,
+					workflowId: meta?.workflowId ?? null,
+					chainId: meta?.chainId ?? null,
+					handoffId,
+					inputCorrelated: null,
+					containmentScore: null,
+					fidelityVerdict: decision.verdict,
+					deferCount: 0,
+					action: decision.action,
+					messageLen: decision.content.length,
+					messageSample: samplesAllowed
+						? decision.content.slice(0, 200)
+						: null,
+				});
+			} catch (err) {
+				console.warn(
+					`[ai-whisper] ezio fidelity diagnostic write failed: ${err instanceof Error ? err.message : String(err)}`,
+				);
+			}
+		},
+
+		async checkIdleActions(idleElapsedMs = 0) {
 			// Auto-accept: pending (not deferred) handoff, guard not set, not paused.
 			// Autonomous handoffs (workflow=running, chain=active) also flow through
 			// this path: the broker has no PTY handle, so the mount pane is the only
@@ -650,11 +1095,6 @@ export function createMountedTurnOwnedRelay(input: {
 				return;
 			}
 
-			// Protocol-native sessions resolve handback from the explicit idle event
-			// (handbackResolvedContent); auto-accept above already delivered the
-			// request, so skip the /copy quiescence handback below.
-			if (input.suppressQuiescenceHandback) return;
-
 			// Auto-handback: accepted handoff, guard not set, not paused. Same
 			// rationale as auto-accept — autonomous mode runs through this path so
 			// the orchestrator can evaluate the captured handback verdict.
@@ -665,6 +1105,29 @@ export function createMountedTurnOwnedRelay(input: {
 				(input.isPausedInput?.() ?? false)
 			) {
 				return;
+			}
+
+			if (input.suppressQuiescenceHandback) {
+				// Protocol-native sessions (ezio) suppress AND have no clipboard fallback —
+				// they deliver via their own handler (handbackResolvedContent). Only the
+				// turn-event providers (claude/codex, eventPathEnabled) may fall back to
+				// /copy. This preserves today's ezio behavior unchanged (hard return).
+				if (!input.eventPathEnabled) return;
+
+				// Turn-event path: the /copy quiescence handback is deferred — but NOT
+				// forever.
+				// (1) Deliver a held clean codex candidate if the session has settled.
+				settleHeldTurnEvent(accepted.handoffId);
+				if (autoHandbackFiredFor === accepted.handoffId) return; // settle delivered it
+				// (2) Event-driven release (indeterminate/exhaustion armed /copy), OR
+				// (3) No-event safety net: grace elapsed with nothing delivered/held/armed.
+				if (
+					!consumeCopyFallbackArmed() &&
+					!api.noEventFallbackDue(accepted.handoffId, idleElapsedMs)
+				) {
+					return; // keep waiting for an event within the grace window
+				}
+				// else: FALL THROUGH to the existing /copy auto-handback path below.
 			}
 
 			// Retry-on-empty ladder (Mode C fix, 2026-06-03). The auto-handback used
