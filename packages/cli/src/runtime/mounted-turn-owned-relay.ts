@@ -60,8 +60,51 @@ type BrokerLike = {
 		getRelayChain?(id: string): { status: string } | null;
 		applyOrchestratorVerdict?(input: { handoffId: string; verdict: string; confidence: number; reason: string; now: string }): void;
 		isWorkflowDeliverySuspended?(handoffId: string): boolean;
+		recordTurnEventDiagnostic?(input: {
+			receivedAt: string;
+			provider: "claude" | "codex" | "ezio";
+			workspaceId: string;
+			cwd: string;
+			sessionOrThreadId: string | null;
+			turnId: string | null;
+			workflowActive: boolean;
+			collabId: string | null;
+			workflowId: string | null;
+			chainId: string | null;
+			handoffId: string | null;
+			inputCorrelated: boolean | null;
+			containmentScore: number | null;
+			fidelityVerdict: "clean" | "mid_composition" | "empty" | "superseded" | "n/a";
+			deferCount: number;
+			action:
+				| "delivered"
+				| "ignored_no_workflow"
+				| "ignored_unrelated_turn"
+				| "deferred_rearmed"
+				| "rejected_mid_composition"
+				| "fallback_indeterminate"
+				| "fallback_exhausted";
+			messageLen: number;
+			messageSample: string | null;
+		}): { eventId: string };
 	};
 };
+
+type TurnEventAction = NonNullable<
+	BrokerLike["control"]["recordTurnEventDiagnostic"]
+> extends (input: infer I) => unknown
+	? I extends { action: infer A }
+		? A
+		: never
+	: never;
+
+type TurnEventFidelityVerdict = NonNullable<
+	BrokerLike["control"]["recordTurnEventDiagnostic"]
+> extends (input: infer I) => unknown
+	? I extends { fidelityVerdict: infer V }
+		? V
+		: never
+	: never;
 
 const CLEAR_LINE = "\r\u001b[2K";
 const CURSOR_UP = "\u001b[1A";
@@ -263,6 +306,13 @@ export function createMountedTurnOwnedRelay(input: {
 	 *  (handbackResolvedContent), so the quiescence /copy auto-handback must be
 	 *  skipped. Auto-ACCEPT still runs — it is the delivery path. */
 	suppressQuiescenceHandback?: boolean;
+	/** Workspace id (sha256 of the canonical worktree root) for turn-event
+	 *  diagnostics. Threaded from the mount; only used by handleTurnEvent. */
+	workspaceId?: string;
+	/** Whether the push-based turn-event path is enabled for this provider
+	 *  (claude/codex). Gates the /copy fallback in the suppressed idle branch so
+	 *  protocol-native ezio (suppress + no event path) keeps today's hard-return. */
+	eventPathEnabled?: boolean;
 }) {
 	function resolveCols(): number {
 		const c = input.getTerminalCols?.() ?? process.stdout.columns;
@@ -289,6 +339,55 @@ export function createMountedTurnOwnedRelay(input: {
 	let renderedOwnerCardLines = 0;
 	let autoAcceptFiredFor: string | null = null;
 	let autoHandbackFiredFor: string | null = null;
+
+	// ----- Turn-event gate state (push-based handback, §4.1-4.3) -----------------
+	// Per-handoff defer count (fidelity gate): bumped on each rejected/superseded
+	// candidate, reported in diagnostics, reset on delivery.
+	const turnEventDeferals = new Map<string, number>();
+
+	function logTurnEvent(
+		event: import("./turn-event.js").TurnEvent,
+		action: TurnEventAction,
+		extra: {
+			workflowActive: boolean;
+			handoffId: string | null;
+			inputCorrelated: boolean | null;
+			containmentScore: number | null;
+			fidelityVerdict: TurnEventFidelityVerdict;
+			deferCount: number;
+		},
+	): void {
+		const meta = extra.handoffId
+			? (input.broker.control.getHandoffWithWorkflowMeta?.(extra.handoffId) ?? null)
+			: null;
+		const samplesAllowed = process.env["AI_WHISPER_NO_CAPTURE_SAMPLES"] !== "1";
+		try {
+			input.broker.control.recordTurnEventDiagnostic?.({
+				receivedAt: event.receivedAt,
+				provider: event.provider,
+				workspaceId: event.workspaceId,
+				cwd: event.cwd,
+				sessionOrThreadId: event.sessionOrThreadId || null,
+				turnId: event.turnId,
+				workflowActive: extra.workflowActive,
+				collabId: input.collabId,
+				workflowId: meta?.workflowId ?? null,
+				chainId: meta?.chainId ?? null,
+				handoffId: extra.handoffId,
+				inputCorrelated: extra.inputCorrelated,
+				containmentScore: extra.containmentScore,
+				fidelityVerdict: extra.fidelityVerdict,
+				deferCount: extra.deferCount,
+				action,
+				messageLen: event.message.length,
+				messageSample: samplesAllowed ? event.message.slice(0, 200) : null,
+			});
+		} catch (err) {
+			console.warn(
+				`[ai-whisper] turn-event diagnostic write failed: ${err instanceof Error ? err.message : String(err)}`,
+			);
+		}
+	}
 
 	function clearOwnerCard() {
 		if (renderedOwnerCardLines === 0) {
@@ -631,6 +730,34 @@ export function createMountedTurnOwnedRelay(input: {
 				now,
 			});
 			input.turnCapture?.reset();
+		},
+
+		/** Push-based turn-completion handback gate (§4.1-4.3). Routes a normalized
+		 *  TurnEvent through the workflow gate, then (Task 11) the relevance gate and
+		 *  (Task 12) the fidelity gate. Every received event writes exactly one
+		 *  relay_turn_event_diagnostics row via logTurnEvent. */
+		async handleTurnEvent(event: import("./turn-event.js").TurnEvent): Promise<void> {
+			// §4.1 workflow gate: deliver only when an accepted, autonomous handoff is
+			// awaiting handback for this collab and the handback has not already fired.
+			const accepted = getAcceptedHandoff();
+			const autonomous = accepted
+				? isAutonomousHandoff(accepted.handoffId, input.broker)
+				: false;
+			if (accepted === null || autoHandbackFiredFor === accepted.handoffId || !autonomous) {
+				logTurnEvent(event, "ignored_no_workflow", {
+					workflowActive: false,
+					handoffId: accepted?.handoffId ?? null,
+					inputCorrelated: null,
+					containmentScore: null,
+					fidelityVerdict: "n/a",
+					deferCount: 0,
+				});
+				return;
+			}
+			// §4.2 relevance gate + §4.3 fidelity gate land in Tasks 11 & 12. Until then
+			// the workflow gate alone is in effect; a gated-through event delivers
+			// nothing yet (no false handback).
+			return;
 		},
 
 		async checkIdleActions() {
