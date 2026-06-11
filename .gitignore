@@ -1,6 +1,7 @@
 .worktrees/
 .ai-whisper/
 docs/superpowers/plans/
+docs/superpowers/internal/
 docs/smoke-tests/
 node_modules
 dist
