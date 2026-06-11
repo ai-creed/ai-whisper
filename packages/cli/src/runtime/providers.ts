@@ -17,6 +17,7 @@ export type MountTarget = AgentType;
 
 export function getInteractiveSessionExecArgsForTarget(
 	target: MountTarget,
+	turnEvents?: { claudeSettingsFile?: string; codexNotify?: string[] },
 ): string[] {
 	const tempRoot = getLiveSessionBrokerTempRoot();
 
@@ -29,12 +30,16 @@ export function getInteractiveSessionExecArgsForTarget(
 	if (target === "codex") {
 		// Full autonomy: the relay drives codex unattended, so it must run
 		// with no approval prompts and no sandbox gating.
-		return ["--dangerously-bypass-approvals-and-sandbox", "--add-dir", tempRoot];
+		const base = ["--dangerously-bypass-approvals-and-sandbox", "--add-dir", tempRoot];
+		return turnEvents?.codexNotify ? [...base, ...turnEvents.codexNotify] : base;
 	}
 
 	// Full autonomy: bypass all permission checks so the relay can drive
 	// claude unattended (file writes + bash).
-	return ["--add-dir", tempRoot, "--dangerously-skip-permissions"];
+	const base = ["--add-dir", tempRoot, "--dangerously-skip-permissions"];
+	return turnEvents?.claudeSettingsFile
+		? [...base, "--settings", turnEvents.claudeSettingsFile]
+		: base;
 }
 
 export function getProviderExecArgsForTarget(target: MountTarget): string[] {
@@ -83,13 +88,19 @@ export function createInteractiveSessionForTarget(input: {
 	 * shell escaping — they land directly in the spawn's argv.
 	 */
 	passthroughArgs?: string[];
+	/**
+	 * Turn-event injection config. When provided, appends the provider-specific
+	 * hook flags (claude: `--settings <file>`, codex: `-c notify=<json>`) so
+	 * the provider fires the shim on each turn completion.
+	 */
+	turnEvents?: { claudeSettingsFile?: string; codexNotify?: string[] };
 }): InteractiveSessionController {
 	if (input.target === "ezio") {
 		// Protocol-native: the harness Session spawns hax in mounted posture; the
 		// adapter renders the streamed assistant deltas to the operator's stdout.
 		return createAiEzioLiveSession({ stdout: input.stdout });
 	}
-	const baseExecArgs = getInteractiveSessionExecArgsForTarget(input.target);
+	const baseExecArgs = getInteractiveSessionExecArgsForTarget(input.target, input.turnEvents);
 	const execArgs = [...baseExecArgs, ...(input.passthroughArgs ?? [])];
 	if (input.target === "codex") {
 		return createCodexLiveSession({
