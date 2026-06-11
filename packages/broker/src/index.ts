@@ -60,6 +60,14 @@ export {
 	type RelayEvaluatorDiagnosticRecord,
 	type EvaluatorOutcome,
 } from "./storage/repositories/relay-evaluator-diagnostics-repository.js";
+export {
+	insertTurnEventDiagnostic,
+	listTurnEventDiagnosticsByCollab as listTurnEventDiagnosticsByCollabRepo,
+	deleteTurnEventDiagnosticsOlderThan,
+	type RelayTurnEventDiagnosticRecord,
+	type TurnEventAction,
+	type TurnEventFidelityVerdict,
+} from "./storage/repositories/relay-turn-event-diagnostics-repository.js";
 export { getWorkflowDefinition, listWorkflowTypes } from "./runtime/workflow-registry.js";
 export {
 	upsertWorkspace,
