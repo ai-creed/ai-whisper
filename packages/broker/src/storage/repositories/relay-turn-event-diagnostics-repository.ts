@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import type { AgentType } from "@ai-whisper/shared";
 
 export type TurnEventAction =
 	| "delivered"
@@ -19,7 +20,7 @@ export type TurnEventFidelityVerdict =
 export type RelayTurnEventDiagnosticRecord = {
 	eventId: string;
 	receivedAt: string;
-	provider: "claude" | "codex" | "ezio";
+	provider: AgentType;
 	workspaceId: string;
 	cwd: string;
 	sessionOrThreadId: string | null;

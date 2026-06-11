@@ -9,8 +9,11 @@ import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { realpathSync } from "node:fs";
 import { createHash } from "node:crypto";
+import type { AgentType } from "@ai-whisper/shared";
 
-type Provider = "claude" | "codex";
+// Type-only import (erased at build/strip time) keeps the shim dependency-free
+// while using the canonical agent-type union (AgentType drift guard).
+type Provider = Exclude<AgentType, "ezio">;
 
 function arg(name: string): string | undefined {
 	const i = process.argv.indexOf(name);
@@ -38,7 +41,7 @@ function readPayload(provider: Provider): string {
 function extractCwd(raw: string): string {
 	try {
 		const p = JSON.parse(raw) as Record<string, unknown>;
-		return typeof p["cwd"] === "string" ? (p["cwd"] as string) : "";
+		return typeof p["cwd"] === "string" ? (p["cwd"]) : "";
 	} catch {
 		return "";
 	}

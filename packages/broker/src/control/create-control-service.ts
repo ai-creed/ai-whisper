@@ -1357,7 +1357,7 @@ export function createControlService(db: Database.Database, events: BrokerEventB
 		},
 		recordTurnEventDiagnostic(input: {
 			receivedAt: string;
-			provider: "claude" | "codex" | "ezio";
+			provider: AgentType;
 			workspaceId: string;
 			cwd: string;
 			sessionOrThreadId: string | null;

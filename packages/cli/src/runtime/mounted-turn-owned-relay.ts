@@ -63,7 +63,7 @@ type BrokerLike = {
 		isWorkflowDeliverySuspended?(handoffId: string): boolean;
 		recordTurnEventDiagnostic?(input: {
 			receivedAt: string;
-			provider: "claude" | "codex" | "ezio";
+			provider: AgentType;
 			workspaceId: string;
 			cwd: string;
 			sessionOrThreadId: string | null;

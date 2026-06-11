@@ -1,4 +1,6 @@
-export type TurnEventProvider = "claude" | "codex";
+import type { AgentType } from "@ai-whisper/shared";
+
+export type TurnEventProvider = Exclude<AgentType, "ezio">;
 
 export type TurnEvent = {
 	provider: TurnEventProvider;
