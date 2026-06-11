@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import type { AgentType,  BrokerRuntime } from "@ai-whisper/broker";
 import type { RelayDirective } from "@ai-whisper/shared";
 import {
@@ -8,7 +9,17 @@ import {
 	releaseCaptureLease,
 	upsertRecoveryState,
 } from "@ai-whisper/broker";
-import { getSharedSqlitePath } from "./state-root.js";
+import { getSharedSqlitePath, getStateSocketsDir, getStateLogsDir } from "./state-root.js";
+import { workspaceIdFromPath } from "./workspace-id.js";
+import {
+	writeClaudeSettingsFile,
+	codexNotifyArgs,
+	type TurnEventsEnablement,
+} from "./turn-events-config.js";
+import {
+	createTurnEventListener,
+	type TurnEventListener,
+} from "./mount-turn-event-listener.js";
 import { createLiveSessionRuntime } from "./live-session.js";
 import { runCompanionAgentLoop } from "./companion-agent-loop.js";
 import {
@@ -153,6 +164,13 @@ export function createMountSessionRuntime(input: {
 	 * (the non-visible relay/companion side) is unaffected.
 	 */
 	passthroughArgs?: string[];
+	/**
+	 * Turn-events enablement resolved by runCollabMount (flag > env > default OFF).
+	 * When a provider's flag is true, the interactive session is launched with the
+	 * provider-specific hook injection (claude: --settings, codex: -c notify) and
+	 * a socket listener is started to receive the shim's forwarded events.
+	 */
+	turnEventsEnablement?: TurnEventsEnablement;
 	createProvider?: typeof createProviderForTarget;
 	createInteractiveSession?: typeof createInteractiveSessionForTarget;
 	createLiveSession?: typeof createLiveSessionRuntime;
@@ -163,11 +181,41 @@ export function createMountSessionRuntime(input: {
 		async start() {
 			const sessionId = createCliSessionId(input.target, new Date().toISOString());
 			const provider = (input.createProvider ?? createProviderForTarget)(input.target);
+
+			// Turn-events injection: pre-compute the shim path and provider-specific
+			// hook config before spawning the interactive session so flags land in argv.
+			const _eventEnabled =
+				(input.target === "claude" && (input.turnEventsEnablement?.claude ?? false)) ||
+				(input.target === "codex" && (input.turnEventsEnablement?.codex ?? false));
+			let _turnEventsInjection:
+				| { claudeSettingsFile?: string; codexNotify?: string[] }
+				| undefined;
+			if (_eventEnabled) {
+				const shimPath = fileURLToPath(new URL("../bin/turn-event-shim.js", import.meta.url));
+				const socketsDir = getStateSocketsDir();
+				const logsDir = getStateLogsDir();
+				if (input.target === "claude") {
+					const settingsFile = writeClaudeSettingsFile({
+						stateRoot: getStateLogsDir().replace(/[/\\]logs$/, ""),
+						workspaceId: workspaceIdFromPath(input.workspaceRoot),
+						shimPath,
+						socketsDir,
+						logsDir,
+					});
+					_turnEventsInjection = { claudeSettingsFile: settingsFile };
+				} else if (input.target === "codex") {
+					_turnEventsInjection = {
+						codexNotify: codexNotifyArgs({ shimPath, socketsDir, logsDir }),
+					};
+				}
+			}
+
 			const interactiveSession = (input.createInteractiveSession ?? createInteractiveSessionForTarget)({
 				target: input.target,
 				cwd: input.workspaceRoot,
 				stdout: process.stdout,
 				passthroughArgs: input.passthroughArgs ?? [],
+				...(_turnEventsInjection !== undefined ? { turnEvents: _turnEventsInjection } : {}),
 			});
 
 			let ownerRefreshTimer: ReturnType<typeof setInterval> | null = null;
@@ -175,6 +223,7 @@ export function createMountSessionRuntime(input: {
 			let liveSessionStarted = false;
 			let stopping = false;
 			let closeLineReader = () => {};
+			let turnEventListener: TurnEventListener | null = null;
 
 			// liveSession is set after the collab claim resolves so collabId is available
 			// for turnRelay, allowing externalInputGate to be passed directly instead of
@@ -238,6 +287,14 @@ export function createMountSessionRuntime(input: {
 					} catch {
 						// Best-effort cleanup; the row may already be gone.
 					}
+				}
+				if (turnEventListener) {
+					try {
+						await turnEventListener.close();
+					} catch {
+						// Best-effort; never blocks teardown.
+					}
+					turnEventListener = null;
 				}
 				await input.broker.stop();
 			};
@@ -495,6 +552,19 @@ export function createMountSessionRuntime(input: {
 						typeof interactiveSession.onTurnFinished === "function",
 				});
 				const mountedTurnRelay = turnRelay;
+
+				// Turn-event listener: only for claude/codex when event path is enabled.
+				// Starts the unix-socket server that receives shim-forwarded payloads and
+				// routes them to the relay's handleTurnEvent. No-op when eventEnabled is false.
+				if (_eventEnabled && (input.target === "claude" || input.target === "codex")) {
+					const capturedRelay = mountedTurnRelay;
+					turnEventListener = await createTurnEventListener({
+						socketsDir: getStateSocketsDir(),
+						workspaceId: workspaceIdFromPath(input.workspaceRoot),
+						provider: input.target,
+						onEvent: (e) => void capturedRelay.handleTurnEvent(e),
+					});
+				}
 
 				// Protocol-native handback: on the explicit turn-complete event, deliver
 				// the authoritative content straight to the original sender.
