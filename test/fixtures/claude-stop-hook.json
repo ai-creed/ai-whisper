@@ -1,0 +1,7 @@
+{
+  "session_id": "sess-abc",
+  "transcript_path": "/tmp/does-not-exist.jsonl",
+  "cwd": "/private/tmp/repo",
+  "last_assistant_message": "Here is the completed review matrix: ...",
+  "hook_event_name": "Stop"
+}
