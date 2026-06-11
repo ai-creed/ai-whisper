@@ -1,5 +1,6 @@
 import type { CaptureHandbackResult } from "./capture-handback-text.js";
 import type { AgentType } from "@ai-whisper/shared";
+import { isMidCompositionShape } from "./mid-composition-shape.js";
 
 type RelayTurnState = {
 	collabId: string;
@@ -359,6 +360,10 @@ export function createMountedTurnOwnedRelay(input: {
 
 	const TURN_EVENT_INPUT_MATCH_MIN = 0.9; // §12 Q3
 	const TURN_EVENT_CODEX_CORROBORATION_MIN = 0.5; // §12 Q5 (codex output corroboration)
+	const TURN_EVENT_MAX_DEFERS = (() => {
+		const raw = process.env["AI_WHISPER_TURN_EVENT_MAX_DEFERS"];
+		return raw && Number(raw) > 0 ? Number(raw) : 3;
+	})();
 
 	type RelevanceState = "relevant" | "positive_mismatch" | "indeterminate";
 
@@ -481,6 +486,38 @@ export function createMountedTurnOwnedRelay(input: {
 	): Promise<void> {
 		if (autoHandbackFiredFor === accepted.handoffId) return;
 		const deferCount = turnEventDeferals.get(accepted.handoffId) ?? 0;
+
+		// Mid-composition shape guard (both providers): reject empty / drafting
+		// fragments → retry/defer to a later turn-complete, never deliver the
+		// scratchpad (the 2026-06-10 ezio halt class). On budget exhaustion, hand
+		// control back to the proven /copy path (armCopyFallbackOnce).
+		if (isMidCompositionShape(event.message)) {
+			const verdict = event.message.trim().length === 0 ? "empty" : "mid_composition";
+			if (deferCount + 1 >= TURN_EVENT_MAX_DEFERS) {
+				logTurnEvent(event, "fallback_exhausted", {
+					workflowActive: true,
+					handoffId: accepted.handoffId,
+					inputCorrelated: true,
+					containmentScore: containment,
+					fidelityVerdict: verdict,
+					deferCount: deferCount + 1,
+				});
+				turnEventDeferals.delete(accepted.handoffId);
+				heldClean.delete(accepted.handoffId);
+				armCopyFallbackOnce();
+				return;
+			}
+			turnEventDeferals.set(accepted.handoffId, deferCount + 1);
+			logTurnEvent(event, "rejected_mid_composition", {
+				workflowActive: true,
+				handoffId: accepted.handoffId,
+				inputCorrelated: true,
+				containmentScore: containment,
+				fidelityVerdict: verdict,
+				deferCount: deferCount + 1,
+			});
+			return; // wait for a later, cleaner turn-complete
+		}
 
 		if (event.provider === "claude") {
 			// Stop fires once per submitted prompt → the turn IS the final answer.
