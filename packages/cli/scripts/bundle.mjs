@@ -46,11 +46,14 @@ const externalizeNpmDeps = {
 
 // Standalone entry points. whisper + relay-monitor are package bins;
 // broker-daemon + companion-agent are spawned as separate node processes.
+// turn-event-shim is a dependency-free bin spawned by the provider CLI on
+// each turn-complete (claude Stop hook / codex notify).
 const entryPoints = [
 	"src/bin/whisper.ts",
 	"src/bin/relay-monitor.ts",
 	"src/bin/broker-daemon.ts",
 	"src/bin/companion-agent.ts",
+	"src/bin/turn-event-shim.ts",
 ].map((e) => path.join(pkgRoot, e));
 
 await build({
