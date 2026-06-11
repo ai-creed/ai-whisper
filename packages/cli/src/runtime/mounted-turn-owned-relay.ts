@@ -364,6 +364,10 @@ export function createMountedTurnOwnedRelay(input: {
 		const raw = process.env["AI_WHISPER_TURN_EVENT_MAX_DEFERS"];
 		return raw && Number(raw) > 0 ? Number(raw) : 3;
 	})();
+	const TURN_EVENT_NO_EVENT_GRACE_MS = (() => {
+		const raw = process.env["AI_WHISPER_TURN_EVENT_NO_EVENT_GRACE_MS"];
+		return raw && Number(raw) > 0 ? Number(raw) : 8000;
+	})();
 
 	type RelevanceState = "relevant" | "positive_mismatch" | "indeterminate";
 
@@ -1011,7 +1015,20 @@ export function createMountedTurnOwnedRelay(input: {
 			return copyFallbackArmed;
 		},
 
-		async checkIdleActions() {
+		/** True when the idle detector should release the proven /copy path because the
+		 *  event path produced nothing usable within the grace window. The mount calls
+		 *  settleHeldTurnEvent() FIRST (delivering a held clean codex turn), then
+		 *  consults this. Returns false while a clean candidate is held (settle owns
+		 *  delivery), false once a handback has fired, and false within the grace window
+		 *  — so the event path keeps its head start, but a truly absent event can never
+		 *  halt. (§2 / §8: a missed or dropped event never halts a workflow.) */
+		noEventFallbackDue(handoffId: string, idleElapsedMs: number): boolean {
+			if (autoHandbackFiredFor === handoffId) return false; // already delivered
+			if (heldClean.has(handoffId)) return false; // settle will deliver it
+			return idleElapsedMs >= TURN_EVENT_NO_EVENT_GRACE_MS;
+		},
+
+		async checkIdleActions(idleElapsedMs = 0) {
 			// Auto-accept: pending (not deferred) handoff, guard not set, not paused.
 			// Autonomous handoffs (workflow=running, chain=active) also flow through
 			// this path: the broker has no PTY handle, so the mount pane is the only
@@ -1028,11 +1045,6 @@ export function createMountedTurnOwnedRelay(input: {
 				return;
 			}
 
-			// Protocol-native sessions resolve handback from the explicit idle event
-			// (handbackResolvedContent); auto-accept above already delivered the
-			// request, so skip the /copy quiescence handback below.
-			if (input.suppressQuiescenceHandback) return;
-
 			// Auto-handback: accepted handoff, guard not set, not paused. Same
 			// rationale as auto-accept — autonomous mode runs through this path so
 			// the orchestrator can evaluate the captured handback verdict.
@@ -1043,6 +1055,29 @@ export function createMountedTurnOwnedRelay(input: {
 				(input.isPausedInput?.() ?? false)
 			) {
 				return;
+			}
+
+			if (input.suppressQuiescenceHandback) {
+				// Protocol-native sessions (ezio) suppress AND have no clipboard fallback —
+				// they deliver via their own handler (handbackResolvedContent). Only the
+				// turn-event providers (claude/codex, eventPathEnabled) may fall back to
+				// /copy. This preserves today's ezio behavior unchanged (hard return).
+				if (!input.eventPathEnabled) return;
+
+				// Turn-event path: the /copy quiescence handback is deferred — but NOT
+				// forever.
+				// (1) Deliver a held clean codex candidate if the session has settled.
+				settleHeldTurnEvent(accepted.handoffId);
+				if (autoHandbackFiredFor === accepted.handoffId) return; // settle delivered it
+				// (2) Event-driven release (indeterminate/exhaustion armed /copy), OR
+				// (3) No-event safety net: grace elapsed with nothing delivered/held/armed.
+				if (
+					!consumeCopyFallbackArmed() &&
+					!api.noEventFallbackDue(accepted.handoffId, idleElapsedMs)
+				) {
+					return; // keep waiting for an event within the grace window
+				}
+				// else: FALL THROUGH to the existing /copy auto-handback path below.
 			}
 
 			// Retry-on-empty ladder (Mode C fix, 2026-06-03). The auto-handback used
