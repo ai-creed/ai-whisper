@@ -25,19 +25,19 @@ export class ClaudeEventReceiver extends EventReceiver {
 			return null;
 		}
 		const cwd =
-			typeof payload["cwd"] === "string" ? (payload["cwd"] as string) : "";
+			typeof payload["cwd"] === "string" ? (payload["cwd"]) : "";
 		if (!cwd) return null;
 		const message =
 			typeof payload["last_assistant_message"] === "string"
-				? (payload["last_assistant_message"] as string)
+				? (payload["last_assistant_message"])
 				: "";
 		const sessionId =
 			typeof payload["session_id"] === "string"
-				? (payload["session_id"] as string)
+				? (payload["session_id"])
 				: "";
 		const transcriptPath =
 			typeof payload["transcript_path"] === "string"
-				? (payload["transcript_path"] as string)
+				? (payload["transcript_path"])
 				: "";
 		return {
 			provider: "claude",
@@ -107,7 +107,7 @@ export class CodexEventReceiver extends EventReceiver {
 			return null;
 		}
 		const cwd =
-			typeof payload["cwd"] === "string" ? (payload["cwd"] as string) : "";
+			typeof payload["cwd"] === "string" ? (payload["cwd"]) : "";
 		if (!cwd) return null;
 		const inputRaw = payload["input-messages"];
 		const inputMessages = Array.isArray(inputRaw)
@@ -119,15 +119,15 @@ export class CodexEventReceiver extends EventReceiver {
 			cwd,
 			sessionOrThreadId:
 				typeof payload["thread-id"] === "string"
-					? (payload["thread-id"] as string)
+					? (payload["thread-id"])
 					: "",
 			turnId:
 				typeof payload["turn-id"] === "string"
-					? (payload["turn-id"] as string)
+					? (payload["turn-id"])
 					: null,
 			message:
 				typeof payload["last-assistant-message"] === "string"
-					? (payload["last-assistant-message"] as string)
+					? (payload["last-assistant-message"])
 					: "",
 			inputMessages,
 			receivedAt,
