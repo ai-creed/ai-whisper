@@ -111,5 +111,13 @@ describe("ezio handback fidelity (2026-06-10 reproduction)", () => {
 		]);
 		expect(h.turnEventDiagnostics.every((r) => r.provider === "ezio")).toBe(true);
 		expect(h.turnEventDiagnostics[0]!.fidelityVerdict).toBe("mid_composition");
+
+		// Spec §4.3/§7: the REJECTED row must retain the exact drafting fragment so
+		// the 2026-06-10 "Let's draft" content is queryable after the fact.
+		const rejected = h.turnEventDiagnostics[0]!;
+		expect(rejected.messageSample).toBe("Let's draft");
+		expect(rejected.messageLen).toBe("Let's draft".length);
+		// The delivered row retains the real answer's content too.
+		expect(h.turnEventDiagnostics[1]!.messageSample).toContain("Review matrix");
 	});
 });

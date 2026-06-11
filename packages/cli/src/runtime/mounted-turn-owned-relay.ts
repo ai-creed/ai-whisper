@@ -1037,9 +1037,14 @@ export function createMountedTurnOwnedRelay(input: {
 		recordEzioFidelityDecision(decision: {
 			action: "rejected_mid_composition" | "deferred_rearmed" | "delivered";
 			verdict: "clean" | "mid_composition" | "empty" | "superseded";
+			content: string;
 		}): void {
 			const accepted = getAcceptedHandoff();
 			const handoffId = accepted?.handoffId ?? null;
+			// Retain the candidate content as a (gated) sample so a rejected
+			// mid-composition fragment is queryable after the fact (spec §4.3/§7).
+			const samplesAllowed =
+				process.env["AI_WHISPER_NO_CAPTURE_SAMPLES"] !== "1";
 			const meta = handoffId
 				? (input.broker.control.getHandoffWithWorkflowMeta?.(handoffId) ?? null)
 				: null;
@@ -1061,8 +1066,10 @@ export function createMountedTurnOwnedRelay(input: {
 					fidelityVerdict: decision.verdict,
 					deferCount: 0,
 					action: decision.action,
-					messageLen: 0,
-					messageSample: null,
+					messageLen: decision.content.length,
+					messageSample: samplesAllowed
+						? decision.content.slice(0, 200)
+						: null,
 				});
 			} catch (err) {
 				console.warn(

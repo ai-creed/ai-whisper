@@ -9,6 +9,11 @@ export type InteractiveSessionTarget = (typeof relayTargets)[number];
 export type TurnFidelityDecision = {
 	action: "rejected_mid_composition" | "deferred_rearmed" | "delivered";
 	verdict: "clean" | "mid_composition" | "empty" | "superseded";
+	/** The candidate turn's content. Retained so a rejected mid-composition
+	 *  candidate's exact drafting fragment is queryable after the fact via the
+	 *  diagnostics row's message sample (spec §4.3/§7) — e.g. the 2026-06-10
+	 *  "Let's draft" fragment. */
+	content: string;
 };
 
 export interface InteractiveSessionController {

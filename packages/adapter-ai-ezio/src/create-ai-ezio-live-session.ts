@@ -72,8 +72,13 @@ export function createAiEzioLiveSession(input: {
 				// prior candidate is still pending here, the new completion arrived
 				// before idle settled — log the supersession so it is not silent.
 				if (pendingContent !== null) {
+					const superseded = pendingContent;
 					for (const h of fidelityDecisionHandlers)
-						h({ action: "deferred_rearmed", verdict: "superseded" });
+						h({
+							action: "deferred_rearmed",
+							verdict: "superseded",
+							content: superseded,
+						});
 				}
 				pendingContent = event.content;
 				break;
@@ -89,6 +94,7 @@ export function createAiEzioLiveSession(input: {
 								action: "rejected_mid_composition",
 								verdict:
 									candidate.trim().length === 0 ? "empty" : "mid_composition",
+								content: candidate,
 							});
 						pendingContent = null;
 						sawTurn = false;
@@ -97,7 +103,7 @@ export function createAiEzioLiveSession(input: {
 					pendingContent = null;
 					sawTurn = false;
 					for (const h of fidelityDecisionHandlers)
-						h({ action: "delivered", verdict: "clean" });
+						h({ action: "delivered", verdict: "clean", content: candidate });
 					for (const h of turnFinishedHandlers) h(candidate);
 				}
 				break;

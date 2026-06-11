@@ -18,6 +18,8 @@ type RecordedTurnEventDiagnostic = {
 	inputCorrelated: boolean | null;
 	containmentScore: number | null;
 	deferCount: number;
+	messageLen: number;
+	messageSample: string | null;
 };
 
 /**
