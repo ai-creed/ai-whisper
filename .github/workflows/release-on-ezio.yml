@@ -1,0 +1,136 @@
+name: Release on ezio
+
+# Co-release: rebuild + republish ai-whisper against a pinned ai-ezio ref so the
+# bundled (inlined) @ai-ezio/* TS layer is never stale relative to a published
+# ezio. Phase A: manual trigger. Phase B (follow-up) adds a repository_dispatch
+# auto-trigger from ai-ezio's release workflow (see the plan, Task 9).
+on:
+  workflow_dispatch:
+    inputs:
+      ezio_ref:
+        description: "ai-ezio git ref (tag/sha/branch) to build whisper against"
+        required: true
+        default: "master"
+      bump:
+        description: "npm version bump for ai-whisper"
+        required: true
+        default: "prerelease"
+        type: choice
+        options: [prerelease, patch, minor]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout ai-whisper
+        uses: actions/checkout@v5
+        with:
+          path: ai-whisper
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout ai-ezio (pinned ref — provides the @ai-ezio/* file: deps)
+        uses: actions/checkout@v5
+        with:
+          repository: ai-creed/ai-ezio
+          ref: ${{ github.event.inputs.ezio_ref }}
+          path: ai-ezio
+
+      - name: Enable corepack (pnpm)
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.0 --activate
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            ai-whisper/pnpm-lock.yaml
+            ai-ezio/pnpm-lock.yaml
+          registry-url: "https://registry.npmjs.org"
+
+      # Pre-build the ai-ezio packages FIRST — ai-whisper consumes them as file:
+      # deps resolving to dist/index.js, so dist must exist before whisper builds.
+      # This --filter list is a MIRROR of ci.yml / publish.yml — keep all three in
+      # sync (and tsconfig.json paths + vitest.config.ts aliases) for any new dep.
+      - name: Build ai-ezio harness + surface + mcp-host (+ protocol)
+        working-directory: ai-ezio
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter "@ai-ezio/harness..." --filter "@ai-ezio/surface..." --filter "@ai-ezio/mcp-host..." build
+
+      - name: Install dependencies
+        working-directory: ai-whisper
+        run: pnpm install --frozen-lockfile
+
+      # Bump BEFORE build so the stamped whisperVersion equals the published
+      # version (otherwise Signal 1 would compare a stale stamped version).
+      - name: Bump ai-whisper version (before build/stamp)
+        working-directory: ai-whisper/packages/cli
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          npm version "${{ github.event.inputs.bump }}" --no-git-tag-version
+          VERSION=$(node -p "require('./package.json').version")
+          echo "Bumped ai-whisper to $VERSION (ezio ref ${{ github.event.inputs.ezio_ref }})"
+          echo "WHISPER_VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      # `pnpm build` runs stamp-ezio-provenance.mjs BEFORE esbuild, stamping the
+      # NEW version + the pinned ezio ref's version, then bundles (inlined).
+      - name: Build (stamps real ezio + bumped whisper version into the bundle)
+        working-directory: ai-whisper
+        run: pnpm build
+
+      - name: Verify stamped provenance matches the published version
+        working-directory: ai-whisper
+        env:
+          WHISPER_VERSION: ${{ env.WHISPER_VERSION }}
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const src = fs.readFileSync("packages/cli/src/generated/ezio-provenance.ts", "utf8");
+            const m = src.match(/whisperVersion:\s*"([^"]+)"/);
+            const want = process.env.WHISPER_VERSION.replace(/^v/, "");
+            if (!m || m[1] !== want) {
+              console.error("stamp whisperVersion " + (m && m[1]) + " != package " + want);
+              process.exit(1);
+            }
+            const dist = fs.readFileSync("packages/cli/dist/bin/whisper.js", "utf8");
+            if (!dist.includes(want)) { console.error("bundle missing stamped version " + want); process.exit(1); }
+            console.log("stamp + bundle match " + want);
+          '
+
+      - name: Typecheck
+        working-directory: ai-whisper
+        run: pnpm typecheck
+
+      - name: Test
+        working-directory: ai-whisper
+        run: pnpm -s test
+
+      - name: Bundle self-containment smoke (pack + clean install + whisper --version)
+        working-directory: ai-whisper
+        run: node scripts/bundle-selfcontained-smoke.mjs
+
+      - name: Publish to npm
+        working-directory: ai-whisper/packages/cli
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [[ "$VERSION" == *"-"* ]]; then
+            pnpm publish --access public --no-git-checks --tag beta
+          else
+            pnpm publish --access public --no-git-checks
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Commit version bump + push tag
+        working-directory: ai-whisper
+        run: |
+          git add packages/cli/package.json
+          git commit -m "chore(release): ai-whisper ${WHISPER_VERSION} (ezio ${{ github.event.inputs.ezio_ref }})"
+          git tag "${WHISPER_VERSION}"
+          git push origin HEAD --tags

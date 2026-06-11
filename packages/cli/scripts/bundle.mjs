@@ -12,6 +12,7 @@ import { build } from "esbuild";
 import { rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { generate as stampEzioProvenance } from "./stamp-ezio-provenance.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const pkgRoot = path.resolve(here, "..");
@@ -55,6 +56,11 @@ const entryPoints = [
 	"src/bin/companion-agent.ts",
 	"src/bin/turn-event-shim.ts",
 ].map((e) => path.join(pkgRoot, e));
+
+// Stamp ezio provenance BEFORE bundling so the generated module is inlined into
+// dist with the real ezio/whisper versions. Throws (aborts the build) if ezio
+// cannot be resolved — never ship an unstamped bundle.
+stampEzioProvenance();
 
 await build({
 	entryPoints,
