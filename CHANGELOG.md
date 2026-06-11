@@ -5,6 +5,33 @@ All notable changes to the `ai-whisper` package are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.6] - 2026-06-11
+
+### Added
+
+- **Event-driven turn handback for mounted Claude and Codex (`--turn-events`).**
+  An opt-in flag that detects turn completion over a local socket — a
+  dependency-free turn-event shim plus per-launch provider wiring (Claude
+  Stop-hook `--settings`, Codex `notify`) — instead of inferring it from idle
+  timing. The relay routes the resulting handback through a relevance gate and a
+  turn-fidelity shape gate, with a no-event grace-timeout fallback so a dropped
+  event can never halt a workflow. Turn-event diagnostics are persisted (broker
+  schema v6) with a retention sweep.
+
+- **Mounted ezio staleness guard.** At ezio mount start, `ai-whisper` now prints a
+  dim, non-blocking advisory when the bundled ezio snapshot is older than your
+  installed standalone `@ai-creed/ai-ezio` (offline comparison), or when
+  `ai-whisper` itself is behind the latest published version (cached ~24h, with a
+  bounded 2s network check that runs detached and never blocks mount startup).
+  Suppress both with `AI_WHISPER_NO_UPDATE_CHECK=1`.
+
+- **ezio build provenance.** The published bundle now records the exact
+  `@ai-creed/ai-ezio` version and git sha it was built against, so the mounted ezio
+  version is introspectable at runtime (and drives the staleness guard above).
+
+- **Dashboard Wall cards** now show each collab's start time and its repo-relative
+  spec/artifact path, with agent health derived from live sessions.
+
 ## [0.5.5] - 2026-06-09
 
 ### Fixed
@@ -484,6 +511,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Claude + Codex) driven by structured workflows, with npm metadata
   (description, repository, homepage).
 
+[0.5.6]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.6
 [0.5.5]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.5
 [0.5.4]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.4
 [0.5.3]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.3
