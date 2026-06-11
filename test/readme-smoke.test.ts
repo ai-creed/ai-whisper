@@ -68,6 +68,7 @@ describe("README public contract", () => {
 		expect(installIdx).toBeGreaterThan(sectionStart);
 		const section = readme.slice(sectionStart, installIdx);
 		expect(section).toContain("ai-whisper-code-review");
+		expect(section).toContain("ai-whisper-plan-execution");
 	});
 
 	it("lists prerequisites (CLIs, Node, evaluator) with tmux marked optional", () => {

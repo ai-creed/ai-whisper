@@ -29,6 +29,7 @@
 - `.worktrees/` must remain git-ignored.
 - Work from approved specs first, then an approved local phase plan, then implementation.
 - Do not skip ahead into later phases without review and approval.
+- When executing an approved implementation plan with subagents, follow the bundled `ai-whisper-plan-execution` skill (`packages/cli/skills/ai-whisper-plan-execution/SKILL.md`) for fan-out structure and model allocation.
 
 ## Preferred Sequence
 

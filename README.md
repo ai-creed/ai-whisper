@@ -80,7 +80,7 @@ pnpm install
 pnpm build
 ```
 
-Install the bundled agent skills once (they let the agents verify, kick off, and report on workflows). This also installs `ai-whisper-code-review`, the skill workflow code-review handoffs use to evaluate agent-written code:
+Install the bundled agent skills once (they let the agents verify, kick off, and report on workflows). This also installs `ai-whisper-code-review`, the skill workflow code-review handoffs use to evaluate agent-written code, and `ai-whisper-plan-execution`, the skill plan-execution handoffs use to structure how the implementer executes an approved plan:
 
 ```bash
 whisper skill install
