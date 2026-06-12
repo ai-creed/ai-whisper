@@ -1,6 +1,5 @@
 import { execSync } from "node:child_process";
 import type { AgentType } from "@ai-whisper/shared";
-import { readFileSync } from "node:fs";
 import { Command, Option } from "commander";
 import { waitForBrokerReady } from "./runtime/wait-for-broker-ready.js";
 import { runCollabMount } from "./commands/collab/mount.js";
@@ -34,6 +33,8 @@ import { runWorkflowTypes } from "./commands/workflow/types.js";
 import { runSkillInstall } from "./commands/skill/install.js";
 import { connectToWorkspaceBroker } from "./runtime/broker-connect.js";
 import { CollabResolverError } from "./runtime/collab-resolver.js";
+import { resolveCliVersion } from "./runtime/cli-package-info.js";
+export { resolveCliVersion } from "./runtime/cli-package-info.js";
 
 interface WorkspaceOpts {
 	workspace: string;
@@ -55,25 +56,6 @@ interface TellOpts {
 
 function collectArtifact(value: string, previous: string[] = []): string[] {
 	return [...previous, value];
-}
-
-// Resolve the published version from package.json. The path differs between
-// the bundled binary (dist/bin/whisper.js → ../../package.json) and tests that
-// import this module from source (packages/cli/src/ → ../package.json), so try
-// both and key off the package name so a parent package.json can't shadow it.
-export function resolveCliVersion(): string {
-	for (const rel of ["../../package.json", "../package.json"]) {
-		try {
-			const pkg = JSON.parse(readFileSync(new URL(rel, import.meta.url), "utf8")) as {
-				name?: string;
-				version?: string;
-			};
-			if (pkg.name === "ai-whisper" && typeof pkg.version === "string") return pkg.version;
-		} catch {
-			// try the next candidate
-		}
-	}
-	return "0.0.0-dev";
 }
 
 export function createCli(): Command {
