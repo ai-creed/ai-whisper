@@ -1,6 +1,6 @@
 {
 	"name": "ai-whisper",
-	"version": "0.5.6",
+	"version": "0.5.7",
 	"description": "Terminal-first relay for paired AI coding agents (Claude + Codex), driven by structured workflows.",
 	"license": "Apache-2.0",
 	"repository": {

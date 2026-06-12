@@ -5,6 +5,29 @@ All notable changes to the `ai-whisper` package are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.7] - 2026-06-12
+
+### Added
+
+- **Bundled `ai-whisper-plan-execution` skill.** A new bundled skill (shipped in
+  the package and installed by `whisper skill install` into the Claude, Codex,
+  and ezio skill directories) that structures HOW a workflow implementer
+  executes an approved implementation plan: per-task subagent fan-out with
+  two-stage review via `superpowers:subagent-driven-development` when the
+  harness supports it (with a built-in minimal fallback protocol when it
+  doesn't), a model-allocation policy (reviewer tier ≥ implementer tier,
+  escalate one tier after a second failed review), an inline escape hatch for
+  small or purely mechanical plans, and a mandatory execution-mode disclosure
+  in the handback. Harnesses without subagent support (e.g. Codex/ezio as
+  implementer) are explicitly unaffected — the skill never blocks or changes
+  their handback.
+
+- **SDD plan-execution guidance fragment.** The spec-driven-development
+  workflow's plan-execution kickoff and step templates now append
+  `PLAN_EXECUTION_SKILL_GUIDANCE`, pointing the implementer at the bundled
+  skill while keeping the workflow handback contract authoritative. No other
+  workflow phase or template picks up the fragment.
+
 ## [0.5.6] - 2026-06-11
 
 ### Added
@@ -511,6 +534,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Claude + Codex) driven by structured workflows, with npm metadata
   (description, repository, homepage).
 
+[0.5.7]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.7
 [0.5.6]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.6
 [0.5.5]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.5
 [0.5.4]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.4
