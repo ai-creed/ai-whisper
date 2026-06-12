@@ -157,6 +157,15 @@ Non-blocking risks:
 export const CODE_REVIEW_SKILL_GUIDANCE =
 	"Use the ai-whisper-code-review skill to evaluate the delivered code. The workflow review protocol below controls your output format and evaluator semantics; the skill controls how you inspect code and decide which code-quality issues are blocking.\n\n";
 
+// Plan-execution skill guidance appended to the SDD plan-execution handoffs.
+// It tells the implementer to use the ai-whisper-plan-execution skill for HOW
+// to execute the plan (subagent fan-out + model allocation where the harness
+// supports it), while the task statement before it stays authoritative for
+// WHAT to deliver and the handback contract. Keep it AFTER the task statement,
+// mirroring the SDD_CODE_REVIEW composition order.
+export const PLAN_EXECUTION_SKILL_GUIDANCE =
+	"Use the ai-whisper-plan-execution skill to structure HOW you execute this plan: subagent fan-out with model allocation where your harness supports it, disciplined inline execution otherwise. The handback contract above remains authoritative — settle all delegated work before handing back, and state which execution mode you used.";
+
 const SDD_SPEC_REVIEW =
 	"Review the spec at {specPath}. This is an autonomous workflow with no human in the loop.\n\n" +
 	WORKFLOW_REVIEW_PROTOCOL;
@@ -165,6 +174,10 @@ const SDD_CODE_REVIEW =
 	"Review the implementer's changes for this phase — the commits in {commitRange}. The upper bound is a LIVE `HEAD`: resolve it against the current repository at review time and INCLUDE any commits added during this review round (e.g. fixes for your prior findings); do not pin the review to an earlier tip. Verify against the spec's acceptance criteria and run the project's verification/tests. This is an autonomous workflow with no human in the loop.\n\n" +
 	CODE_REVIEW_SKILL_GUIDANCE +
 	WORKFLOW_REVIEW_PROTOCOL;
+
+const SDD_PLAN_EXECUTION =
+	"Execute the plan at {planPath} now: make all changes it specifies, run the verification command the plan or spec defines and ensure it passes, then commit. This is an autonomous workflow — no human will respond. Do the work yourself; never ask for confirmation, permission, or clarification. Hand back the commit SHAs and the verification output, plus a 1-2 sentence summary; your reply must be at least two sentences, well over 100 characters — never hand back only a single word.\n\n" +
+	PLAN_EXECUTION_SKILL_GUIDANCE;
 
 export const SPEC_DRIVEN_DEVELOPMENT: WorkflowDefinition = {
 	type: "spec-driven-development",
@@ -214,11 +227,9 @@ export const SPEC_DRIVEN_DEVELOPMENT: WorkflowDefinition = {
 			reviewerRole: null,
 			maxRounds: 1,
 			initialHandoffStep: "execute",
-			kickoffTemplate:
-				"Execute the plan at {planPath} now: make all changes it specifies, run the verification command the plan or spec defines and ensure it passes, then commit. This is an autonomous workflow — no human will respond. Do the work yourself; never ask for confirmation, permission, or clarification. Hand back the commit SHAs and the verification output, plus a 1-2 sentence summary; your reply must be at least two sentences, well over 100 characters — never hand back only a single word.",
+			kickoffTemplate: SDD_PLAN_EXECUTION,
 			stepTemplates: {
-				execute:
-					"Execute the plan at {planPath} now: make all changes it specifies, run the verification command the plan or spec defines and ensure it passes, then commit. This is an autonomous workflow — no human will respond. Do the work yourself; never ask for confirmation, permission, or clarification. Hand back the commit SHAs and the verification output, plus a 1-2 sentence summary; your reply must be at least two sentences, well over 100 characters — never hand back only a single word.",
+				execute: SDD_PLAN_EXECUTION,
 			},
 			evaluatorPromptKey: "execution-gate",
 			artifactOut: { kind: "commit-range" },
