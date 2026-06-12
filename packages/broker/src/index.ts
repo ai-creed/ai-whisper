@@ -22,6 +22,12 @@ export {
 	type EventFrame,
 	type EventSocketFrame,
 } from "./runtime/event-protocol.js";
+export {
+	createEventSocketServer,
+	ALL_BROKER_EVENT_NAMES,
+	type EventSocketServer,
+	type CreateEventSocketServerInput,
+} from "./runtime/event-socket-server.js";
 export { enforceOneActiveCollabPerWorkspace } from "./storage/enforce-one-active-collab.js";
 export {
 	acquireCaptureLease,
