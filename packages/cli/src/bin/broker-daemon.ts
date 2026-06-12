@@ -4,7 +4,11 @@
  * Reads config from environment variables, opens the broker,
  * starts the HTTP listener, and stays alive.
  */
-import { createBrokerRuntime } from "@ai-whisper/broker";
+import {
+	createBrokerRuntime,
+	createEventSocketServer,
+	type EventSocketServer,
+} from "@ai-whisper/broker";
 import { createRelayOrchestrator } from "../runtime/relay-orchestrator.js";
 import {
 	createRelayOrchestratorEvaluator,
@@ -18,6 +22,9 @@ import {
 } from "../runtime/evaluator-config.js";
 import { recordEvaluatorStatus } from "../runtime/record-evaluator-status.js";
 import { execFile } from "node:child_process";
+import { join } from "node:path";
+import { getStateSocketsDir } from "../runtime/state-root.js";
+import { resolveCliVersion } from "../runtime/cli-package-info.js";
 
 const sqlitePath = process.env.AI_WHISPER_BROKER_SQLITE!;
 const host = process.env.AI_WHISPER_BROKER_HOST ?? "127.0.0.1";
@@ -34,6 +41,24 @@ if (collabId) {
 }
 
 await broker.start();
+
+// Event-socket fanout: serve BrokerEventBus emissions to external supervisors
+// as newline-delimited JSON. Best-effort — a socket failure must never take
+// down the broker; consumers fall back to DB polling.
+let eventSocket: EventSocketServer | null = null;
+if (collabId) {
+	try {
+		eventSocket = await createEventSocketServer({
+			socketPath: join(getStateSocketsDir(), `events-${collabId}.sock`),
+			events: broker.events,
+			engineVersion: resolveCliVersion(),
+		});
+	} catch (err) {
+		console.error(
+			`event-socket fanout unavailable: ${err instanceof Error ? err.message : String(err)}`,
+		);
+	}
+}
 
 let resolved: ResolvedEvaluatorConfig | undefined;
 let loaderError: Error | null = null;
@@ -112,6 +137,7 @@ orchestrator?.start();
 
 async function shutdown(): Promise<void> {
 	orchestrator?.stop();
+	await eventSocket?.close();
 	await broker.stop();
 	process.exit(0);
 }
