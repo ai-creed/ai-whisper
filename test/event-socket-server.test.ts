@@ -52,7 +52,7 @@ function frameReader(conn: Socket) {
 		while ((idx = buf.indexOf("\n")) >= 0) {
 			const line = buf.slice(0, idx);
 			buf = buf.slice(idx + 1);
-			if (line.trim()) frames.push(JSON.parse(line));
+			if (line.trim()) frames.push(JSON.parse(line) as Record<string, unknown>);
 		}
 		notify?.();
 	});
