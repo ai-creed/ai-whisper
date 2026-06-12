@@ -15,6 +15,13 @@ export {
 	type IsAliveResult,
 } from "./runtime/broker-daemon-sweep.js";
 export { applyMigrations } from "./storage/apply-migrations.js";
+export { CURRENT_SCHEMA_VERSION } from "./storage/apply-migrations.js";
+export {
+	EVENT_PROTOCOL_VERSION,
+	type HelloFrame,
+	type EventFrame,
+	type EventSocketFrame,
+} from "./runtime/event-protocol.js";
 export { enforceOneActiveCollabPerWorkspace } from "./storage/enforce-one-active-collab.js";
 export {
 	acquireCaptureLease,
