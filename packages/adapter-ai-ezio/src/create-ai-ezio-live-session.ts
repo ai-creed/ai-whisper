@@ -3,7 +3,11 @@ import type {
 	TurnFidelityDecision,
 } from "@ai-whisper/shared";
 import type { ProtocolEvent } from "@ai-ezio/protocol";
-import { loadMcpHost, type McpHost } from "@ai-ezio/mcp-host";
+import {
+	callHostRehydration,
+	loadMcpHost,
+	type McpHost,
+} from "@ai-ezio/mcp-host";
 import {
 	createAutoCompactDriver,
 	loadConfig,
@@ -33,15 +37,24 @@ export type BuildAutoCompact = (deps: {
 }) => AutoCompactDriver | null;
 
 /** Default: the shared `createAutoCompactDriver`, with mounted chrome written
- * straight to the pane. Mounted mode has no session recorder, so there is no
- * deterministic digest fallback — a failed summarize aborts and re-arms (the
- * harness Compactor's own policy). The real Session exposes `runExclusive`
- * even though the narrowed engine facet does not advertise it. */
-const defaultBuildAutoCompact: BuildAutoCompact = ({ session, write }) => {
+ * straight to the pane and the same cortex rehydration the standalone CLI uses
+ * (so a compacted summary still carries the carried-forward project memory).
+ * Mounted mode has no session recorder, so there is no deterministic digest
+ * fallback — a failed summarize aborts and re-arms (the harness Compactor's own
+ * policy). The real Session exposes `runExclusive` even though the narrowed
+ * engine facet does not advertise it. */
+const defaultBuildAutoCompact: BuildAutoCompact = ({
+	session,
+	host,
+	write,
+}) => {
 	const { compaction } = loadConfig();
 	return createAutoCompactDriver({
 		session: session as unknown as CompactorSession,
 		config: compaction,
+		rehydrate: compaction.rehydrate
+			? () => callHostRehydration(host)
+			: undefined,
 		onCycleStart: () => write("compacting…\r\n"),
 		onNote: (line) => write(`${line}\r\n`),
 	});
