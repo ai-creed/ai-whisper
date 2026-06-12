@@ -66,7 +66,7 @@ describe("whisper env --json (pure stdout)", () => {
 	it("emits exactly one JSON object and nothing else", async () => {
 		await createCli().parseAsync(["env", "--json"], { from: "user" });
 		expect(logs).toHaveLength(1);
-		const parsed = JSON.parse(logs[0]) as Record<string, unknown>;
+		const parsed = JSON.parse(logs[0]!) as Record<string, unknown>;
 		expect(parsed).toMatchObject({
 			engineVersion: expect.any(String),
 			installPath: expect.any(String),
@@ -79,7 +79,7 @@ describe("whisper env --json (pure stdout)", () => {
 	it("without --json prints a human rendering (non-JSON)", async () => {
 		await createCli().parseAsync(["env"], { from: "user" });
 		expect(logs).toHaveLength(1);
-		expect(() => JSON.parse(logs[0])).toThrow();
+		expect(() => JSON.parse(logs[0]!)).toThrow();
 		expect(logs[0]).toContain("engineVersion:");
 	});
 });
