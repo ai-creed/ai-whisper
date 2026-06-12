@@ -57,6 +57,13 @@ describe("cli command wiring", () => {
 		expect(captures!.flags).toMatch(/\[/);
 	});
 
+	it("registers a top-level env command exposing --json", () => {
+		const cli = createCli();
+		const env = cli.commands.find((c) => c.name() === "env");
+		expect(env).toBeDefined();
+		expect(env!.options.map((o) => o.long)).toContain("--json");
+	});
+
 	it("inspect subcommand accepts --verdicts option (optional-value)", () => {
 		const cli = createCli();
 		const collab = cli.commands.find((c) => c.name() === "collab")!;

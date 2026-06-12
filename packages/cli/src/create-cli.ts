@@ -31,6 +31,7 @@ import { runWorkflowPause } from "./commands/workflow/pause.js";
 import { runWorkflowCancel } from "./commands/workflow/cancel.js";
 import { runWorkflowTypes } from "./commands/workflow/types.js";
 import { runSkillInstall } from "./commands/skill/install.js";
+import { buildEnvReport, renderEnvReportText } from "./commands/env/report.js";
 import { connectToWorkspaceBroker } from "./runtime/broker-connect.js";
 import { CollabResolverError } from "./runtime/collab-resolver.js";
 import { resolveCliVersion } from "./runtime/cli-package-info.js";
@@ -566,6 +567,27 @@ export function createCli(): Command {
 				}
 			},
 		);
+
+	cli
+		.command("env")
+		.description(
+			"Print machine-readable engine/integration facts for external supervisors",
+		)
+		.option(
+			"--json",
+			"Emit the contractual JSON object (single line, stdout only)",
+		)
+		.action((opts: { json?: boolean }) => {
+			const report = buildEnvReport();
+			if (opts.json) {
+				// Pure stdout discipline: exactly one JSON object, nothing else, then
+				// exit 0. The consumer does JSON.parse(stdout) and treats any parse
+				// failure as not-installed.
+				console.log(JSON.stringify(report));
+				return;
+			}
+			console.log(renderEnvReportText(report));
+		});
 
 	return cli;
 }
