@@ -40,7 +40,11 @@ export interface EventSocketServer {
 
 export interface CreateEventSocketServerInput {
 	socketPath: string;
-	events: BrokerEventBus;
+	// One or more event buses to fan out. The daemon passes its in-process
+	// driving bus plus a dedicated cross-process notification bus (see
+	// workflow-event-bridge), so CLI-originated lifecycle events reach clients
+	// too. A single bus is also accepted.
+	events: BrokerEventBus | readonly BrokerEventBus[];
 	engineVersion: string;
 	now?: () => string;
 }
@@ -92,12 +96,17 @@ export async function createEventSocketServer(
 		writeLine(conn, `${JSON.stringify(hello)}\n`);
 	});
 
-	const unsubscribes = ALL_BROKER_EVENT_NAMES.map((name) =>
-		input.events.on(name, (payload) => {
-			const frame: EventFrame = { type: "event", name, payload, ts: now() };
-			const line = `${JSON.stringify(frame)}\n`;
-			for (const conn of [...clients]) writeLine(conn, line);
-		}),
+	const buses: readonly BrokerEventBus[] = Array.isArray(input.events)
+		? input.events
+		: [input.events];
+	const unsubscribes = buses.flatMap((bus) =>
+		ALL_BROKER_EVENT_NAMES.map((name) =>
+			bus.on(name, (payload) => {
+				const frame: EventFrame = { type: "event", name, payload, ts: now() };
+				const line = `${JSON.stringify(frame)}\n`;
+				for (const conn of [...clients]) writeLine(conn, line);
+			}),
+		),
 	);
 
 	await new Promise<void>((resolve, reject) => {

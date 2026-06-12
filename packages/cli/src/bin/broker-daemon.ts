@@ -6,8 +6,11 @@
  */
 import {
 	createBrokerRuntime,
+	createBrokerEventBus,
 	createEventSocketServer,
+	createWorkflowEventBridge,
 	type EventSocketServer,
+	type WorkflowEventBridge,
 } from "@ai-whisper/broker";
 import { createRelayOrchestrator } from "../runtime/relay-orchestrator.js";
 import {
@@ -45,15 +48,35 @@ await broker.start();
 // Event-socket fanout: serve BrokerEventBus emissions to external supervisors
 // as newline-delimited JSON. Best-effort — a socket failure must never take
 // down the broker; consumers fall back to DB polling.
+//
+// The socket fans out TWO buses: the daemon's in-process bus (phase/round/
+// halted/done emitted by the driver here) and a dedicated cross-process bus fed
+// by the workflow-event bridge. CLI control commands (start/pause/resume/cancel)
+// run on a separate transient runtime, so their lifecycle events never reach
+// the daemon bus; the bridge polls the DB and re-emits them onto the dedicated
+// bus. It is kept OFF broker.events on purpose: the workflow driver consumes
+// workflow.created/resumed there, so re-emitting them would trigger driving
+// side-effects and race the driver's own sweep.
 let eventSocket: EventSocketServer | null = null;
+let workflowEventBridge: WorkflowEventBridge | null = null;
 if (collabId) {
 	try {
+		const externalEvents = createBrokerEventBus();
+		workflowEventBridge = createWorkflowEventBridge({
+			db: broker.db,
+			events: externalEvents,
+			collabId,
+			intervalMs: Number(process.env.AI_WHISPER_WORKFLOW_EVENT_BRIDGE_MS ?? 1000),
+		});
+		workflowEventBridge.start();
 		eventSocket = await createEventSocketServer({
 			socketPath: join(getStateSocketsDir(), `events-${collabId}.sock`),
-			events: broker.events,
+			events: [broker.events, externalEvents],
 			engineVersion: resolveCliVersion(),
 		});
 	} catch (err) {
+		workflowEventBridge?.stop();
+		workflowEventBridge = null;
 		console.error(
 			`event-socket fanout unavailable: ${err instanceof Error ? err.message : String(err)}`,
 		);
@@ -137,6 +160,7 @@ orchestrator?.start();
 
 async function shutdown(): Promise<void> {
 	orchestrator?.stop();
+	workflowEventBridge?.stop();
 	await eventSocket?.close();
 	await broker.stop();
 	process.exit(0);

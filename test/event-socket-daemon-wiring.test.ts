@@ -19,11 +19,28 @@ describe("broker daemon event-socket wiring", () => {
 		expect(src).toContain("resolveCliVersion()");
 	});
 
-	it("closes the socket on shutdown BEFORE stopping the broker", () => {
+	it("bridges cross-process workflow events on a dedicated bus, not broker.events", () => {
+		// The bridge surfaces CLI-originated start/pause/resume/cancel events that
+		// never reach the daemon bus. It must run on a separate bus the socket
+		// also fans out — kept off broker.events so the driver is not triggered.
+		expect(src).toContain("createWorkflowEventBridge");
+		expect(src).toContain("createBrokerEventBus");
+		expect(src).toContain("workflowEventBridge.start()");
+		// Socket fans out BOTH buses.
+		expect(src).toContain("events: [broker.events, externalEvents]");
+		// The bridge emits on the dedicated external bus, not the driving bus.
+		expect(src).toContain("events: externalEvents");
+	});
+
+	it("stops the bridge and closes the socket on shutdown BEFORE stopping the broker", () => {
 		const shutdownIdx = src.indexOf("async function shutdown");
 		expect(shutdownIdx).toBeGreaterThan(-1);
 		const body = src.slice(shutdownIdx);
+		expect(body).toContain("workflowEventBridge?.stop()");
 		expect(body).toContain("eventSocket?.close()");
+		expect(body.indexOf("workflowEventBridge?.stop()")).toBeLessThan(
+			body.indexOf("broker.stop()"),
+		);
 		expect(body.indexOf("eventSocket?.close()")).toBeLessThan(
 			body.indexOf("broker.stop()"),
 		);
