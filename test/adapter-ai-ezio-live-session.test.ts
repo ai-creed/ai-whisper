@@ -30,7 +30,7 @@ function fakeEngine() {
 describe("createAiEzioLiveSession", () => {
 	it("writeUserInput submits over the protocol (single submit, no keystrokes)", async () => {
 		const f = fakeEngine();
-		const live = createAiEzioLiveSession({ createEngineSession: f.create, stdout: { write: vi.fn() } as never });
+		const live = createAiEzioLiveSession({ createEngineSession: f.create, buildAutoCompact: () => null,stdout: { write: vi.fn() } as never });
 		await live.start();
 		live.writeUserInput("do the thing");
 		expect(f.submit).toHaveBeenCalledTimes(1);
@@ -41,7 +41,7 @@ describe("createAiEzioLiveSession", () => {
 		const f = fakeEngine();
 		const writes: string[] = [];
 		const stdout = { write: (s: string) => (writes.push(s), true) } as never;
-		const live = createAiEzioLiveSession({ createEngineSession: f.create, stdout });
+		const live = createAiEzioLiveSession({ createEngineSession: f.create, buildAutoCompact: () => null,stdout });
 		const out: string[] = [];
 		live.onProviderOutput?.((d) => out.push(d));
 		await live.start();
@@ -54,7 +54,7 @@ describe("createAiEzioLiveSession", () => {
 
 	it("fires onTurnFinished with the authoritative content on idle", async () => {
 		const f = fakeEngine();
-		const live = createAiEzioLiveSession({ createEngineSession: f.create, stdout: { write: vi.fn() } as never });
+		const live = createAiEzioLiveSession({ createEngineSession: f.create, buildAutoCompact: () => null,stdout: { write: vi.fn() } as never });
 		const finished: string[] = [];
 		live.onTurnFinished?.((content) => finished.push(content));
 		await live.start();
@@ -65,7 +65,7 @@ describe("createAiEzioLiveSession", () => {
 
 	it("does not fire onTurnFinished on the startup idle (no turn yet)", async () => {
 		const f = fakeEngine();
-		const live = createAiEzioLiveSession({ createEngineSession: f.create, stdout: { write: vi.fn() } as never });
+		const live = createAiEzioLiveSession({ createEngineSession: f.create, buildAutoCompact: () => null,stdout: { write: vi.fn() } as never });
 		const finished: string[] = [];
 		live.onTurnFinished?.((content) => finished.push(content));
 		await live.start();
@@ -91,7 +91,7 @@ describe("createAiEzioLiveSession — delegates display to the mounted renderer 
 	it("drives the renderer: banner on status, usage line + prompt after a turn", async () => {
 		const f = fakeEngine();
 		const cap = capturing();
-		const live = createAiEzioLiveSession({ createEngineSession: f.create, stdout: cap.stdout });
+		const live = createAiEzioLiveSession({ createEngineSession: f.create, buildAutoCompact: () => null,stdout: cap.stdout });
 		await live.start();
 		f.emit({ type: "status", model: "gpt-5.5", provider: "codex", protocol: "0.1.0", sessionId: "s", state: "idle", effort: "high" });
 		f.emit({ type: "assistant_turn_finished", turnId: "t", content: "hello", usage: { contextTokens: 8900, outputTokens: 595, cachedTokens: 2700, contextLimit: 262144 } });
@@ -114,7 +114,7 @@ describe("createAiEzioLiveSession — delegates display to the mounted renderer 
 				return true;
 			},
 		} as never;
-		const live = createAiEzioLiveSession({ createEngineSession: f.create, stdout });
+		const live = createAiEzioLiveSession({ createEngineSession: f.create, buildAutoCompact: () => null,stdout });
 		live.onTurnFinished?.(() => order.push("handback"));
 		await live.start();
 		// Use a clean, completed-answer content: the §4.3 shape guard now defers

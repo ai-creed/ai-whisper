@@ -61,6 +61,7 @@ describe("adapter-ai-ezio mounted MCP wiring", () => {
 			stdout: { write: () => true } as never,
 			createEngineSession: fake.create,
 			mcpHost: host,
+			buildAutoCompact: () => null,
 		});
 
 		await controller.start();
