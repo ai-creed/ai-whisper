@@ -448,6 +448,15 @@ settled in the implementation plan.)
 
 ## 9. Rollout
 
+> **Update (2026-06-14): default flipped to ON after dogfooding.** The
+> default-off gate below was the dogfooding stance. Following a couple of days
+> of `--turn-events claude,codex` dogfooding, the event path is now the **default
+> capture methodology** for `claude`/`codex` (default ON for both when unset).
+> `AI_WHISPER_TURN_EVENTS` / `--turn-events` remain as the override and
+> kill-switch — a provider subset scopes enablement, and `off`/`none`/empty
+> reverts to pure clipboard. The clipboard fallback is still retained; its
+> removal remains the separate follow-up below.
+
 - **Per-provider enablement, three sources (precedence: flag > env > default).**
   - CLI flag: `whisper collab mount --turn-events claude,codex` — the primary,
     discoverable knob (shows up in `--help`). Mirrors the existing dashboard

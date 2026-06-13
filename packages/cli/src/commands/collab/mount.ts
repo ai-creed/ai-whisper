@@ -28,6 +28,7 @@ import {
 import {
 	formatTurnEventsStartupLine,
 	resolveTurnEvents,
+	unrecognizedTurnEventsTokens,
 	type TurnEventsEnablement,
 } from "../../runtime/turn-events-config.js";
 import { waitForBrokerReady } from "../../runtime/wait-for-broker-ready.js";
@@ -90,9 +91,10 @@ export async function runCollabMount(input: {
 	 */
 	passthroughArgs?: string[];
 	/**
-	 * Override value for AI_WHISPER_TURN_EVENTS (flag > env > default OFF).
-	 * Comma-separated provider names: "claude", "codex", or "claude,codex".
-	 * When absent, falls through to the env var (then defaults to off).
+	 * Override value for AI_WHISPER_TURN_EVENTS (flag > env > default ON).
+	 * Comma-separated provider names: "claude", "codex", or "claude,codex";
+	 * "off"/"none"/empty disables the event path (revert to pure clipboard).
+	 * When absent, falls through to the env var (then defaults to on for both).
 	 */
 	turnEventsFlag?: string;
 	now: string;
@@ -145,6 +147,17 @@ export async function runCollabMount(input: {
 	mkdirSync(getStateSocketsDir(), { recursive: true });
 	mkdirSync(getStateLogsDir(), { recursive: true });
 	console.error(formatTurnEventsStartupLine(enablement));
+	// Loud guard against the typo footgun: an unrecognized token (e.g. "clade")
+	// silently resolves a provider to OFF. Surface it next to the startup line
+	// so a misconfigured flag/env is visible rather than passing unnoticed.
+	const unknownTurnEventsTokens = unrecognizedTurnEventsTokens(input.turnEventsFlag);
+	if (unknownTurnEventsTokens.length > 0) {
+		console.error(
+			`[ai-whisper] turn-events: ignoring unrecognized token(s) ${unknownTurnEventsTokens
+				.map((t) => `"${t}"`)
+				.join(", ")} — expected claude, codex, off, or none`,
+		);
+	}
 
 	const tryResolve = () => {
 		const db = openDatabase(getSharedSqlitePath());

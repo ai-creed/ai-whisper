@@ -166,7 +166,7 @@ export function createMountSessionRuntime(input: {
 	 */
 	passthroughArgs?: string[];
 	/**
-	 * Turn-events enablement resolved by runCollabMount (flag > env > default OFF).
+	 * Turn-events enablement resolved by runCollabMount (flag > env > default ON).
 	 * When a provider's flag is true, the interactive session is launched with the
 	 * provider-specific hook injection (claude: --settings, codex: -c notify) and
 	 * a socket listener is started to receive the shim's forwarded events.
