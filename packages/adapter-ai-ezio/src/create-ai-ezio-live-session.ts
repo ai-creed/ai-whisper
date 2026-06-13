@@ -52,11 +52,13 @@ const defaultBuildAutoCompact: BuildAutoCompact = ({
 	return createAutoCompactDriver({
 		session: session as unknown as CompactorSession,
 		config: compaction,
-		rehydrate: compaction.rehydrate
-			? () => callHostRehydration(host)
-			: undefined,
+		// rehydrate is an exact-optional property: omit it entirely (rather than
+		// pass `undefined`) when cortex rehydration is disabled.
+		...(compaction.rehydrate
+			? { rehydrate: () => callHostRehydration(host) }
+			: {}),
 		onCycleStart: () => write("compacting…\r\n"),
-		onNote: (line) => write(`${line}\r\n`),
+		onNote: (line: string) => write(`${line}\r\n`),
 	});
 };
 

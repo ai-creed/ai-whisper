@@ -36,7 +36,15 @@ function fakeDriver() {
 				events.push(e);
 			},
 			compacting: () => compacting,
-			compactNow: vi.fn(async () => ({ kind: "skipped", reason: "not-armed" as const })),
+			compactNow: vi.fn(async () => ({
+				kind: "skipped" as const,
+				reason: "not-armed" as const,
+			})),
+			noteUsage: vi.fn(),
+			maybeAutoCompact: vi.fn(async () => ({
+				kind: "skipped" as const,
+				reason: "not-armed" as const,
+			})),
 			whenSettled: vi.fn(async () => {}),
 		},
 		events,
