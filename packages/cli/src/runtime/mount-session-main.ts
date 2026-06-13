@@ -21,6 +21,7 @@ import {
 	type TurnEventListener,
 } from "./mount-turn-event-listener.js";
 import { createLiveSessionRuntime } from "./live-session.js";
+import { injectedWrite } from "./injected-input.js";
 import { runCompanionAgentLoop } from "./companion-agent-loop.js";
 import {
 	createInteractiveSessionForTarget,
@@ -332,7 +333,9 @@ export function createMountSessionRuntime(input: {
 						channel,
 						data: value,
 					});
-					interactiveSession.writeUserInput(value);
+					// Injected/relayed input goes straight to a turn — never through
+					// the operator slash-command seam. See injectedWrite.
+					injectedWrite(interactiveSession, value);
 				};
 				const submitInjectedInput = async (text: string) => {
 					debugLog({

@@ -264,6 +264,123 @@ describe("live session runtime", () => {
 		expect(submits).toEqual([]);
 	});
 
+	function localCommandFixture(
+		tryConsumeLocalCommand: (line: string) => Promise<boolean>,
+	) {
+		const stdin = new PassThrough();
+		const stdout = new PassThrough();
+		const out: string[] = [];
+		stdout.on("data", (c) => out.push(String(c)));
+		const calls = {
+			submits: [] as string[],
+			echoes: [] as string[],
+			consumed: [] as string[],
+		};
+		const interactiveSession = {
+			start: () => Promise.resolve(),
+			stop: () => Promise.resolve(),
+			writeUserInput(data: string) {
+				calls.submits.push(data);
+			},
+			echoUserInput(text: string) {
+				calls.echoes.push(text);
+				stdout.write("__STRIPE__");
+			},
+			sendLocalMessage(message: string) {
+				stdout.write(message);
+			},
+			onExit() {},
+			onTurnFinished() {}, // marks this as a protocol-native (line-buffered) session
+			tryConsumeLocalCommand(line: string) {
+				calls.consumed.push(line);
+				return tryConsumeLocalCommand(line);
+			},
+		};
+		const runtime = createLiveSessionRuntime({
+			interactiveSession,
+			stdin,
+			stdout,
+			onRelay: () => Promise.reject(new Error("relay should not fire")),
+			lineBufferedInput: true,
+		});
+		return { stdin, out: () => out.join(""), calls, runtime };
+	}
+
+	it("lineBufferedInput: a consumed operator slash command renders locally without submitting or repainting a stripe", async () => {
+		const f = localCommandFixture(async (_line) => true);
+
+		await f.runtime.start();
+		f.stdin.write("/help\r");
+		await nextTick();
+
+		// A consumed command is never submitted and never re-painted as a stripe.
+		expect(f.calls.consumed).toEqual(["/help"]);
+		expect(f.calls.submits).toEqual([]);
+		expect(f.calls.echoes).toEqual([]);
+	});
+
+	it("lineBufferedInput: erases the echoed operator input BEFORE the consumed command renders its output", async () => {
+		const stdin = new PassThrough();
+		const stdout = new PassThrough();
+		const out: string[] = [];
+		stdout.on("data", (c) => out.push(String(c)));
+		const submits: string[] = [];
+		const echoes: string[] = [];
+
+		const runtime = createLiveSessionRuntime({
+			interactiveSession: {
+				start: () => Promise.resolve(),
+				stop: () => Promise.resolve(),
+				writeUserInput(data: string) {
+					submits.push(data);
+				},
+				echoUserInput(text: string) {
+					echoes.push(text);
+				},
+				sendLocalMessage(message: string) {
+					stdout.write(message);
+				},
+				onExit() {},
+				onTurnFinished() {},
+				tryConsumeLocalCommand(_line: string) {
+					stdout.write("__CMD__");
+					return Promise.resolve(true);
+				},
+			},
+			stdin,
+			stdout,
+			onRelay: () => Promise.reject(new Error("relay should not fire")),
+			lineBufferedInput: true,
+		});
+
+		await runtime.start();
+		stdin.write("/help\r");
+		await nextTick();
+
+		const s = out.join("");
+		const eraseIdx = s.indexOf("[J");
+		const cmdIdx = s.indexOf("__CMD__");
+		expect(eraseIdx).toBeGreaterThanOrEqual(0);
+		expect(cmdIdx).toBeGreaterThanOrEqual(0);
+		// The echoed input is cleared to end-of-screen before the command output.
+		expect(eraseIdx).toBeLessThan(cmdIdx);
+		// No magenta stripe and no turn submission for a consumed command.
+		expect(submits).toEqual([]);
+		expect(echoes).toEqual([]);
+	});
+
+	it("lineBufferedInput: an ordinary (non-command) line still submits and repaints the magenta stripe", async () => {
+		const f = localCommandFixture(async (_line) => false);
+
+		await f.runtime.start();
+		f.stdin.write("hello\r");
+		await nextTick();
+
+		expect(f.calls.consumed).toEqual(["hello"]);
+		expect(f.calls.submits).toEqual(["hello"]);
+		expect(f.calls.echoes).toEqual(["hello"]);
+	});
+
 	it("consumes relay directives and writes local acknowledgement instead of forwarding them", async () => {
 		const stdin = new PassThrough();
 		const stdout = new PassThrough();
