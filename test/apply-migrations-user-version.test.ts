@@ -94,6 +94,38 @@ describe("apply-migrations: PRAGMA user_version", () => {
 		).map((c) => c.name);
 		expect(cols).toContain("evaluator_status");
 	});
+
+	it("fresh DB has the workflow_event_outbox table", () => {
+		const db = freshDb();
+		applyMigrations(db);
+		const t = db
+			.prepare(
+				"SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'workflow_event_outbox'",
+			)
+			.get();
+		expect(t).toBeDefined();
+	});
+
+	it("an existing v6 DB missing workflow_event_outbox gains it WITHOUT a version bump", () => {
+		const db = freshDb();
+		applyMigrations(db);
+		// Simulate a v6 DB created before the outbox existed: drop only that table
+		// and leave user_version at the CURRENT value, so the version-gated
+		// runMigrationBody stays skipped on the next call.
+		db.exec("DROP TABLE workflow_event_outbox");
+		expect(db.pragma("user_version", { simple: true })).toBe(CURRENT_SCHEMA_VERSION);
+
+		applyMigrations(db); // must re-create the table ungated, despite user_version == CURRENT
+
+		const t = db
+			.prepare(
+				"SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'workflow_event_outbox'",
+			)
+			.get();
+		expect(t).toBeDefined();
+		// The internal table must NOT have moved the contract version.
+		expect(db.pragma("user_version", { simple: true })).toBe(CURRENT_SCHEMA_VERSION);
+	});
 });
 
 describe("apply-migrations: one-active-collab enforcement", () => {

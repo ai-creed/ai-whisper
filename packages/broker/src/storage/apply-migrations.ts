@@ -303,22 +303,6 @@ CREATE TABLE IF NOT EXISTS clipboard_capture_lease (
   acquired_at       TEXT
 );
 
--- Append-only outbox of CLI-originated workflow lifecycle events
--- (created/paused/resumed/canceled). The daemon's workflow-event bridge tails
--- this by autoincrement id so it can never lose a transition between polling
--- ticks (even a rapid pause->resume leaves two ordered rows). INTERNAL table:
--- not part of the state-db read contract, so adding it does not bump
--- CURRENT_SCHEMA_VERSION (the contract version external consumers gate on).
-CREATE TABLE IF NOT EXISTS workflow_event_outbox (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  collab_id     TEXT NOT NULL,
-  event_name    TEXT NOT NULL,
-  payload_json  TEXT NOT NULL,
-  created_at    TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_workflow_event_outbox_collab_id
-  ON workflow_event_outbox (collab_id, id);
-
 `;
 
 function ensureBrokerStateRow(db: Database.Database): void {
@@ -329,6 +313,32 @@ function ensureBrokerStateRow(db: Database.Database): void {
 		  schema_version = excluded.schema_version,
 		  migrated = 1`,
 	).run(CURRENT_SCHEMA_VERSION);
+}
+
+// Append-only outbox of CLI-originated workflow lifecycle events
+// (created/paused/resumed/canceled). The daemon's workflow-event bridge tails it
+// by autoincrement id so it can never lose a transition between polling ticks
+// (even a rapid pause->resume leaves two ordered rows).
+//
+// Created UNGATED (run on every applyMigrations call, like the enforcement/sweep
+// helpers below) rather than inside runMigrationBody. This is deliberate: it is
+// an INTERNAL table — not part of the state-db read contract — so we must NOT
+// bump CURRENT_SCHEMA_VERSION (external consumers gate on the contract version,
+// currently 6). A gated addition would never reach an already-persisted v6 DB;
+// the ungated idempotent CREATE lands it on fresh AND existing DBs without a
+// version bump.
+function ensureWorkflowEventOutbox(db: Database.Database): void {
+	db.exec(`
+		CREATE TABLE IF NOT EXISTS workflow_event_outbox (
+			id            INTEGER PRIMARY KEY AUTOINCREMENT,
+			collab_id     TEXT NOT NULL,
+			event_name    TEXT NOT NULL,
+			payload_json  TEXT NOT NULL,
+			created_at    TEXT NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS idx_workflow_event_outbox_collab_id
+			ON workflow_event_outbox (collab_id, id);
+	`);
 }
 
 export function applyMigrations(db: Database.Database): void {
@@ -353,6 +363,10 @@ export function applyMigrations(db: Database.Database): void {
 	// Idempotent startup sweep: clears a lease left held by a crashed mount
 	// (dead holder pid or TTL-exceeded). A clean/free row is a no-op.
 	sweepStaleCaptureLease(db);
+	// Ungated, idempotent: ensures the internal workflow-event outbox exists on
+	// every DB (fresh and already-persisted v6) without bumping the read-contract
+	// schema version. See ensureWorkflowEventOutbox for the rationale.
+	ensureWorkflowEventOutbox(db);
 }
 
 function runMigrationBody(db: Database.Database): void {
