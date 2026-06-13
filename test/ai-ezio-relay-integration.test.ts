@@ -12,6 +12,9 @@ function fakeEngine(reply: string) {
 	let emit: (e: ProtocolEvent) => void = () => {};
 	const session: AiEzioEngineSession = {
 		start: vi.fn(async () => ({ type: "ready" })),
+		transcriptPath: undefined,
+		newConversation: vi.fn(async () => {}),
+		status: vi.fn(async () => ({ provider: "mock", model: "mock" })),
 		submit: vi.fn(() => {
 			setTimeout(() => {
 				emit({ type: "assistant_turn_finished", turnId: "t1", content: reply });

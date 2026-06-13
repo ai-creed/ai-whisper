@@ -104,6 +104,9 @@ describe("live session runtime", () => {
 			stdout,
 			createEngineSession: () => ({
 				start: () => Promise.resolve({ type: "ready" }),
+				transcriptPath: undefined,
+				newConversation: async () => {},
+				status: async () => ({ provider: "mock", model: "mock" }),
 				submit: () => {},
 				interrupt: () => {},
 				submitAndWait: () => Promise.resolve({ turnId: "t", content: "" }),

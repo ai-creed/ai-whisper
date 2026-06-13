@@ -3,7 +3,14 @@ import type { DelegatedToolDef, ProtocolEvent } from "@ai-ezio/protocol";
 
 /** The subset of the harness Session the adapter drives. */
 export interface AiEzioEngineSession {
-	start(): Promise<unknown>;
+	start(opts?: { transcriptPath?: string }): Promise<unknown>;
+	/** The HAX_TRANSCRIPT mirror path, populated by start({ transcriptPath }).
+	 *  The mounted /transcript view reads this (the harness-owned seam). */
+	transcriptPath: string | undefined;
+	/** Reset the conversation (protocol newConversation control). */
+	newConversation(): Promise<void>;
+	/** Current provider/model/effort (protocol status control). */
+	status(): Promise<{ provider: string; model: string; effort?: string }>;
 	submit(text: string): void;
 	/** Cancel the in-flight turn (protocol `interrupt`; the engine ignores it
 	 *  between turns). */

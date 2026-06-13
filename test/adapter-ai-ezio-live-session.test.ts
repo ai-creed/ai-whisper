@@ -8,6 +8,9 @@ function fakeEngine() {
 	const submit = vi.fn();
 	const session: AiEzioEngineSession = {
 		start: vi.fn(async () => ({ type: "ready" })),
+		transcriptPath: undefined,
+		newConversation: vi.fn(async () => {}),
+		status: vi.fn(async () => ({ provider: "mock", model: "mock" })),
 		submit,
 		interrupt: vi.fn(),
 		submitAndWait: vi.fn(async () => ({ turnId: "t", content: "" })),
