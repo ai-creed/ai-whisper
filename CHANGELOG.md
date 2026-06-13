@@ -5,6 +5,42 @@ All notable changes to the `ai-whisper` package are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.8] - 2026-06-13
+
+### Added
+
+- **External integration contracts for supervisors (`whisper env --json`, event
+  socket, read contract).** Sanctioned, consumer-agnostic surfaces any external
+  supervisor (e.g. ai-14all) can rely on:
+  - `whisper env --json` prints exactly one parseable JSON object
+    (`engineVersion`, `installPath`, `stateRoot`, `dbSchemaVersion`,
+    `protocolVersion`) on stdout and exits 0 — pure-stdout, no DB or network, the
+    machine-readable answer to "are you there and can we talk?".
+  - A per-collab broker-daemon **event socket** at
+    `<stateRoot>/sockets/events-<collabId>.sock` (protocol version `"1"`): a
+    `hello` frame on connect, then one newline-delimited JSON wake-up frame per
+    broker event (type-level exhaustiveness guard over every `BrokerEventMap`
+    name), fanned out to any number of clients with dead-client isolation, and
+    created/unlinked with the daemon lifecycle. CLI-originated workflow lifecycle
+    events (`whisper workflow start/pause/resume/cancel`, which run on a
+    transient runtime) reach the socket reliably via an append-only outbox the
+    daemon tails — no transition is lost even when pause and resume land back to
+    back.
+  - A committed **`docs/state-db-read-contract.md`** documenting the versioned
+    read-only surface (access rules, `PRAGMA user_version` gate, exact
+    table/column subset, semantics, heartbeat-cadence guarantee, and the socket
+    path/protocol), plus a CI contract test that fails if any contract
+    table/column or the protocol version drifts without a doc + version bump.
+
+- **Mounted-mode auto-compaction for ezio.** Auto-compaction is now wired into
+  mounted ezio sessions through the shared harness driver, carrying cortex
+  rehydration forward into the compacted summary (parity with the standalone
+  CLI).
+
+### Security
+
+- Patched 6 critical/high Dependabot dependency advisories.
+
 ## [0.5.7] - 2026-06-12
 
 ### Added
@@ -534,6 +570,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Claude + Codex) driven by structured workflows, with npm metadata
   (description, repository, homepage).
 
+[0.5.8]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.8
 [0.5.7]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.7
 [0.5.6]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.6
 [0.5.5]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.5
