@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ProtocolEvent } from "@ai-ezio/protocol";
 import { createAiEzioLiveSession } from "../packages/adapter-ai-ezio/src/create-ai-ezio-live-session.ts";
 import type { AiEzioEngineSession } from "../packages/adapter-ai-ezio/src/ai-ezio-engine.ts";
+import { writeFileSync } from "node:fs";
 
 function fakeEngine() {
 	let onEvent: (e: ProtocolEvent) => void = () => {};
@@ -125,5 +126,109 @@ describe("createAiEzioLiveSession — delegates display to the mounted renderer 
 		f.emit({ type: "assistant_turn_finished", turnId: "t", content: "the task is done" });
 		f.emit({ type: "idle" });
 		expect(order).toEqual(["handback", "prompt"]);
+	});
+});
+
+// Mounted slash commands: ezio handles `/`-commands locally (rendered to the
+// pane) and never submits them to the engine. The controller is built in
+// start() from a mounted SlashController; tryConsumeLocalCommand returns true
+// for any command line (handled/unknown) and false for ordinary text.
+describe("createAiEzioLiveSession — mounted slash commands", () => {
+	function harness() {
+		let onEvent: (e: ProtocolEvent) => void = () => {};
+		const submits: string[] = [];
+		const writes: string[] = [];
+		const copied: string[] = [];
+		const session: AiEzioEngineSession = {
+			start: vi.fn(async (opts?: { transcriptPath?: string }) => {
+				session.transcriptPath = opts?.transcriptPath ?? "";
+				return { type: "ready" };
+			}),
+			transcriptPath: undefined,
+			newConversation: vi.fn(async () => {}),
+			status: vi.fn(async () => ({ provider: "mock", model: "mock" })),
+			submit: vi.fn((text: string) => {
+				submits.push(text);
+			}),
+			interrupt: vi.fn(),
+			submitAndWait: vi.fn(async () => ({ turnId: "t", content: "" })),
+			registerDelegatedTools: vi.fn(),
+			sendToolResult: vi.fn(),
+			onExit: vi.fn(),
+			close: vi.fn(),
+		};
+		const controller = createAiEzioLiveSession({
+			createEngineSession: (opts: { onEvent: (e: ProtocolEvent) => void }) => {
+				onEvent = opts.onEvent;
+				return session;
+			},
+			mcpHost: {
+				start: vi.fn(async () => {}),
+				stop: vi.fn(async () => {}),
+				handleEvent: vi.fn(),
+			} as never,
+			buildAutoCompact: () => null,
+			clipboard: async (text: string) => {
+				copied.push(text);
+			},
+			stdout: { write: (s: string) => (writes.push(s), true) } as never,
+		});
+		return {
+			controller,
+			fire: (e: ProtocolEvent) => onEvent(e),
+			writes,
+			submits,
+			copied,
+			session,
+		};
+	}
+
+	it("tracks the last assistant turn for /usage and /copy", async () => {
+		const h = harness();
+		await h.controller.start();
+		h.fire({
+			type: "assistant_turn_finished",
+			turnId: "t",
+			content: "hello",
+			usage: { outputTokens: 7 },
+		});
+		expect(await h.controller.tryConsumeLocalCommand?.("/usage")).toBe(true);
+		expect(h.writes.join("")).toContain("output 7");
+		expect(h.writes.join("")).not.toContain("no usage yet");
+		expect(await h.controller.tryConsumeLocalCommand?.("/copy")).toBe(true);
+		expect(h.copied).toContain("hello");
+	});
+
+	it("consumes a known command (/help) without submitting", async () => {
+		const h = harness();
+		await h.controller.start();
+		expect(await h.controller.tryConsumeLocalCommand?.("/help")).toBe(true);
+		expect(h.writes.join("")).toContain("/help");
+		expect(h.submits).toHaveLength(0);
+	});
+
+	it("does not consume ordinary text", async () => {
+		const h = harness();
+		await h.controller.start();
+		expect(await h.controller.tryConsumeLocalCommand?.("hello world")).toBe(false);
+		expect(h.submits).toHaveLength(0);
+	});
+
+	it("excludes /quit and /exit (mounted owns the lifecycle)", async () => {
+		const h = harness();
+		await h.controller.start();
+		expect(await h.controller.tryConsumeLocalCommand?.("/quit")).toBe(true);
+		expect(await h.controller.tryConsumeLocalCommand?.("/exit")).toBe(true);
+		expect(h.writes.join("")).toContain("unknown command: /quit");
+		expect(h.writes.join("")).toContain("unknown command: /exit");
+	});
+
+	it("dumps the minted transcript on /transcript", async () => {
+		const h = harness();
+		await h.controller.start();
+		expect(h.session.transcriptPath).toMatch(/ezio-mounted-.*\.txt$/);
+		writeFileSync(h.session.transcriptPath as string, "TRANSCRIPT_BODY");
+		expect(await h.controller.tryConsumeLocalCommand?.("/transcript")).toBe(true);
+		expect(h.writes.join("")).toContain("TRANSCRIPT_BODY");
 	});
 });
