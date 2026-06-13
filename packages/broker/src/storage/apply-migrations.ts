@@ -303,6 +303,22 @@ CREATE TABLE IF NOT EXISTS clipboard_capture_lease (
   acquired_at       TEXT
 );
 
+-- Append-only outbox of CLI-originated workflow lifecycle events
+-- (created/paused/resumed/canceled). The daemon's workflow-event bridge tails
+-- this by autoincrement id so it can never lose a transition between polling
+-- ticks (even a rapid pause->resume leaves two ordered rows). INTERNAL table:
+-- not part of the state-db read contract, so adding it does not bump
+-- CURRENT_SCHEMA_VERSION (the contract version external consumers gate on).
+CREATE TABLE IF NOT EXISTS workflow_event_outbox (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  collab_id     TEXT NOT NULL,
+  event_name    TEXT NOT NULL,
+  payload_json  TEXT NOT NULL,
+  created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_workflow_event_outbox_collab_id
+  ON workflow_event_outbox (collab_id, id);
+
 `;
 
 function ensureBrokerStateRow(db: Database.Database): void {

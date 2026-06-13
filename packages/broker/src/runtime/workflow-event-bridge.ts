@@ -1,90 +1,68 @@
 import type Database from "better-sqlite3";
 import type { BrokerEventBus } from "./broker-event-bus.js";
 import {
-	listWorkflows,
-	type WorkflowRecord,
-} from "../storage/repositories/workflow-repository.js";
+	getMaxWorkflowEventId,
+	listWorkflowEventsAfter,
+} from "../storage/repositories/workflow-event-outbox-repository.js";
 
 export interface WorkflowEventBridge {
 	start(): void;
 	stop(): void;
-	/** Poll once and emit any observed transitions. Exposed for deterministic tests. */
+	/** Drain the outbox once and emit any new rows. Exposed for deterministic tests. */
 	tick(): void;
 }
 
-// Surfaces CLI-originated workflow lifecycle transitions on the daemon's
+// Surfaces CLI-originated workflow lifecycle events on the daemon's
 // external-notification bus.
 //
 // Why this exists: `whisper workflow start/pause/resume/cancel` run on a
 // TRANSIENT BrokerRuntime (see runtime/broker-connect.ts) with its own
-// in-process event bus, so the `workflow.created/paused/resumed/canceled`
-// events they emit never reach the daemon process. The daemon's own driver
-// emits phase/round/halted/done in-process, so those already reach the socket;
-// the four lifecycle events below are the gap. SQLite has no cross-process
-// notification, so the daemon polls the `workflows` table and re-emits the
-// transitions it observes.
+// in-process event bus, so the workflow.created/paused/resumed/canceled events
+// they emit never reach the daemon process. Those control commands also append
+// each event to an APPEND-ONLY outbox table (workflow_event_outbox); the daemon
+// tails that log here and re-emits every row in order. Tailing an append-only
+// log — rather than diffing a status snapshot — is what makes delivery reliable:
+// a rapid pause→resume between two ticks leaves TWO ordered rows, so neither
+// frame is lost.
 //
 // IMPORTANT: the bus passed here MUST NOT be the daemon's driving bus
-// (`broker.events`). The workflow driver subscribes to `workflow.created` and
-// `workflow.resumed` to kick off phases; emitting them onto the driving bus
-// would trigger driving side-effects and race the driver's own DB sweep. The
-// daemon wires this onto a dedicated bus that only the event socket consumes,
-// so driving behavior is left exactly as-is.
+// (`broker.events`). The workflow driver subscribes to workflow.created/resumed
+// there to kick off phases; re-emitting them would trigger driving side-effects
+// and race the driver's own sweep. The daemon wires this onto a dedicated bus
+// that only the event socket consumes, so driving behavior is left exactly
+// as-is. Driver-native events (phase/round/halted/done) are never outboxed, so
+// the socket sees each event exactly once.
 export function createWorkflowEventBridge(input: {
 	db: Database.Database;
 	events: BrokerEventBus;
 	collabId: string;
 	intervalMs: number;
 }): WorkflowEventBridge {
-	// Last observed status per workflowId. Seeded on the first tick WITHOUT
-	// emitting, so a daemon restart never replays pre-existing workflows as
-	// fresh transitions.
-	const lastStatus = new Map<string, WorkflowRecord["status"]>();
+	// Highest outbox id already delivered. Seeded on the first tick to the current
+	// max so a daemon restart never replays history (consumers read live state
+	// from the DB on connect).
+	let lastId = 0;
 	let seeded = false;
 	let timer: NodeJS.Timeout | null = null;
 
-	function emitTransition(
-		prev: WorkflowRecord["status"] | undefined,
-		wf: WorkflowRecord,
-	): void {
-		if (prev === undefined) {
-			// Newly observed after seeding → the CLI just created it.
-			input.events.emit("workflow.created", { workflowId: wf.workflowId });
-			return;
-		}
-		if (wf.status === "paused") {
-			input.events.emit("workflow.paused", { workflowId: wf.workflowId });
-			return;
-		}
-		if (wf.status === "running" && (prev === "paused" || prev === "halted")) {
-			input.events.emit("workflow.resumed", {
-				workflowId: wf.workflowId,
-				phaseIndex: wf.currentPhaseIndex,
-			});
-			return;
-		}
-		if (wf.status === "canceled") {
-			input.events.emit("workflow.canceled", {
-				workflowId: wf.workflowId,
-				reason: wf.haltReason ?? "canceled",
-			});
-			return;
-		}
-		// running→done and running→halted are emitted by the daemon driver
-		// in-process; bridging them here would double-emit, so they are skipped.
-	}
-
 	function tick(): void {
-		const rows = listWorkflows(input.db, { collabId: input.collabId });
 		if (!seeded) {
-			for (const wf of rows) lastStatus.set(wf.workflowId, wf.status);
+			lastId = getMaxWorkflowEventId(input.db, input.collabId);
 			seeded = true;
 			return;
 		}
-		for (const wf of rows) {
-			const prev = lastStatus.get(wf.workflowId);
-			lastStatus.set(wf.workflowId, wf.status);
-			if (prev !== wf.status) emitTransition(prev, wf);
+		const rows = listWorkflowEventsAfter(input.db, {
+			collabId: input.collabId,
+			afterId: lastId,
+		});
+		for (const row of rows) {
+			// The outbox holds only the four CLI-originated lifecycle events, each
+			// written with its BrokerEventMap payload shape by workflow-control, so
+			// the (name, payload) pair is replayed verbatim. Emitted as a method
+			// call (never an extracted reference) and type-erased via `never` for
+			// the dynamic name→payload dispatch.
+			input.events.emit(row.eventName as never, row.payload as never);
+			lastId = row.id;
 		}
 	}
 
@@ -92,8 +70,7 @@ export function createWorkflowEventBridge(input: {
 		tick,
 		start() {
 			if (timer) return;
-			// Seed immediately so the first interval tick already detects transitions.
-			tick();
+			tick(); // seed immediately so the first interval tick already delivers
 			timer = setInterval(() => {
 				try {
 					tick();

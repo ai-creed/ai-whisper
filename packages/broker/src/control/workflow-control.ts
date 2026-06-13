@@ -54,7 +54,12 @@ import {
 import type {
 	BrokerEventBus,
 	BrokerEventName,
+	BrokerEventMap,
 } from "../runtime/broker-event-bus.js";
+import {
+	appendWorkflowEvent,
+	type WorkflowOutboxEventName,
+} from "../storage/repositories/workflow-event-outbox-repository.js";
 
 export interface WorkflowControlDeps {
 	db: Database.Database;
@@ -137,6 +142,22 @@ export function composeResumeNotice(input: {
 export function createWorkflowControl(deps: WorkflowControlDeps) {
 	const { db, events } = deps;
 
+	// Emit a CLI-originated lifecycle event AND append it to the append-only
+	// outbox. The emit feeds same-process listeners (e.g. the driver when a full
+	// runtime drives in-process); the outbox is how the daemon's event-socket
+	// bridge sees events produced on the transient CLI runtime (a separate
+	// process whose bus the daemon never observes). Driver-native events
+	// (phase/round/halted/done) deliberately do NOT go through here.
+	function emitAndRecord<E extends WorkflowOutboxEventName>(
+		collabId: string,
+		name: E,
+		payload: BrokerEventMap[E],
+		now: string,
+	): void {
+		events.emit(name, payload);
+		appendWorkflowEvent(db, { collabId, eventName: name, payload, now });
+	}
+
 	function createWorkflow(input: {
 		collabId: string;
 		workflowType: string;
@@ -201,7 +222,7 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 		// countRunningWorkflowsForCollab guard + insertWorkflow atomic against concurrent callers.
 		tx.immediate();
 
-		events.emit("workflow.created", { workflowId });
+		emitAndRecord(input.collabId, "workflow.created", { workflowId }, input.now);
 		return { workflowId };
 	}
 
@@ -1240,7 +1261,12 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 		});
 		tx.immediate();
 
-		events.emit("workflow.paused", { workflowId: input.workflowId });
+		emitAndRecord(
+			workflow.collabId,
+			"workflow.paused",
+			{ workflowId: input.workflowId },
+			input.now,
+		);
 		// Synchronous boundary snapshot: when no accepted handoff is in flight, the
 		// baseline is captured and persisted NOW, before pauseWorkflow returns — so a
 		// subsequent resume always sees a non-null ref (when git is available). The
@@ -1271,10 +1297,12 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 		});
 		tx.immediate();
 
-		events.emit("workflow.resumed", {
-			workflowId: workflow.workflowId,
-			phaseIndex: workflow.currentPhaseIndex,
-		});
+		emitAndRecord(
+			workflow.collabId,
+			"workflow.resumed",
+			{ workflowId: workflow.workflowId, phaseIndex: workflow.currentPhaseIndex },
+			now,
+		);
 	}
 
 	function resumeWorkflow(input: {
@@ -1360,10 +1388,12 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 		});
 		tx.immediate();
 
-		events.emit("workflow.resumed", {
-			workflowId: input.workflowId,
-			phaseIndex: workflow.currentPhaseIndex,
-		});
+		emitAndRecord(
+			workflow.collabId,
+			"workflow.resumed",
+			{ workflowId: input.workflowId, phaseIndex: workflow.currentPhaseIndex },
+			input.now,
+		);
 	}
 
 	function cancelWorkflow(input: { workflowId: string; now: string }): void {
@@ -1445,10 +1475,12 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 		});
 		tx.immediate();
 
-		events.emit("workflow.canceled", {
-			workflowId: input.workflowId,
-			reason: "canceled by operator",
-		});
+		emitAndRecord(
+			workflow.collabId,
+			"workflow.canceled",
+			{ workflowId: input.workflowId, reason: "canceled by operator" },
+			input.now,
+		);
 	}
 
 	function getHandoffWithWorkflowMeta(handoffId: string) {

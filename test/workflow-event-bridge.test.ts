@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { connect, type Socket } from "node:net";
-import { mkdtempSync as mkdtemp } from "node:fs";
+import { mkdtempSync as mkdtemp, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDatabase } from "../packages/broker/src/storage/open-database.ts";
 import { applyMigrations } from "../packages/broker/src/storage/apply-migrations.ts";
+import { createBrokerRuntime } from "../packages/broker/src/index.ts";
 import {
 	createBrokerEventBus,
 	type BrokerEventBus,
@@ -14,10 +15,10 @@ import { ALL_BROKER_EVENT_NAMES } from "../packages/broker/src/runtime/event-soc
 import { createWorkflowEventBridge } from "../packages/broker/src/runtime/workflow-event-bridge.ts";
 import { createEventSocketServer } from "../packages/broker/src/runtime/event-socket-server.ts";
 import {
-	insertWorkflow,
-	setWorkflowStatus,
-	type WorkflowStatus,
-} from "../packages/broker/src/storage/repositories/workflow-repository.ts";
+	appendWorkflowEvent,
+	listWorkflowEventsAfter,
+	type WorkflowOutboxEventName,
+} from "../packages/broker/src/storage/repositories/workflow-event-outbox-repository.ts";
 
 const COLLAB = "collab_bridge_test";
 
@@ -28,43 +29,18 @@ function freshDb() {
 	return db;
 }
 
-function seedWorkflow(
+function append(
 	db: ReturnType<typeof freshDb>,
-	workflowId: string,
-	status: WorkflowStatus,
+	eventName: WorkflowOutboxEventName,
+	payload: Record<string, unknown>,
+	collabId = COLLAB,
 ): void {
-	insertWorkflow(db, {
-		workflowId,
-		collabId: COLLAB,
-		workflowType: "spec-driven-development",
-		name: null,
-		specPath: "/spec.md",
-		roleBindings: {},
-		status,
-		currentPhaseIndex: 0,
-		workflowContext: {},
+	appendWorkflowEvent(db, {
+		collabId,
+		eventName,
+		payload,
 		now: "2026-06-12T00:00:00.000Z",
 	});
-}
-
-function setStatus(
-	db: ReturnType<typeof freshDb>,
-	workflowId: string,
-	status: WorkflowStatus,
-	phaseIndex = 0,
-): void {
-	setWorkflowStatus(db, {
-		workflowId,
-		status,
-		haltReason: status === "canceled" ? "operator canceled" : null,
-		now: "2026-06-12T00:01:00.000Z",
-	});
-	if (phaseIndex !== 0) {
-		db.prepare("UPDATE workflows SET current_phase_index = ? WHERE workflow_id = ?").run(
-			phaseIndex,
-			workflowId,
-		);
-	}
 }
 
 function collect(bus: BrokerEventBus): Array<{ name: BrokerEventName; payload: unknown }> {
@@ -75,146 +51,152 @@ function collect(bus: BrokerEventBus): Array<{ name: BrokerEventName; payload: u
 	return events;
 }
 
-describe("createWorkflowEventBridge (DB→bus transition detection)", () => {
-	it("seeds on the first tick without replaying existing workflows", () => {
+describe("createWorkflowEventBridge (append-only outbox tail)", () => {
+	it("seeds on the first tick without replaying pre-existing rows", () => {
 		const db = freshDb();
-		seedWorkflow(db, "wf_seed", "running");
+		append(db, "workflow.created", { workflowId: "wf_old" });
+		const bus = createBrokerEventBus();
+		const seen = collect(bus);
+		const bridge = createWorkflowEventBridge({ db, events: bus, collabId: COLLAB, intervalMs: 1 });
+		bridge.tick(); // seed → lastId = max(existing)
+		expect(seen).toHaveLength(0);
+	});
+
+	it("delivers each appended lifecycle event verbatim", () => {
+		const db = freshDb();
+		const bus = createBrokerEventBus();
+		const seen = collect(bus);
+		const bridge = createWorkflowEventBridge({ db, events: bus, collabId: COLLAB, intervalMs: 1 });
+		bridge.tick(); // seed empty
+		append(db, "workflow.paused", { workflowId: "wf_a" });
+		append(db, "workflow.resumed", { workflowId: "wf_a", phaseIndex: 2 });
+		append(db, "workflow.canceled", { workflowId: "wf_a", reason: "operator canceled" });
+		bridge.tick();
+		expect(seen).toEqual([
+			{ name: "workflow.paused", payload: { workflowId: "wf_a" } },
+			{ name: "workflow.resumed", payload: { workflowId: "wf_a", phaseIndex: 2 } },
+			{ name: "workflow.canceled", payload: { workflowId: "wf_a", reason: "operator canceled" } },
+		]);
+	});
+
+	// The exact reliability property the prior review blocked on: a pause and a
+	// resume that land between two ticks must BOTH be delivered. With snapshot
+	// polling the status read 'running' before and after, losing both frames;
+	// tailing the append-only outbox preserves them as two ordered rows.
+	it("delivers BOTH frames when pause+resume occur between ticks (no lost transition)", () => {
+		const db = freshDb();
 		const bus = createBrokerEventBus();
 		const seen = collect(bus);
 		const bridge = createWorkflowEventBridge({ db, events: bus, collabId: COLLAB, intervalMs: 1 });
 		bridge.tick(); // seed
-		expect(seen).toHaveLength(0);
-	});
-
-	it("emits workflow.paused on running→paused", () => {
-		const db = freshDb();
-		seedWorkflow(db, "wf_p", "running");
-		const bus = createBrokerEventBus();
-		const seen = collect(bus);
-		const bridge = createWorkflowEventBridge({ db, events: bus, collabId: COLLAB, intervalMs: 1 });
-		bridge.tick(); // seed running
-		setStatus(db, "wf_p", "paused");
-		bridge.tick();
-		expect(seen).toEqual([
-			{ name: "workflow.paused", payload: { workflowId: "wf_p" } },
+		append(db, "workflow.paused", { workflowId: "wf_x" });
+		append(db, "workflow.resumed", { workflowId: "wf_x", phaseIndex: 0 });
+		bridge.tick(); // single tick after BOTH writes
+		expect(seen.map((e) => e.name)).toEqual([
+			"workflow.paused",
+			"workflow.resumed",
 		]);
 	});
 
-	it("emits workflow.resumed (with phaseIndex) on paused→running", () => {
+	it("does not re-deliver rows on a subsequent tick", () => {
 		const db = freshDb();
-		seedWorkflow(db, "wf_r", "paused");
 		const bus = createBrokerEventBus();
 		const seen = collect(bus);
 		const bridge = createWorkflowEventBridge({ db, events: bus, collabId: COLLAB, intervalMs: 1 });
-		bridge.tick(); // seed paused
-		setStatus(db, "wf_r", "running", 2);
+		bridge.tick(); // seed
+		append(db, "workflow.paused", { workflowId: "wf_a" });
 		bridge.tick();
-		expect(seen).toEqual([
-			{ name: "workflow.resumed", payload: { workflowId: "wf_r", phaseIndex: 2 } },
-		]);
+		bridge.tick(); // no new rows
+		expect(seen).toHaveLength(1);
 	});
 
-	it("emits workflow.resumed on halted→running (resume of a halted workflow)", () => {
-		const db = freshDb();
-		seedWorkflow(db, "wf_h", "halted");
-		const bus = createBrokerEventBus();
-		const seen = collect(bus);
-		const bridge = createWorkflowEventBridge({ db, events: bus, collabId: COLLAB, intervalMs: 1 });
-		bridge.tick(); // seed halted
-		setStatus(db, "wf_h", "running");
-		bridge.tick();
-		expect(seen).toEqual([
-			{ name: "workflow.resumed", payload: { workflowId: "wf_h", phaseIndex: 0 } },
-		]);
-	});
-
-	it("emits workflow.canceled on →canceled with a reason", () => {
-		const db = freshDb();
-		seedWorkflow(db, "wf_c", "running");
-		const bus = createBrokerEventBus();
-		const seen = collect(bus);
-		const bridge = createWorkflowEventBridge({ db, events: bus, collabId: COLLAB, intervalMs: 1 });
-		bridge.tick();
-		setStatus(db, "wf_c", "canceled");
-		bridge.tick();
-		expect(seen).toEqual([
-			{
-				name: "workflow.canceled",
-				payload: { workflowId: "wf_c", reason: "operator canceled" },
-			},
-		]);
-	});
-
-	it("emits workflow.created when a workflow first appears after seeding", () => {
+	it("ignores outbox rows from other collabs", () => {
 		const db = freshDb();
 		const bus = createBrokerEventBus();
 		const seen = collect(bus);
 		const bridge = createWorkflowEventBridge({ db, events: bus, collabId: COLLAB, intervalMs: 1 });
-		bridge.tick(); // seed (no workflows yet)
-		seedWorkflow(db, "wf_new", "running");
-		bridge.tick();
-		expect(seen).toEqual([
-			{ name: "workflow.created", payload: { workflowId: "wf_new" } },
-		]);
-	});
-
-	it("does NOT bridge running→done (driver emits it in-process)", () => {
-		const db = freshDb();
-		seedWorkflow(db, "wf_done", "running");
-		const bus = createBrokerEventBus();
-		const seen = collect(bus);
-		const bridge = createWorkflowEventBridge({ db, events: bus, collabId: COLLAB, intervalMs: 1 });
-		bridge.tick(); // seed running
-		setStatus(db, "wf_done", "done");
-		bridge.tick();
-		expect(seen).toHaveLength(0);
-	});
-
-	it("does NOT bridge running→halted (driver emits it in-process)", () => {
-		const db = freshDb();
-		seedWorkflow(db, "wf_halt", "running");
-		const bus = createBrokerEventBus();
-		const seen = collect(bus);
-		const bridge = createWorkflowEventBridge({ db, events: bus, collabId: COLLAB, intervalMs: 1 });
-		bridge.tick(); // seed running
-		setStatus(db, "wf_halt", "halted");
-		bridge.tick();
-		expect(seen).toHaveLength(0);
-	});
-
-	it("ignores workflows from other collabs", () => {
-		const db = freshDb();
-		insertWorkflow(db, {
-			workflowId: "wf_other",
-			collabId: "collab_other",
-			workflowType: "spec-driven-development",
-			name: null,
-			specPath: "/s.md",
-			roleBindings: {},
-			status: "running",
-			currentPhaseIndex: 0,
-			workflowContext: {},
-			now: "2026-06-12T00:00:00.000Z",
-		});
-		const bus = createBrokerEventBus();
-		const seen = collect(bus);
-		const bridge = createWorkflowEventBridge({ db, events: bus, collabId: COLLAB, intervalMs: 1 });
-		bridge.tick();
-		setWorkflowStatus(db, {
-			workflowId: "wf_other",
-			status: "paused",
-			haltReason: null,
-			now: "2026-06-12T00:02:00.000Z",
-		});
+		bridge.tick(); // seed
+		append(db, "workflow.paused", { workflowId: "wf_other" }, "collab_other");
 		bridge.tick();
 		expect(seen).toHaveLength(0);
 	});
 });
 
-// Reproduces the reviewer's AC #2 scenario end-to-end: a workflow paused by a
-// SEPARATE writer (the transient CLI runtime writes the DB; it never emits on
-// the daemon's buses) must still produce a `workflow.paused` socket frame — via
-// the bridge — WITHOUT the bridge ever touching the daemon's driving bus.
+describe("real control → outbox → bridge (end-to-end wiring)", () => {
+	it("create/pause/resume via control are all delivered by the bridge in one tick", () => {
+		// A control-only runtime mirrors the transient CLI runtime (whisper
+		// workflow start/pause/resume): it writes the shared DB but its bus is not
+		// the daemon's socket bus.
+		const broker = createBrokerRuntime({
+			sqlitePath: ":memory:",
+			host: "127.0.0.1",
+			port: 4322,
+			runWorkflowDriver: false,
+			runDiagnosticsSweep: false,
+			runDaemonHeartbeat: false,
+			runBrokerDaemonSweep: false,
+		});
+		broker.control.startCollab({
+			collabId: COLLAB,
+			workspaceRoot: "/tmp",
+			displayName: "c",
+			orchestratorEnabled: true,
+			orchestratorMaxRounds: 3,
+			now: "2026-06-12T00:00:00Z",
+		});
+		for (const agent of ["claude", "codex"] as const) {
+			broker.control.setSessionBinding({
+				collabId: COLLAB,
+				agentType: agent,
+				sessionId: `session_${agent}`,
+				bindingSource: "adopted",
+				now: "2026-06-12T00:00:00Z",
+			});
+		}
+
+		// The daemon's bridge runs on a SEPARATE bus and tails broker.db.
+		const socketBus = createBrokerEventBus();
+		const seen = collect(socketBus);
+		const bridge = createWorkflowEventBridge({
+			db: broker.db,
+			events: socketBus,
+			collabId: COLLAB,
+			intervalMs: 999_999,
+		});
+		bridge.tick(); // seed (outbox empty)
+
+		const { workflowId } = broker.control.createWorkflow({
+			collabId: COLLAB,
+			workflowType: "spec-driven-development",
+			specPath: "docs/spec.md",
+			roleBindings: { implementer: "claude", reviewer: "codex" },
+			now: "2026-06-12T00:01:00Z",
+		});
+		broker.control.pauseWorkflow({ workflowId, now: "2026-06-12T00:02:00Z" });
+		broker.control.resumeWorkflow({ workflowId, now: "2026-06-12T00:03:00Z" });
+
+		// The outbox captured every transition, append-only.
+		expect(
+			listWorkflowEventsAfter(broker.db, { collabId: COLLAB, afterId: 0 }).map(
+				(r) => r.eventName,
+			),
+		).toEqual(["workflow.created", "workflow.paused", "workflow.resumed"]);
+
+		bridge.tick(); // one tick delivers all three
+		expect(seen.map((e) => e.name)).toEqual([
+			"workflow.created",
+			"workflow.paused",
+			"workflow.resumed",
+		]);
+
+		void broker.stop();
+	});
+});
+
+// Reproduces AC #2 end-to-end over a real socket: a transition recorded only in
+// the DB (the transient CLI runtime writes the outbox; it never emits on the
+// daemon's buses) reaches a socket client — including a rapid pause+resume —
+// while the daemon's driving bus is never touched by the bridge.
 describe("event socket + workflow bridge (cross-process pause/resume wakeup)", () => {
 	const sockets: Socket[] = [];
 	const closers: Array<() => Promise<void>> = [];
@@ -251,16 +233,12 @@ describe("event socket + workflow bridge (cross-process pause/resume wakeup)", (
 		};
 	}
 
-	it("a DB-only pause produces a socket frame; the driving bus is never touched", async () => {
+	it("DB-only pause→resume both reach the socket; the driving bus is never touched", async () => {
 		const db = freshDb();
-		seedWorkflow(db, "wf_x", "running");
 
-		// driverBus stands in for the daemon's broker.events (workflow driver
-		// subscribes here). externalBus is the dedicated bridge bus.
-		const driverBus = createBrokerEventBus();
-		const externalBus = createBrokerEventBus();
+		const driverBus = createBrokerEventBus(); // stands in for daemon broker.events
+		const externalBus = createBrokerEventBus(); // dedicated bridge bus
 
-		// Prove the bridge never emits onto the driving bus.
 		let driverPausedCount = 0;
 		driverBus.on("workflow.paused", () => {
 			driverPausedCount += 1;
@@ -281,30 +259,39 @@ describe("event socket + workflow bridge (cross-process pause/resume wakeup)", (
 			collabId: COLLAB,
 			intervalMs: 999_999,
 		});
-		bridge.tick(); // seed running
+		bridge.tick(); // seed empty
 
 		const conn = connect(socketPath);
 		sockets.push(conn);
 		const reader = frameReader(conn);
 		await reader.waitFor(1); // hello
 		expect(reader.frames[0]).toMatchObject({ type: "hello" });
+		expect(existsSync(socketPath)).toBe(true);
 
-		// Simulate `whisper workflow pause`: write the DB only (no bus emit).
-		setStatus(db, "wf_x", "paused");
+		// Simulate the transient CLI runtime: write the outbox only (no bus emit),
+		// pausing and resuming before the next bridge tick.
+		append(db, "workflow.paused", { workflowId: "wf_x" });
+		append(db, "workflow.resumed", { workflowId: "wf_x", phaseIndex: 0 });
 		bridge.tick();
-		await reader.waitFor(2);
+
+		await reader.waitFor(3); // hello + paused + resumed
 		expect(reader.frames[1]).toMatchObject({
 			type: "event",
 			name: "workflow.paused",
 			payload: { workflowId: "wf_x" },
 		});
+		expect(reader.frames[2]).toMatchObject({
+			type: "event",
+			name: "workflow.resumed",
+			payload: { workflowId: "wf_x", phaseIndex: 0 },
+		});
 
 		// A daemon-native event on the driving bus still reaches the socket.
 		driverBus.emit("workflow.halted", { workflowId: "wf_x", reason: "boom" });
-		await reader.waitFor(3);
-		expect(reader.frames[2]).toMatchObject({ name: "workflow.halted" });
+		await reader.waitFor(4);
+		expect(reader.frames[3]).toMatchObject({ name: "workflow.halted" });
 
-		// The bridge must NOT have emitted paused on the driving bus.
+		// The bridge must NOT have emitted on the driving bus.
 		expect(driverPausedCount).toBe(0);
 	});
 });
