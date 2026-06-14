@@ -5,6 +5,41 @@ All notable changes to the `ai-whisper` package are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.9] - 2026-06-14
+
+### Added
+
+- **Mounted ezio slash commands** — a human typing a `/`-command in a
+  `whisper collab mount ezio` pane is now handled locally instead of being sent
+  to the model (which previously swallowed it and hung the pane). The ai-ezio
+  adapter implements a new optional `tryConsumeLocalCommand(line)` method on
+  `InteractiveSessionController`; the operator line-input hook in `live-session.ts`
+  erases the echoed input and asks the adapter to consume the line before
+  submitting a turn, so a command renders on a clean line with no stripe and no
+  submission. Supported set: `/help`, `/new` (`/clear`), `/status`, `/skills`,
+  `/copy`, `/usage`, `/transcript`, `/compact`. `/quit` and `/exit` are excluded
+  (the host owns session lifecycle) and fall through to the standard
+  "unknown command" message.
+- The mounted `SlashController` (built from the relocated `@ai-ezio/surface`
+  package) is wired with mounted capabilities: last assistant-turn content/usage
+  tracking for `/copy` and `/usage`, an injectable clipboard, and a minted
+  `HAX_TRANSCRIPT` path rendered inline (dump mode, no pager) for `/transcript`.
+
+### Changed
+
+- `AiEzioEngineSession` widened with `start({ transcriptPath })`,
+  `transcriptPath`, `newConversation()`, and `status()` (type-only; the real hax
+  `Session` already implements them).
+
+### Internal
+
+- Interception is operator-only by construction: `tryConsumeLocalCommand` is
+  called from exactly one site (the operator line hook). Relayed/injected turns
+  reach `writeUserInput` through `mount-session-main.ts`'s `injectedWrite` and are
+  never treated as commands — guarded by `test/injected-input.test.ts`.
+
+Requires `@ai-creed/ai-ezio` ≥ 0.2.0-beta.4 (the `@ai-ezio/surface` slash seams).
+
 ## [0.5.8] - 2026-06-13
 
 ### Added
