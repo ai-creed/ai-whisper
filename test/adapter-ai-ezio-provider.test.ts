@@ -11,6 +11,9 @@ import type { AiEzioEngineSession } from "../packages/adapter-ai-ezio/src/ai-ezi
 function engineReturning(content: string): AiEzioEngineSession {
 	return {
 		start: vi.fn(async () => ({ type: "ready" })),
+		transcriptPath: undefined,
+		newConversation: vi.fn(async () => {}),
+		status: vi.fn(async () => ({ provider: "mock", model: "mock" })),
 		submit: vi.fn(),
 		interrupt: vi.fn(),
 		submitAndWait: vi.fn(async () => ({ turnId: "t", content })),
@@ -24,6 +27,9 @@ function engineReturning(content: string): AiEzioEngineSession {
 function engineThrowing(error: Error): AiEzioEngineSession {
 	return {
 		start: vi.fn(async () => ({ type: "ready" })),
+		transcriptPath: undefined,
+		newConversation: vi.fn(async () => {}),
+		status: vi.fn(async () => ({ provider: "mock", model: "mock" })),
 		submit: vi.fn(),
 		interrupt: vi.fn(),
 		submitAndWait: vi.fn(async () => {

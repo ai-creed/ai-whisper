@@ -43,4 +43,11 @@ export interface InteractiveSessionController {
 	 *  so the wrap matches the editor. Omitted by byte/PTY providers (the spawned
 	 *  agent paints its own input). */
 	echoUserInput?(text: string, cols: number): void;
+	/** Protocol-native providers (ai-ezio) try to handle an operator-typed line
+	 *  as a local session command (e.g. /compact). Returns true when consumed
+	 *  (handled and rendered locally — the host must NOT submit it as a turn),
+	 *  false for ordinary input. PTY providers (claude/codex) omit it, so their
+	 *  slashes pass through to the spawned agent. Called ONLY from the operator
+	 *  line-input hook — never from relayed/injected input. */
+	tryConsumeLocalCommand?(line: string): Promise<boolean>;
 }

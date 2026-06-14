@@ -131,7 +131,7 @@ export function createLiveSessionRuntime(input: {
 	// with local echo, handle backspace, and submit the whole line on Enter.
 	// Mirrors createLocalModalLineReader's local line-editing.
 	let inputLineBuffer = "";
-	function feedLineBufferedInput(data: string) {
+	async function feedLineBufferedInput(data: string) {
 		for (const char of data) {
 			if (char === "\u0003") {
 				// Ctrl+C: with text typed, clear the line (hax-style); otherwise
@@ -155,12 +155,13 @@ export function createLiveSessionRuntime(input: {
 				const completed = inputLineBuffer;
 				inputLineBuffer = "";
 				const session = input.interactiveSession;
-				if (completed.length > 0 && session.echoUserInput) {
+				if (completed.length > 0) {
 					// hax render_submitted parity: erase the plainly-echoed input
-					// (prompt `❯ ` + text, soft-wrapped at the tty width) and re-paint
-					// it as the bright-magenta `▌ ` stripe. The cursor sits at the end
-					// of the typed text, so return to col 0, climb to the prompt row,
-					// clear to end of screen, then draw the magenta version.
+					// (prompt `❯ ` + text, soft-wrapped at the tty width) — the SAME
+					// clear the submit path uses — so a consumed command's output
+					// starts on a clean line. The cursor sits at the end of the typed
+					// text, so return to col 0, climb to the prompt row, then clear to
+					// end of screen.
 					const cols = ttyCols(input.stdout);
 					const len = Array.from(completed).length;
 					const plainRows = Math.max(1, Math.ceil((STRIPE_COLS + len) / cols));
@@ -168,12 +169,20 @@ export function createLiveSessionRuntime(input: {
 					if (plainRows > 1) erase += `\u001b[${plainRows - 1}A`;
 					erase += "\u001b[J";
 					input.stdout.write(erase);
-					session.echoUserInput(completed, cols);
+					// Operator slash command: the adapter renders locally on the clean
+					// line. No magenta stripe, no writeUserInput, no turn.
+					if (await session.tryConsumeLocalCommand?.(completed)) {
+						continue;
+					}
+					// Ordinary line: re-paint the bright-magenta `▌ ` stripe and submit.
+					if (session.echoUserInput) {
+						session.echoUserInput(completed, cols);
+					} else {
+						input.stdout.write("\n");
+					}
+					input.interactiveSession.writeUserInput(completed);
 				} else {
 					input.stdout.write("\n");
-				}
-				if (completed.length > 0) {
-					input.interactiveSession.writeUserInput(completed);
 				}
 				continue;
 			}
@@ -254,7 +263,7 @@ export function createLiveSessionRuntime(input: {
 			clearRelayPreview();
 			if (decision.kind === "passthrough") {
 				if (input.lineBufferedInput) {
-					feedLineBufferedInput(decision.data);
+					await feedLineBufferedInput(decision.data);
 				} else {
 					input.interactiveSession.writeUserInput(decision.data);
 				}
