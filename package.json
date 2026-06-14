@@ -26,14 +26,14 @@
 		"@types/node": "^22.13.10",
 		"node-pty": "^1.1.0",
 		"@types/react": "^19.2.14",
-		"esbuild": "^0.28.0",
+		"esbuild": "^0.28.1",
 		"eslint": "^9.23.0",
 		"globals": "^16.0.0",
 		"ink": "^7.0.3",
 		"ink-testing-library": "^4.0.0",
 		"prettier": "^3.5.3",
 		"react": "^19.2.6",
-		"tsx": "^4.19.2",
+		"tsx": "^4.22.4",
 		"typescript": "^5.8.3",
 		"typescript-eslint": "^8.27.0",
 		"vitest": "^3.2.6",
@@ -50,7 +50,9 @@
 			"@ai-ezio/harness": "file:../ai-ezio/packages/harness",
 			"@ai-ezio/mcp-host": "file:../ai-ezio/packages/mcp-host",
 			"fast-uri": "^3.1.2",
-			"vite": "^7.3.2"
+			"vite": "^7.3.2",
+			"esbuild": "^0.28.1",
+			"postcss": "^8.5.10"
 		}
 	}
 }
