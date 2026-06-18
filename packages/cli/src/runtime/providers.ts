@@ -10,7 +10,7 @@ import {
 	createAiEzioLiveSession,
 	createAiEzioProvider,
 } from "@ai-whisper/adapter-ai-ezio";
-import type { AgentType, InteractiveSessionController } from "@ai-whisper/shared";
+import type { AgentType, InteractiveSessionController, OverlayRunner } from "@ai-whisper/shared";
 import { getLiveSessionBrokerTempRoot } from "./paths.js";
 
 export type MountTarget = AgentType;
@@ -94,11 +94,21 @@ export function createInteractiveSessionForTarget(input: {
 	 * the provider fires the shim on each turn completion.
 	 */
 	turnEvents?: { claudeSettingsFile?: string; codexNotify?: string[] };
+	/**
+	 * Per-mode interactive overlay runner (ezio only). Wired lazily from the
+	 * live-session runtime so the picker can borrow stdin raw-key access.
+	 */
+	runInteractiveOverlay?: OverlayRunner;
 }): InteractiveSessionController {
 	if (input.target === "ezio") {
 		// Protocol-native: the harness Session spawns hax in mounted posture; the
 		// adapter renders the streamed assistant deltas to the operator's stdout.
-		return createAiEzioLiveSession({ stdout: input.stdout });
+		return createAiEzioLiveSession({
+			stdout: input.stdout,
+			...(input.runInteractiveOverlay !== undefined
+				? { runInteractiveOverlay: input.runInteractiveOverlay }
+				: {}),
+		});
 	}
 	const baseExecArgs = getInteractiveSessionExecArgsForTarget(input.target, input.turnEvents);
 	const execArgs = [...baseExecArgs, ...(input.passthroughArgs ?? [])];

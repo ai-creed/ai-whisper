@@ -112,6 +112,7 @@ describe("live session runtime", () => {
 				submitAndWait: () => Promise.resolve({ turnId: "t", content: "" }),
 				registerDelegatedTools: () => {},
 				sendToolResult: () => {},
+				resume: async () => {},
 				onExit: () => {},
 				close: () => {},
 			}),
