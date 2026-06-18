@@ -20,6 +20,8 @@ export interface AiEzioEngineSession {
 	registerDelegatedTools(tools: DelegatedToolDef[]): void;
 	/** M9: reply to a `tool_call_requested` (correlated by callId). */
 	sendToolResult(callId: string, output: string, status: "ok" | "error"): void;
+	/** Switch to a past session in place (engine respawn). See Session.resume. */
+	resume(sessionId: string, options?: { transcriptPath?: string }): Promise<unknown>;
 	onExit(
 		handler: (info: {
 			code: number | null;
