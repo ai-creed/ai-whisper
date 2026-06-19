@@ -93,6 +93,8 @@ export {
 } from "./relay-host.js";
 export type {
 	InteractiveSessionController,
+	OverlayIO,
+	OverlayRunner,
 	TurnFidelityDecision,
 } from "./interactive-session.js";
 export {

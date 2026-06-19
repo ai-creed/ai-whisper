@@ -51,3 +51,17 @@ export interface InteractiveSessionController {
 	 *  line-input hook — never from relayed/injected input. */
 	tryConsumeLocalCommand?(line: string): Promise<boolean>;
 }
+
+/** I/O handed to a full-screen overlay (e.g. the ezio /resume picker) while the
+ *  host runtime has suspended its line reader and put stdin in raw mode. */
+export interface OverlayIO {
+	keys: AsyncIterable<string>;
+	write(s: string): void;
+	setRawMode(on: boolean): void;
+}
+
+/** A host-owned primitive that runs an interactive overlay: it suspends normal
+ *  input processing (keeping raw mode ON), routes raw stdin chunks to `run` as a
+ *  key stream, awaits `run`, then restores. Injected into protocol-native
+ *  adapters (ai-ezio) that need raw keystrokes mid-session. */
+export type OverlayRunner = (run: (io: OverlayIO) => Promise<void>) => Promise<void>;

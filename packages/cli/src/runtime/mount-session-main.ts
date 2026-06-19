@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import type { AgentType,  BrokerRuntime } from "@ai-whisper/broker";
-import type { RelayDirective } from "@ai-whisper/shared";
+import type { OverlayIO, RelayDirective } from "@ai-whisper/shared";
 import {
 	openDatabase,
 	deleteSessionAttachment,
@@ -219,6 +219,12 @@ export function createMountSessionRuntime(input: {
 				stdout: process.stdout,
 				passthroughArgs: input.passthroughArgs ?? [],
 				...(_turnEventsInjection !== undefined ? { turnEvents: _turnEventsInjection } : {}),
+				// For ezio: provide a lazy overlay runner that delegates to the live
+				// session runtime (assigned after this call, safe because the thunk is
+				// not invoked until an operator types /resume, well after start()).
+				...(input.target === "ezio"
+					? { runInteractiveOverlay: (run: (io: OverlayIO) => Promise<void>) => liveSession!.runInteractiveOverlay(run) }
+					: {}),
 			});
 
 			let ownerRefreshTimer: ReturnType<typeof setInterval> | null = null;

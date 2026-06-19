@@ -112,6 +112,7 @@ describe("live session runtime", () => {
 				submitAndWait: () => Promise.resolve({ turnId: "t", content: "" }),
 				registerDelegatedTools: () => {},
 				sendToolResult: () => {},
+				resume: async () => {},
 				onExit: () => {},
 				close: () => {},
 			}),
@@ -1105,6 +1106,63 @@ describe("live session runtime", () => {
 
 		expect(userInputs.some((m) => m.includes("[Context from recent relay exchange]"))).toBe(true);
 		expect(localMessages.some((m) => m.includes("relay context attached"))).toBe(true);
+	});
+
+	it("runInteractiveOverlay: suspends normal line input during the overlay and restores it afterward", async () => {
+		const s = new PassThrough() as PassThrough & { isTTY?: boolean; isRaw?: boolean; setRawMode?: (m: boolean) => void };
+		s.isTTY = true;
+		s.isRaw = false;
+		const rawModes: boolean[] = [];
+		s.setRawMode = (m: boolean) => void (rawModes.push(m), (s.isRaw = m));
+
+		const out: string[] = [];
+		const submitted: string[] = [];
+		const session = {
+			start: async () => {},
+			stop: async () => {},
+			writeUserInput: (d: string) => void submitted.push(d),
+			tryConsumeLocalCommand: async () => false, // plain line → falls through to submit
+			sendLocalMessage: () => {},
+			onExit: () => {},
+		} as never;
+		const runtime = createLiveSessionRuntime({
+			interactiveSession: session,
+			stdin: s,
+			stdout: { write: (d: string) => void out.push(d) } as never,
+			onRelay: async () => null,
+			lineBufferedInput: true,
+		});
+		await runtime.start();
+
+		// Baseline: a normal line submits via the line reader BEFORE any overlay.
+		s.write("a\r");
+		await nextTick();
+		expect(submitted).toEqual(["a"]);
+
+		// While the overlay is active, raw chunks reach the picker — NOT the line buffer.
+		const got: string[] = [];
+		const overlay = runtime.runInteractiveOverlay(async (io) => {
+			io.write("OVERLAY");
+			for await (const k of io.keys) {
+				got.push(k);
+				if (k === "\r") break;
+			}
+		});
+		await nextTick(); // let the overlay install its stdin routing
+		s.write("\x1b[B"); // arrow down (one chunk)
+		await nextTick();
+		s.write("\r"); // enter → overlay breaks (separate chunk)
+		await nextTick();
+		await overlay;
+		expect(got).toEqual(["\x1b[B", "\r"]); // overlay got the raw keys
+		expect(out.join("")).toContain("OVERLAY");
+		expect(submitted).toEqual(["a"]); // SUSPENDED: nothing submitted while the overlay owned input
+
+		// After the overlay: the line reader is RESTORED — a normal line submits again.
+		s.write("b\r");
+		await nextTick();
+		expect(submitted).toEqual(["a", "b"]); // RESTORED: pausedInputDepth decremented + routing back to the line buffer
+		expect(s.isRaw).toBe(true); // mounted default raw mode preserved
 	});
 
 	it("blocks input while relay work is in progress", async () => {

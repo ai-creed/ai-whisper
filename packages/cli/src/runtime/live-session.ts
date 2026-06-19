@@ -1,5 +1,6 @@
 import type {
 	InteractiveSessionController,
+	OverlayIO,
 	RelayDirective,
 } from "@ai-whisper/shared";
 import { appendFileSync } from "node:fs";
@@ -84,6 +85,9 @@ export function createLiveSessionRuntime(input: {
 	let relayPreviewVisible = false;
 	let inputState: NormalizedInputState = {};
 	let pausedInputDepth = 0;
+	// Overlay raw-key routing: while an overlay is active, the stdin `data`
+	// handler enqueues chunks here instead of going through processChunk.
+	let overlayPush: ((chunk: string) => void) | null = null;
 
 	function setMountedRawMode(mode: boolean) {
 		if (canManageRawMode) {
@@ -199,6 +203,10 @@ export function createLiveSessionRuntime(input: {
 	}
 
 	async function processChunk(raw: string) {
+		if (overlayPush) {
+			overlayPush(raw);
+			return;
+		}
 		const normalized = normalizeTerminalInput({
 			raw,
 			state: inputState,
@@ -353,6 +361,44 @@ export function createLiveSessionRuntime(input: {
 				if (pausedInputDepth === 0) {
 					setMountedRawMode(true);
 				}
+			}
+		},
+		async runInteractiveOverlay(run: (io: OverlayIO) => Promise<void>): Promise<void> {
+			// Suspend normal input processing but KEEP raw mode on (the picker needs
+			// raw arrow keys). Route stdin chunks to the overlay's key stream.
+			pausedInputDepth += 1;
+			setMountedRawMode(true);
+			const buf: string[] = [];
+			const wakeHolder: { fn: (() => void) | null } = { fn: null };
+			let done = false;
+			overlayPush = (chunk) => {
+				buf.push(chunk);
+				wakeHolder.fn?.();
+			};
+			const keys = (async function* (): AsyncGenerator<string> {
+				for (;;) {
+					if (buf.length) {
+						yield buf.shift()!;
+						continue;
+					}
+					if (done) return;
+					await new Promise<void>((r) => (wakeHolder.fn = r));
+				}
+			})();
+			try {
+				await run({
+					keys,
+					write: (s) => input.stdout.write(s),
+					setRawMode: (on) => setMountedRawMode(on),
+				});
+			} finally {
+				done = true;
+				const fn = wakeHolder.fn;
+				wakeHolder.fn = null;
+				fn?.();
+				overlayPush = null;
+				pausedInputDepth = Math.max(0, pausedInputDepth - 1);
+				setMountedRawMode(true); // mounted default is raw-on
 			}
 		},
 		async stop() {

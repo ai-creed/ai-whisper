@@ -1,5 +1,6 @@
 import type {
 	InteractiveSessionController,
+	OverlayRunner,
 	TurnFidelityDecision,
 } from "@ai-whisper/shared";
 import type {
@@ -13,9 +14,13 @@ import {
 } from "@ai-ezio/mcp-host";
 import {
 	createAutoCompactDriver,
+	createRenameController,
+	createSessionTitleStore,
 	loadConfig,
+	resolveHaxBinary,
 	type AutoCompactDriver,
 	type CompactorSession,
+	type SessionTitleStore,
 } from "@ai-ezio/harness";
 import {
 	defaultCreateEngineSession,
@@ -24,6 +29,7 @@ import {
 } from "./ai-ezio-engine.js";
 import {
 	createMountedRenderer,
+	runResumeFlow,
 	SlashController,
 	type SlashContext,
 	makeClipboard,
@@ -93,6 +99,15 @@ export function createAiEzioLiveSession(input: {
 	/** Injectable OS-clipboard writer for mounted /copy (tests); defaults to the
 	 * platform clipboard (pbcopy / wl-copy / xclip) via @ai-ezio/surface. */
 	clipboard?: (text: string) => Promise<void>;
+	/** Per-mode interactive overlay runner (mounted: wired from liveSession).
+	 * If absent, /resume prints "resume unavailable in this host". */
+	runInteractiveOverlay?: OverlayRunner;
+	/** Test seam: defaults to createSessionTitleStore(). */
+	titleStore?: SessionTitleStore;
+	/** Test seam: defaults to spawning `hax --list-sessions`. */
+	listSessions?: () => Promise<string>;
+	/** Test seam: defaults to () => Date.now() (picker relative-time). */
+	now?: () => number;
 }): InteractiveSessionController {
 	const create = input.createEngineSession ?? defaultCreateEngineSession;
 	const buildCompact = input.buildAutoCompact ?? defaultBuildAutoCompact;
@@ -100,6 +115,24 @@ export function createAiEzioLiveSession(input: {
 	// cwd = the mounted process's workspace, from which cortex derives the repo.
 	const host =
 		input.mcpHost ?? loadMcpHost({ mode: "mounted", cwd: process.cwd() });
+
+	// §1C title store + rename controller — built before start() so the seam is
+	// available to tests that construct but do not start the adapter.
+	const titleStore = input.titleStore ?? createSessionTitleStore();
+	// listSessions: injectable seam; defaults to spawning the engine's --list-sessions.
+	const listSessions =
+		input.listSessions ??
+		((): Promise<string> =>
+			new Promise((resolve) => {
+				let out = "";
+				const child = spawn(resolveHaxBinary(), ["--list-sessions"], {
+					cwd: process.cwd(),
+					stdio: ["ignore", "pipe", "ignore"],
+				});
+				child.stdout?.on("data", (d: Buffer) => void (out += d.toString("utf8")));
+				child.on("error", () => resolve("[]"));
+				child.on("exit", (code) => resolve(code === 0 ? out : "[]"));
+			}));
 
 	let session: AiEzioEngineSession | null = null;
 	let driver: AutoCompactDriver | null = null;
@@ -115,6 +148,8 @@ export function createAiEzioLiveSession(input: {
 	let lastContent = "";
 	let lastUsage: AssistantTurnFinishedEvent["usage"] | undefined;
 	let slash: SlashController | null = null;
+	// Busy flag: true while an assistant turn is in flight.
+	let inTurn = false;
 
 	const outputHandlers: Array<(data: string) => void> = [];
 	const turnFinishedHandlers: Array<(content: string) => void> = [];
@@ -131,7 +166,20 @@ export function createAiEzioLiveSession(input: {
 	// and submit — and delegates every byte of display to the renderer.
 	const renderer = createMountedRenderer({ stdout: input.stdout });
 
+	// §1C rename controller — feeds protocol events to track the live session id.
+	const rename = createRenameController({
+		store: titleStore,
+		// Deferred for the same reason as standalone: noteEvent runs inside the
+		// onEvent tee before the event reaches waiters; queueMicrotask runs status()
+		// after the settling idle is routed to the in-flight turn.
+		requestStatus: () => queueMicrotask(() => void session?.status().catch(() => {})),
+	});
+
 	const onEvent = (event: ProtocolEvent) => {
+		// Feed the rename controller FIRST — it must see every event (including
+		// during compaction) so the id stays fresh across compaction cycles.
+		rename.noteEvent(event);
+
 		// While an auto-compaction cycle runs, its injected summarize turn must be
 		// invisible: never relayed as a handback and never drawn in the pane (the
 		// driver's onCycleStart/onNote show the compacting chrome instead). The
@@ -146,6 +194,9 @@ export function createAiEzioLiveSession(input: {
 				case "assistant_delta":
 					sawTurn = true;
 					for (const h of outputHandlers) h(event.text);
+					break;
+				case "assistant_turn_started":
+					inTurn = true;
 					break;
 				case "assistant_turn_finished":
 					sawTurn = true;
@@ -170,6 +221,8 @@ export function createAiEzioLiveSession(input: {
 					pendingContent = event.content;
 					break;
 				case "idle":
+					// Settle the in-turn busy flag on the settling idle (outside compaction).
+					inTurn = false;
 					if (sawTurn && pendingContent !== null) {
 						const candidate = pendingContent;
 						// Shape guard (spec §4.3): never relay a drafting/empty fragment.
@@ -246,9 +299,50 @@ export function createAiEzioLiveSession(input: {
 			};
 			const skillFs = nodeSkillFs();
 			const sessionFacet = session;
+
+			// Resume thunk — wraps runResumeFlow with the mounted-specific primitives.
+			const resumeThunk = () =>
+				runResumeFlow({
+					write: (s) => input.stdout.write(s),
+					isBusy: () => inTurn,
+					listSessions,
+					titles: () => titleStore.loadTitles(),
+					currentSessionId: () => rename.currentSessionId(),
+					runOverlay: async (run) => {
+						if (!input.runInteractiveOverlay) {
+							input.stdout.write("resume unavailable in this host\n");
+							return;
+						}
+						await input.runInteractiveOverlay(run);
+					},
+					resume: async (id) => {
+						if (sessionFacet.transcriptPath !== undefined) {
+							await session!.resume(id, { transcriptPath: sessionFacet.transcriptPath });
+						} else {
+							await session!.resume(id);
+						}
+						await host.start(session!); // re-register MCP delegated tools
+						// Re-render the mounted banner on the post-respawn ready event
+						// (renderer.handle receives the new ready from onEvent).
+					},
+					// Spec §4: a failed respawn leaves the engine closed — report (in
+					// runResumeFlow) and exit cleanly. Firing the adapter's exit handlers is
+					// the "normal engine-exit path" for a mounted pane.
+					onFatal: () => {
+						for (const h of exitHandlers) h();
+					},
+					now: input.now ?? (() => Date.now()),
+				});
+
 			const slashCtx: SlashContext = {
 				write: (s) => input.stdout.write(s),
-				session: sessionFacet,
+				session: {
+					newConversation: async () => {
+						await sessionFacet.newConversation();
+						rename.noteNewConversation();
+					},
+					status: () => sessionFacet.status(),
+				},
 				...(driver
 					? { compactor: { compactNow: () => driver!.compactNow() } }
 					: {}),
@@ -277,6 +371,10 @@ export function createAiEzioLiveSession(input: {
 						restoreRaw: () => {},
 						write: (s) => input.stdout.write(s),
 					}),
+				currentSessionId: () => rename.currentSessionId(),
+				getSessionTitle: () => rename.getSessionTitle(),
+				setSessionTitle: (t) => rename.setSessionTitle(t),
+				resume: resumeThunk,
 			};
 			slash = new SlashController(slashCtx, { excludeCommands: ["quit"] });
 		},
@@ -287,6 +385,12 @@ export function createAiEzioLiveSession(input: {
 		},
 		writeUserInput(data: string) {
 			// Protocol-native: one submit, no keystream, no trailing CR.
+			// Mark busy AT SUBMIT — not later on `assistant_turn_started`. The engine's
+			// turn gate is held the moment submit lands, so without this a `/resume`
+			// entered in the post-submit / pre-`assistant_turn_started` window (e.g. a
+			// pasted "foo\n/resume\n") would slip past the isBusy() guard. The settling
+			// `idle` clears it. (Session.resume's EngineBusyError is the backstop.)
+			inTurn = true;
 			session?.submit(data);
 		},
 		interrupt() {
