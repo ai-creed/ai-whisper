@@ -338,6 +338,39 @@ describe("createAiEzioLiveSession — /rename + /resume wiring", () => {
 		// "active" is excluded; "other" is the only row; Enter selects row 0.
 		expect(resumeSpy).toHaveBeenCalledWith("other", expect.anything());
 	});
+
+	it("/resume right after a submit is refused (busy) — picker never opens, no respawn, no teardown", async () => {
+		// Spec §4 busy guard, mounted race: a turn is in flight the moment writeUserInput
+		// submits — BEFORE `assistant_turn_started` arrives. A /resume entered in that
+		// window (e.g. a pasted "foo\n/resume\n") must be refused, not turned into a
+		// fatal pane exit. Requires inTurn to be set AT submit.
+		const store = createSessionTitleStore({ filePath: "/t.json", fs: memFs() });
+		const resumeSpy = vi.fn(async () => {});
+		const eng = makeEngine(resumeSpy);
+		const writes: string[] = [];
+		const overlaySpy = vi.fn(async () => {});
+		const exits: number[] = [];
+		const controller = createAiEzioLiveSession({
+			createEngineSession: eng.create,
+			mcpHost: { start: vi.fn(async () => {}), stop: vi.fn(async () => {}), handleEvent: vi.fn() } as never,
+			buildAutoCompact: () => null,
+			titleStore: store,
+			now: () => 0,
+			listSessions: async () => JSON.stringify([{ id: "other", mtime: 1, firstPrompt: "b" }]),
+			runInteractiveOverlay: overlaySpy as never,
+			stdout: { write: (s: string) => (writes.push(s), true) } as never,
+		});
+		controller.onExit(() => exits.push(1));
+		await controller.start();
+		eng.emit({ type: "ready", sessionId: "active", protocol: "1", haxBaseCommit: "c" });
+		// Submit a turn, then IMMEDIATELY /resume — no assistant_turn_started in between.
+		controller.writeUserInput("kick off a turn");
+		await controller.tryConsumeLocalCommand?.("/resume");
+		expect(writes.join("")).toContain("finish or interrupt the current turn first");
+		expect(overlaySpy).not.toHaveBeenCalled(); // picker never opened
+		expect(resumeSpy).not.toHaveBeenCalled(); // no respawn
+		expect(exits).toEqual([]); // pane NOT torn down (no onFatal)
+	});
 });
 
 // Stage 3: real-harness mounted e2e (/rename then /resume).

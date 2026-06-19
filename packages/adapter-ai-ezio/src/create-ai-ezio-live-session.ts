@@ -385,6 +385,12 @@ export function createAiEzioLiveSession(input: {
 		},
 		writeUserInput(data: string) {
 			// Protocol-native: one submit, no keystream, no trailing CR.
+			// Mark busy AT SUBMIT — not later on `assistant_turn_started`. The engine's
+			// turn gate is held the moment submit lands, so without this a `/resume`
+			// entered in the post-submit / pre-`assistant_turn_started` window (e.g. a
+			// pasted "foo\n/resume\n") would slip past the isBusy() guard. The settling
+			// `idle` clears it. (Session.resume's EngineBusyError is the backstop.)
+			inTurn = true;
 			session?.submit(data);
 		},
 		interrupt() {
