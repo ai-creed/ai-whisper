@@ -1165,6 +1165,44 @@ describe("live session runtime", () => {
 		expect(s.isRaw).toBe(true); // mounted default raw mode preserved
 	});
 
+	it("runInteractiveOverlay: routes the picker pagination keys ([ ] Ctrl+A) to the overlay whole", async () => {
+		const s = new PassThrough() as PassThrough & { isTTY?: boolean; isRaw?: boolean; setRawMode?: (m: boolean) => void };
+		s.isTTY = true;
+		s.isRaw = false;
+		s.setRawMode = (m: boolean) => void (s.isRaw = m);
+		const session = {
+			start: async () => {},
+			stop: async () => {},
+			writeUserInput: () => {},
+			tryConsumeLocalCommand: async () => false,
+			sendLocalMessage: () => {},
+			onExit: () => {},
+		} as never;
+		const runtime = createLiveSessionRuntime({
+			interactiveSession: session,
+			stdin: s,
+			stdout: { write: () => {} } as never,
+			onRelay: async () => null,
+			lineBufferedInput: true,
+		});
+		await runtime.start();
+
+		const got: string[] = [];
+		const overlay = runtime.runInteractiveOverlay(async (io) => {
+			for await (const k of io.keys) {
+				got.push(k);
+				if (k === "\r") break;
+			}
+		});
+		await nextTick();
+		for (const key of ["[", "]", "\x01", "\r"]) {
+			s.write(key);
+			await nextTick();
+		}
+		await overlay;
+		expect(got).toEqual(["[", "]", "\x01", "\r"]); // single-byte keys arrive intact at the picker
+	});
+
 	it("blocks input while relay work is in progress", async () => {
 		const localMessages: string[] = [];
 		const userInputs: string[] = [];
