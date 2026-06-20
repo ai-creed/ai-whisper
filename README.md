@@ -61,6 +61,8 @@ You pair any two of three agents — `claude`, `codex`, and `ezio`. ai-whisper d
 - **An LLM evaluator with credentials** — workflows are gated by it and refuse to start without it. See [Evaluator configuration](docs/evaluator-configuration.md).
 - **tmux** *(optional)* — only for `whisper collab start`, which auto-arranges both agents into panes. The mount flow below does not need it.
 
+> **Platform support:** ai-whisper is terminal-native and Unix-oriented — it drives interactive PTY sessions, so it runs on **macOS and Linux**. It is **not supported natively on Windows**: `whisper collab mount` / `reconnect` require a Unix tty-backed shell and will exit with an error pointing here. On Windows, run ai-whisper inside **[WSL2](https://learn.microsoft.com/windows/wsl/install)** — install Node, your agent CLI, and ai-whisper inside the WSL2 distro and run the commands there, where everything works as-is.
+
 ## Safety & permissions
 
 ai-whisper launches each agent in **full-autonomy mode** so the relay can drive it unattended — `claude --dangerously-skip-permissions` and `codex --dangerously-bypass-approvals-and-sandbox`. Inside the mounted workspace the agents read, write, and run commands without prompting. Point it at code you're willing to let two agents change autonomously, watch the run on the dashboard, and remember you are the final gatekeeper — review the result before you ship it. The deeper rationale is in [Concepts](docs/concepts.md).
