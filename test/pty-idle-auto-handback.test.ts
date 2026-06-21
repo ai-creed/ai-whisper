@@ -163,7 +163,11 @@ function makeRelayForIdle(opts: {
 	) => Promise<
 		| string
 		| null
-		| { status: "captured" | "degraded_pty_only"; text: string | null; interferenceDetected: boolean }
+		| {
+				status: "captured" | "degraded_pty_only" | "timed_out" | "lease_unavailable";
+				text: string | null;
+				interferenceDetected: boolean;
+		  }
 	>;
 	turnCapture?: {
 		reset: () => void;
@@ -174,6 +178,9 @@ function makeRelayForIdle(opts: {
 	autonomous?: boolean;
 	handoffAgeMs?: number;
 	autoHandbackMaxAttempts?: number;
+	autoHandbackRetryMs?: number;
+	captureWatchdogMs?: number;
+	scheduleWatchdog?: (ms: number, onTimeout: () => void) => () => void;
 }) {
 	const { handoffStatus } = opts;
 	const handoffId = "handoff_idle_1";
@@ -236,6 +243,15 @@ function makeRelayForIdle(opts: {
 		...(opts.turnCapture !== undefined ? { turnCapture: opts.turnCapture } : {}),
 		...(opts.autoHandbackMaxAttempts !== undefined
 			? { autoHandbackMaxAttempts: opts.autoHandbackMaxAttempts }
+			: {}),
+		...(opts.autoHandbackRetryMs !== undefined
+			? { autoHandbackRetryMs: opts.autoHandbackRetryMs }
+			: {}),
+		...(opts.captureWatchdogMs !== undefined
+			? { captureWatchdogMs: opts.captureWatchdogMs }
+			: {}),
+		...(opts.scheduleWatchdog !== undefined
+			? { scheduleWatchdog: opts.scheduleWatchdog }
 			: {}),
 	});
 
@@ -743,5 +759,211 @@ describe("checkIdleActions: auto-handback diagnostics", () => {
 		} finally {
 			warnSpy.mockRestore();
 		}
+	});
+});
+
+type CapResult = {
+	status: "captured" | "degraded_pty_only" | "timed_out" | "lease_unavailable";
+	text: string | null;
+	interferenceDetected: boolean;
+};
+
+function makeManualWatchdog() {
+	let pending: (() => void) | null = null;
+	return {
+		schedule: (_ms: number, onTimeout: () => void) => {
+			pending = onTimeout;
+			return () => {
+				pending = null;
+			};
+		},
+		fire: () => {
+			const cb = pending;
+			pending = null;
+			cb?.();
+		},
+	};
+}
+
+describe("checkIdleActions: capture timeout + lease-contention retry (no PTY, no halt)", () => {
+	const turnText = "implement approved plan keep commits small verify tests pass";
+	const highConfTurn = () => ({
+		reset: vi.fn(),
+		finishAssistantTurn: vi.fn(),
+		hasVisibleAssistantTurn: vi.fn(() => true),
+		extractLatestAssistantTurn: vi.fn(() => ({
+			confidence: "high" as const,
+			text: turnText,
+		})),
+	});
+	// Empty PTY turn text — the other branch the spec requires the watchdog to cover.
+	const lowEmptyTurn = () => ({
+		reset: vi.fn(),
+		finishAssistantTurn: vi.fn(),
+		hasVisibleAssistantTurn: vi.fn(() => false),
+		extractLatestAssistantTurn: vi.fn(() => ({
+			confidence: "low" as const,
+			text: null,
+		})),
+	});
+
+	it("watchdog: never-settling capture → retry, re-fire next tick, escalate EMPTY at budget", async () => {
+		const wd = makeManualWatchdog();
+		const cap = vi.fn(() => new Promise<never>(() => {})); // never settles
+		const { relay, broker } = makeRelayForIdle({
+			handoffStatus: "accepted",
+			handoffAgeMs: 60_000,
+			autoHandbackMaxAttempts: 2,
+			autoHandbackRetryMs: 0,
+			scheduleWatchdog: wd.schedule,
+			captureHandbackText: cap,
+			turnCapture: highConfTurn(),
+		});
+		// Tick 1: fire the watchdog → captureTimedOut → retry, latch released, NO handback.
+		const p1 = relay.checkIdleActions();
+		wd.fire();
+		await p1;
+		expect(cap).toHaveBeenCalledTimes(1);
+		expect(broker.control.handoffBackRelay).not.toHaveBeenCalled();
+		// Tick 2: RE-FIRES (proves the attempt was incremented, not stuck) → budget exhausted.
+		const p2 = relay.checkIdleActions();
+		wd.fire();
+		await p2;
+		expect(cap).toHaveBeenCalledTimes(2);
+		expect(broker.control.handoffBackRelay).toHaveBeenCalledTimes(1);
+		// Escalate floor delivers EMPTY — never the PTY turn text.
+		expect(broker.control.handoffBackRelay).toHaveBeenCalledWith(
+			expect.objectContaining({ requestText: "" }),
+		);
+	});
+
+	it("watchdog (EMPTY PTY turn text): latch release, retry/no handback, re-fire, escalate empty", async () => {
+		// Spec requires the never-settling watchdog behavior for BOTH empty and
+		// non-empty PTY. With empty PTY the escalate floor classifies as
+		// no_response_captured; either way the latch releases, it retries, and it
+		// never hangs and never PTY-delivers.
+		const wd = makeManualWatchdog();
+		const cap = vi.fn(() => new Promise<never>(() => {})); // never settles
+		const { relay, broker } = makeRelayForIdle({
+			handoffStatus: "accepted",
+			handoffAgeMs: 60_000,
+			autoHandbackMaxAttempts: 2,
+			autoHandbackRetryMs: 0,
+			scheduleWatchdog: wd.schedule,
+			captureHandbackText: cap,
+			turnCapture: lowEmptyTurn(),
+		});
+		const p1 = relay.checkIdleActions();
+		wd.fire();
+		await p1;
+		expect(cap).toHaveBeenCalledTimes(1);
+		expect(broker.control.handoffBackRelay).not.toHaveBeenCalled(); // latch released, retried
+		const p2 = relay.checkIdleActions();
+		wd.fire();
+		await p2;
+		expect(cap).toHaveBeenCalledTimes(2); // re-fired on the next tick
+		expect(broker.control.handoffBackRelay).toHaveBeenCalledTimes(1);
+		expect(broker.control.handoffBackRelay).toHaveBeenCalledWith(
+			expect.objectContaining({ requestText: "" }),
+		);
+	});
+
+	it("lease_unavailable: retry + re-fire + escalate EMPTY (NOT a PTY fallback)", async () => {
+		const cap = vi.fn(
+			async (): Promise<CapResult> => ({
+				status: "lease_unavailable",
+				text: null,
+				interferenceDetected: false,
+			}),
+		);
+		const { relay, broker } = makeRelayForIdle({
+			handoffStatus: "accepted",
+			handoffAgeMs: 60_000,
+			autoHandbackMaxAttempts: 2,
+			autoHandbackRetryMs: 0,
+			scheduleWatchdog: makeManualWatchdog().schedule, // never fired; the result settles
+			captureHandbackText: cap,
+			turnCapture: highConfTurn(),
+		});
+		await relay.checkIdleActions();
+		expect(cap).toHaveBeenCalledTimes(1);
+		// NOT PTY-delivered — a degraded_pty_only would hand back turnText here.
+		expect(broker.control.handoffBackRelay).not.toHaveBeenCalled();
+		await relay.checkIdleActions();
+		expect(cap).toHaveBeenCalledTimes(2); // re-fired on the next tick
+		expect(broker.control.handoffBackRelay).toHaveBeenCalledTimes(1);
+		expect(broker.control.handoffBackRelay).toHaveBeenCalledWith(
+			expect.objectContaining({ requestText: "" }),
+		);
+	});
+
+	it("timed_out: retry + re-fire + escalate EMPTY (NOT a PTY fallback)", async () => {
+		const cap = vi.fn(
+			async (): Promise<CapResult> => ({
+				status: "timed_out",
+				text: null,
+				interferenceDetected: false,
+			}),
+		);
+		const { relay, broker } = makeRelayForIdle({
+			handoffStatus: "accepted",
+			handoffAgeMs: 60_000,
+			autoHandbackMaxAttempts: 2,
+			autoHandbackRetryMs: 0,
+			scheduleWatchdog: makeManualWatchdog().schedule,
+			captureHandbackText: cap,
+			turnCapture: highConfTurn(),
+		});
+		await relay.checkIdleActions();
+		expect(broker.control.handoffBackRelay).not.toHaveBeenCalled();
+		await relay.checkIdleActions();
+		expect(cap).toHaveBeenCalledTimes(2);
+		expect(broker.control.handoffBackRelay).toHaveBeenCalledTimes(1);
+		expect(broker.control.handoffBackRelay).toHaveBeenCalledWith(
+			expect.objectContaining({ requestText: "" }),
+		);
+	});
+
+	it("orphan timeline: wedge (watchdog) → lease_unavailable while orphan holds → escalate EMPTY once", async () => {
+		// RELAY-side half of the orphan timeline: tick1 the capture wedges (watchdog
+		// fires), ticks 2-3 a retry races the still-held orphan lease and gets
+		// lease_unavailable. Asserts the RELAY guarantees — no tick PTY-delivers, there is
+		// no double-deliver, and the budget floor escalates EMPTY exactly once. The actual
+		// clock/TTL boundary (lease_unavailable while age < TTL, reclaim once age > TTL) is
+		// driven with an injected clock in test/capture-handback-text.test.ts.
+		const wd = makeManualWatchdog();
+		const cap = vi.fn<(t: string) => Promise<CapResult>>();
+		cap.mockReturnValueOnce(new Promise<CapResult>(() => {})); // tick1: orphan wedge
+		cap.mockResolvedValueOnce({
+			status: "lease_unavailable",
+			text: null,
+			interferenceDetected: false,
+		}); // tick2: orphan still holds the lease
+		cap.mockResolvedValueOnce({
+			status: "lease_unavailable",
+			text: null,
+			interferenceDetected: false,
+		}); // tick3: still contended
+		const { relay, broker } = makeRelayForIdle({
+			handoffStatus: "accepted",
+			handoffAgeMs: 60_000,
+			autoHandbackMaxAttempts: 3,
+			autoHandbackRetryMs: 0,
+			scheduleWatchdog: wd.schedule,
+			captureHandbackText: cap,
+			turnCapture: highConfTurn(),
+		});
+		const p1 = relay.checkIdleActions();
+		wd.fire(); // tick1: watchdog fires on the wedged capture
+		await p1;
+		expect(broker.control.handoffBackRelay).not.toHaveBeenCalled();
+		await relay.checkIdleActions(); // tick2: lease_unavailable settles (watchdog not fired)
+		expect(broker.control.handoffBackRelay).not.toHaveBeenCalled();
+		await relay.checkIdleActions(); // tick3: budget (3) exhausted → escalate
+		expect(cap).toHaveBeenCalledTimes(3);
+		expect(broker.control.handoffBackRelay).toHaveBeenCalledTimes(1); // no double-deliver
+		expect(broker.control.handoffBackRelay).toHaveBeenCalledWith(
+			expect.objectContaining({ requestText: "" }), // no PTY fallback
+		);
 	});
 });

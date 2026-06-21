@@ -275,6 +275,31 @@ function isAutonomousHandoff(handoffId: string, broker: BrokerLike): boolean {
 	return wf?.status === "running" && chain?.status === "active";
 }
 
+/** Returned by the capture race when the watchdog deadline beats the capture. */
+const CAPTURE_WATCHDOG_TIMEOUT = Symbol("capture-watchdog-timeout");
+
+/** Race a capture against a deadline. Resolves to the capture result, or the
+ *  CAPTURE_WATCHDOG_TIMEOUT sentinel if the deadline fires first. Always cancels
+ *  the watchdog; the orphaned capture promise settles later harmlessly. */
+async function raceCaptureAgainstWatchdog<T>(
+	run: () => Promise<T> | undefined,
+	watchdogMs: number,
+	schedule: (ms: number, onTimeout: () => void) => () => void,
+): Promise<T | null | typeof CAPTURE_WATCHDOG_TIMEOUT> {
+	let cancel: () => void = () => {};
+	const watchdog = new Promise<typeof CAPTURE_WATCHDOG_TIMEOUT>((resolve) => {
+		cancel = schedule(watchdogMs, () => resolve(CAPTURE_WATCHDOG_TIMEOUT));
+	});
+	try {
+		return await Promise.race([
+			Promise.resolve(run()).then((r) => r ?? null),
+			watchdog,
+		]);
+	} finally {
+		cancel();
+	}
+}
+
 export function createMountedTurnOwnedRelay(input: {
 	broker: BrokerLike;
 	collabId: string;
@@ -303,6 +328,14 @@ export function createMountedTurnOwnedRelay(input: {
 	/** Minimum spacing between auto-handback retries — the 1s idle poll must not
 	 *  hammer /copy every tick while a long claude step is briefly idle. */
 	autoHandbackRetryMs?: number | undefined;
+	/** Outer deadline (ms) on the whole capture await. If the capture never
+	 *  settles (a hang L1 cannot kill, or a non-execFile hang), the watchdog fires,
+	 *  the latch is released, and the capture retries. Default 20000. */
+	captureWatchdogMs?: number | undefined;
+	/** Schedules the capture watchdog; returns a cancel function. Injectable so
+	 *  tests drive the deadline with controlled time instead of a real timer.
+	 *  Default: setTimeout-based. */
+	scheduleWatchdog?: ((ms: number, onTimeout: () => void) => () => void) | undefined;
 	/** Protocol-native providers (ai-ezio) hand back via an explicit idle event
 	 *  (handbackResolvedContent), so the quiescence /copy auto-handback must be
 	 *  skipped. Auto-ACCEPT still runs — it is the delivery path. */
@@ -323,6 +356,13 @@ export function createMountedTurnOwnedRelay(input: {
 	const HAND_BACK_READY_AFTER_MS = 30_000;
 	const autoHandbackMaxAttempts = Math.max(1, input.autoHandbackMaxAttempts ?? 3);
 	const autoHandbackRetryMs = Math.max(0, input.autoHandbackRetryMs ?? 10_000);
+	const captureWatchdogMs = Math.max(1, input.captureWatchdogMs ?? 20_000);
+	const scheduleWatchdog =
+		input.scheduleWatchdog ??
+		((ms: number, onTimeout: () => void) => {
+			const timer = setTimeout(onTimeout, ms);
+			return () => clearTimeout(timer);
+		});
 	// Per-handoff retry bookkeeping for the auto-handback empty-capture ladder.
 	const autoHandbackAttempts = new Map<
 		string,
@@ -1178,18 +1218,39 @@ export function createMountedTurnOwnedRelay(input: {
 			// null short-circuit — those have their own established handling and must
 			// not be folded into the empty-clip retry.
 			let cleanCaptureEmpty = false;
+			let captureTimedOut = false;
 			try {
-				const captureResult =
-					(await input.captureHandbackText?.(turnResult.text ?? "")) ?? null;
-				if (typeof captureResult === "string") {
+				const captureResult = await raceCaptureAgainstWatchdog(
+					() => input.captureHandbackText?.(turnResult.text ?? ""),
+					captureWatchdogMs,
+					scheduleWatchdog,
+				);
+				if (captureResult === CAPTURE_WATCHDOG_TIMEOUT) {
+					// The capture never settled within the deadline. Abandon it (the
+					// orphan settles later harmlessly) and retry; the finally releases
+					// autoHandbackInFlight regardless of the wedged capture.
+					captureTimedOut = true;
+					console.warn(
+						`[ai-whisper] capture watchdog fired (${captureWatchdogMs}ms): target=${input.currentAgent} handoff=${accepted.handoffId} — abandoning capture, will retry`,
+					);
+				} else if (typeof captureResult === "string") {
 					clipboardText = captureResult; // legacy / direct text
 				} else if (captureResult !== null) {
 					interferenceDetected = captureResult.interferenceDetected;
 					if (captureResult.status === "captured") {
 						clipboardText = captureResult.text;
 						cleanCaptureEmpty = (captureResult.text ?? "").trim().length === 0;
+					} else if (
+						captureResult.status === "timed_out" ||
+						captureResult.status === "lease_unavailable"
+					) {
+						// Timeout or lease contention → retry ladder, NOT a PTY fallback.
+						captureTimedOut = true;
+						console.warn(
+							`[ai-whisper] capture ${captureResult.status}: target=${input.currentAgent} handoff=${accepted.handoffId} — will retry (no PTY fallback)`,
+						);
 					} else {
-						leaseDegraded = true; // degraded_pty_only (timeout or persistent interference)
+						leaseDegraded = true; // degraded_pty_only (interference exhaustion)
 						console.warn(
 							`[ai-whisper] capture lease degraded: target=${input.currentAgent} handoff=${accepted.handoffId} interference=${interferenceDetected} — /copy was NOT executed; PTY fallback only`,
 						);
@@ -1257,7 +1318,10 @@ export function createMountedTurnOwnedRelay(input: {
 				captureStatus === "no_response_captured_confidently" &&
 				cleanCaptureEmpty;
 			if (
-				(capturedNothing || staleAgainstCurrentTurn || emptyClipConfidentMiss) &&
+				(capturedNothing ||
+					staleAgainstCurrentTurn ||
+					emptyClipConfidentMiss ||
+					captureTimedOut) &&
 				retryState.attempts + 1 < autoHandbackMaxAttempts
 			) {
 				retryState.attempts += 1;
