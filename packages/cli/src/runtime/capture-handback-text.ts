@@ -8,8 +8,13 @@ import {
 	computeOrderedJaccard,
 	computeContainment,
 } from "./mounted-turn-owned-relay.js";
+import { CaptureIoTimeoutError } from "./clipboard-handback-capture.js";
 
-export type CaptureHandbackStatus = "captured" | "degraded_pty_only";
+export type CaptureHandbackStatus =
+	| "captured"
+	| "degraded_pty_only"
+	| "timed_out"
+	| "lease_unavailable";
 
 export interface CaptureHandbackResult {
 	status: CaptureHandbackStatus;
@@ -72,8 +77,9 @@ function contentMatches(turnText: string, clip: string): boolean {
 
 /**
  * Lease-wrapped clipboard capture. Acquires the host-global capture lease (or
- * degrades to PTY-only on timeout — never a racy read), snapshots changeCount
- * (C0), runs the /copy, re-reads changeCount (Cn).
+ * returns lease_unavailable on acquire-timeout — never a racy read; the relay
+ * retries, never a partial-PTY handback), snapshots changeCount (C0), runs the
+ * /copy, re-reads changeCount (Cn).
  *
  * The clean-accept threshold is the agent's /copy write-SIGNATURE, not a hardcoded
  * 1: one /copy advances changeCount by a fixed agent-specific amount (codex 1;
@@ -94,8 +100,8 @@ export async function captureHandbackText(
 	const recaptureBackoffMs = input.recaptureBackoffMs ?? 50;
 	const sig = input.copySignature;
 
-	// --- bounded poll-acquire; degrade to PTY-only on timeout (no racy read) ---
-	let acquired = false;
+	// --- bounded poll-acquire; return lease_unavailable on timeout (no racy read) ---
+	let acquired: string | null = null;
 	const deadline = Date.now() + acquireMaxWaitMs;
 	for (;;) {
 		try {
@@ -109,17 +115,22 @@ export async function captureHandbackText(
 			// Defense in depth: a residual SQLITE_BUSY ("database is locked") past
 			// busy_timeout must not propagate — an uncaught throw here is swallowed
 			// upstream into an empty handback that halts the workflow. Treat it as
-			// "not acquired" and retry within the deadline, then degrade to PTY-only.
-			acquired = false;
+			// "not acquired" and retry within the deadline, then return lease_unavailable.
+			acquired = null;
 		}
 		if (acquired) break;
 		if (Date.now() >= deadline) break;
 		await sleep(acquireBackoffMs);
 	}
 	if (!acquired) {
-		return { status: "degraded_pty_only", text: null, interferenceDetected: false };
+		// Couldn't acquire the host-global lease within the bounded poll (another
+		// mount is capturing, or a watchdog-abandoned orphan still holds it). This is
+		// a transient-busy condition: the relay routes lease_unavailable into the
+		// retry ladder, never a PTY fallback.
+		return { status: "lease_unavailable", text: null, interferenceDetected: false };
 	}
 
+	const leaseToken = acquired;
 	try {
 		let interferenceDetected = false;
 		// attempt 0 = initial capture; up to recaptureAttempts re-captures after.
@@ -127,7 +138,15 @@ export async function captureHandbackText(
 			if (attempt > 0) await sleep(recaptureBackoffMs);
 
 			const c0 = await input.readChangeCount();
-			const clip = await input.runCapture();
+			let clip: string | null;
+			try {
+				clip = await input.runCapture();
+			} catch (err) {
+				if (err instanceof CaptureIoTimeoutError) {
+					return { status: "timed_out", text: null, interferenceDetected };
+				}
+				throw err;
+			}
 			const cn = await input.readChangeCount();
 
 			// changeCount unavailable on either read → skip the ownership check.
@@ -194,6 +213,6 @@ export async function captureHandbackText(
 		// Every attempt showed a foreign write and never content-validated.
 		return { status: "degraded_pty_only", text: null, interferenceDetected: true };
 	} finally {
-		releaseCaptureLease(input.db, input.collabId);
+		releaseCaptureLease(input.db, input.collabId, leaseToken);
 	}
 }

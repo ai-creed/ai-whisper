@@ -1,18 +1,42 @@
 import { execFile } from "node:child_process";
 
-function execFileText(command: string, args: string[] = []): Promise<string> {
+/** Thrown when a clipboard subprocess (`pbpaste`) is killed by its timeout.
+ *  A tagged type — distinct from a generic failure — so `captureHandbackText`
+ *  can route it into the timeout retry ladder instead of a no-response handback. */
+export class CaptureIoTimeoutError extends Error {
+	constructor(command: string) {
+		super(`clipboard I/O timed out: ${command}`);
+		this.name = "CaptureIoTimeoutError";
+	}
+}
+
+function execFileText(
+	command: string,
+	args: string[] = [],
+	timeoutMs?: number,
+): Promise<string> {
 	return new Promise((resolve, reject) => {
-		execFile(command, args, { encoding: "utf8" }, (error, stdout) => {
-			if (error) {
-				reject(
-					error instanceof Error
-						? error
-						: new Error("Clipboard command failed"),
-				);
-				return;
-			}
-			resolve(stdout);
-		});
+		execFile(
+			command,
+			args,
+			{ encoding: "utf8", timeout: timeoutMs ?? 0, killSignal: "SIGTERM" },
+			(error, stdout) => {
+				if (error) {
+					// execFile sets killed=true when it SIGTERMs the child on timeout.
+					if ((error as { killed?: boolean }).killed) {
+						reject(new CaptureIoTimeoutError(command));
+						return;
+					}
+					reject(
+						error instanceof Error
+							? error
+							: new Error("Clipboard command failed"),
+					);
+					return;
+				}
+				resolve(stdout);
+			},
+		);
 	});
 }
 
@@ -27,14 +51,20 @@ export async function captureClipboardHandback(input: {
 	delayMs?: number;
 	/** Delay before first poll; also the window given to confirmPicker to fire. Defaults to delayMs. */
 	triggerDelayMs?: number;
+	/** Per-exec timeout (ms) applied to the default `pbpaste` read. Ignored when a
+	 *  custom readClipboard is injected. */
+	clipboardTimeoutMs?: number;
+	/** Platform override (defaults to process.platform). Injectable so the default
+	 *  pbpaste path is deterministically testable off-darwin. */
+	platform?: NodeJS.Platform;
 }): Promise<string | null> {
 	const readClipboard =
 		input.readClipboard ??
 		(() => {
-			if (process.platform !== "darwin") {
+			if ((input.platform ?? process.platform) !== "darwin") {
 				return Promise.resolve("");
 			}
-			return execFileText("pbpaste");
+			return execFileText("pbpaste", [], input.clipboardTimeoutMs);
 		});
 	const sleep =
 		input.sleep ??

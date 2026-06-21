@@ -4,9 +4,10 @@ import type { OverlayIO, RelayDirective } from "@ai-whisper/shared";
 import {
 	openDatabase,
 	deleteSessionAttachment,
+	DEFAULT_LEASE_TTL_MS,
 	getRecoveryState,
 	reapSupersededSessions,
-	releaseCaptureLease,
+	releaseCaptureLeaseForHolderPid,
 	upsertRecoveryState,
 } from "@ai-whisper/broker";
 import { getSharedSqlitePath, getStateSocketsDir, getStateLogsDir } from "./state-root.js";
@@ -92,10 +93,24 @@ function resolvePositiveIntEnv(name: string): number | undefined {
 	return Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
 }
 
+// Per-exec timeout for pbpaste + the changeCount helper (L1 bound).
+const clipboardIoTimeoutMs =
+	resolvePositiveIntEnv("AI_WHISPER_CLIPBOARD_IO_TIMEOUT_MS") ?? 8000;
+// Outer watchdog deadline on the whole capture await (L3 backstop).
+const captureWatchdogMs =
+	resolvePositiveIntEnv("AI_WHISPER_CAPTURE_WATCHDOG_MS") ?? 20000;
+// Lease TTL must stay >= the watchdog so a settling capture is never reclaimed
+// mid-flight; derive it from the watchdog (never a drifting hardcoded constant),
+// floored at DEFAULT_LEASE_TTL_MS.
+const captureLeaseTtlMs = Math.max(
+	captureWatchdogMs + 5000,
+	DEFAULT_LEASE_TTL_MS,
+);
+
 // changeCount reader for the clipboard capture lease (component 6). Degrades to
 // null off-darwin or when the native helper is missing, so the ownership check
 // is skipped rather than blocking capture.
-const readChangeCount = makeChangeCountReader();
+const readChangeCount = makeChangeCountReader({ timeoutMs: clipboardIoTimeoutMs });
 
 // Best-effort reap of superseded `session` rows for a (collab, agent), keeping
 // only the active/kept session id. Wrapped so a reaping failure is logged and
@@ -289,7 +304,11 @@ export function createMountSessionRuntime(input: {
 							});
 							// Release any held capture lease on teardown (mirrors dead-daemon
 							// handling; the startup sweep / TTL is the backstop if missed).
-							releaseCaptureLease(db, resolvedClaim.collabId);
+							releaseCaptureLeaseForHolderPid(
+								db,
+								resolvedClaim.collabId,
+								process.pid,
+							);
 						} finally {
 							db.close();
 						}
@@ -541,6 +560,7 @@ export function createMountSessionRuntime(input: {
 								turnText,
 								readChangeCount,
 								copySignature,
+								leaseOptions: { ttlMs: captureLeaseTtlMs },
 								runCapture: () =>
 									captureClipboardHandback({
 										triggerCopy: () => submitInjectedInput("/copy"),
@@ -551,6 +571,7 @@ export function createMountSessionRuntime(input: {
 											writeInjectedInput("mounted-submit-picker", "\r");
 										},
 										triggerDelayMs: 300,
+										clipboardTimeoutMs: clipboardIoTimeoutMs,
 									}),
 							});
 						} finally {
@@ -580,6 +601,7 @@ export function createMountSessionRuntime(input: {
 					autoHandbackRetryMs: resolvePositiveIntEnv(
 						"AI_WHISPER_AUTO_HANDBACK_RETRY_MS",
 					),
+					captureWatchdogMs,
 					// Protocol-native providers (ai-ezio) expose onTurnFinished; for them
 					// the quiescence /copy auto-handback is skipped (handback comes from
 					// the explicit idle event). Event-enabled claude/codex ALSO suppress it
