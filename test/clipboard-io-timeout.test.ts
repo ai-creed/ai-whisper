@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 
 const { execFileMock } = vi.hoisted(() => ({ execFileMock: vi.fn() }));
 vi.mock("node:child_process", () => ({
-	execFile: (...args: unknown[]) => execFileMock(...args),
+	// Statement body (returns void): the code under test uses execFile's callback,
+	// never its ChildProcess return — and returning the mock's `any` trips
+	// @typescript-eslint/no-unsafe-return.
+	execFile: (...args: unknown[]) => {
+		execFileMock(...args);
+	},
 }));
 vi.mock("node:fs", () => ({ existsSync: () => true }));
 
