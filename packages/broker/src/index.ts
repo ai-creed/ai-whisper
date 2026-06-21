@@ -42,6 +42,7 @@ export { enforceOneActiveCollabPerWorkspace } from "./storage/enforce-one-active
 export {
 	acquireCaptureLease,
 	releaseCaptureLease,
+	releaseCaptureLeaseForHolderPid,
 	sweepStaleCaptureLease,
 	DEFAULT_LEASE_TTL_MS,
 	type LeaseOptions,

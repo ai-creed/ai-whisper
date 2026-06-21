@@ -44,7 +44,7 @@ describe("captureHandbackText — clean path", () => {
 describe("captureHandbackText — serialization", () => {
 	it("a second collab cannot capture while the first holds the lease", async () => {
 		const db = freshDb();
-		expect(acquireCaptureLease(db, "collabA", 100, leaseOptions)).toBe(true);
+		expect(acquireCaptureLease(db, "collabA", 100, leaseOptions)).toBeTruthy();
 
 		const result = await captureHandbackText({
 			db,

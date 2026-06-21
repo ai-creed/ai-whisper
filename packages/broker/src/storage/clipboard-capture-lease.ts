@@ -4,7 +4,7 @@ const LEASE_ID = 1;
 
 /** Worst-case capture window (attempts × delayMs + trigger delay ≈ 1.3s today)
  *  plus headroom. A holder older than this is treated as crashed/stale. */
-export const DEFAULT_LEASE_TTL_MS = 5000;
+export const DEFAULT_LEASE_TTL_MS = 25000;
 
 export interface LeaseOptions {
 	/** Liveness probe; defaults to synchronous process.kill(pid, 0). */
@@ -51,23 +51,24 @@ function isStale(row: LeaseRow, opts: Required<LeaseOptions>): boolean {
  * Acquire the host-global capture lease for `collabId`/`pid`. Succeeds when the
  * lease is free or stale (dead holder pid, or acquired_at older than TTL). Runs
  * inside a single short write transaction — never held across the async capture.
- * Returns true on acquire, false when a live, within-TTL holder owns it.
+ * Returns the `acquired_at` token on acquire (used as a fencing token by release),
+ * or null when a live, within-TTL holder owns it.
  */
 export function acquireCaptureLease(
 	db: Database.Database,
 	collabId: string,
 	pid: number,
 	options: LeaseOptions = {},
-): boolean {
+): string | null {
 	const opts = resolveOptions(options);
-	const tx = db.transaction((): boolean => {
+	const tx = db.transaction((): string | null => {
 		const row = db
 			.prepare(
 				"SELECT holder_collab_id, holder_pid, acquired_at FROM clipboard_capture_lease WHERE id = ?",
 			)
 			.get(LEASE_ID) as LeaseRow | undefined;
 
-		if (row && !isStale(row, opts)) return false;
+		if (row && !isStale(row, opts)) return null;
 
 		const acquiredAt = new Date(opts.now()).toISOString();
 		db.prepare(
@@ -78,7 +79,7 @@ export function acquireCaptureLease(
 			   holder_pid       = excluded.holder_pid,
 			   acquired_at      = excluded.acquired_at`,
 		).run(LEASE_ID, collabId, pid, acquiredAt);
-		return true;
+		return acquiredAt;
 	});
 	// IMMEDIATE (not the default DEFERRED): take the write lock up front so
 	// busy_timeout is honored. A DEFERRED transaction reads first (SELECT) then
@@ -91,15 +92,35 @@ export function acquireCaptureLease(
 	return tx.immediate();
 }
 
-/** Release the lease iff `collabId` is the current holder. No-op otherwise. */
+/** Release the lease iff `collabId` holds it AND the token (the `acquired_at`
+ *  returned by acquire) still matches — so a late orphan release cannot clear a
+ *  newer lease the same collab acquired afterward. */
 export function releaseCaptureLease(
 	db: Database.Database,
 	collabId: string,
+	token: string,
 ): void {
 	const tx = db.transaction(() => {
 		db.prepare(
-			"UPDATE clipboard_capture_lease SET holder_collab_id = NULL, holder_pid = NULL, acquired_at = NULL WHERE id = ? AND holder_collab_id = ?",
-		).run(LEASE_ID, collabId);
+			"UPDATE clipboard_capture_lease SET holder_collab_id = NULL, holder_pid = NULL, acquired_at = NULL WHERE id = ? AND holder_collab_id = ? AND acquired_at = ?",
+		).run(LEASE_ID, collabId, token);
+	});
+	tx();
+}
+
+/** Terminal cleanup: release the lease iff held by this collab AND this pid.
+ *  Used on mount teardown, where there is no single acquisition token — pid
+ *  scoping frees only THIS mount process's leases and cannot clobber a
+ *  reconnected same-collab mount running under a different pid. */
+export function releaseCaptureLeaseForHolderPid(
+	db: Database.Database,
+	collabId: string,
+	pid: number,
+): void {
+	const tx = db.transaction(() => {
+		db.prepare(
+			"UPDATE clipboard_capture_lease SET holder_collab_id = NULL, holder_pid = NULL, acquired_at = NULL WHERE id = ? AND holder_collab_id = ? AND holder_pid = ?",
+		).run(LEASE_ID, collabId, pid);
 	});
 	tx();
 }

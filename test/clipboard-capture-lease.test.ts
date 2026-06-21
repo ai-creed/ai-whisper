@@ -7,6 +7,7 @@ import { openDatabase } from "../packages/broker/src/storage/open-database.ts";
 import {
 	acquireCaptureLease,
 	releaseCaptureLease,
+	releaseCaptureLeaseForHolderPid,
 	sweepStaleCaptureLease,
 } from "../packages/broker/src/storage/clipboard-capture-lease.ts";
 
@@ -64,14 +65,14 @@ describe("clipboard_capture_lease — acquire/release", () => {
 			ttlMs: TTL_MS,
 			now: () => T0,
 		});
-		expect(ok).toBe(true);
+		expect(ok).toBeTruthy();
 	});
 
 	it("blocks a second holder while the first is live and within TTL", () => {
 		const db = freshDb();
 		const opts = { isPidAlive: () => true, ttlMs: TTL_MS, now: () => T0 };
-		expect(acquireCaptureLease(db, "collabA", 100, opts)).toBe(true);
-		expect(acquireCaptureLease(db, "collabB", 200, opts)).toBe(false);
+		expect(acquireCaptureLease(db, "collabA", 100, opts)).toBeTruthy();
+		expect(acquireCaptureLease(db, "collabB", 200, opts)).toBeNull();
 	});
 
 	it("reclaims when the holder pid is dead", () => {
@@ -82,7 +83,7 @@ describe("clipboard_capture_lease — acquire/release", () => {
 				ttlMs: TTL_MS,
 				now: () => T0,
 			}),
-		).toBe(true);
+		).toBeTruthy();
 		// collabA's pid (100) is dead; collabB (200) is alive.
 		expect(
 			acquireCaptureLease(db, "collabB", 200, {
@@ -90,7 +91,7 @@ describe("clipboard_capture_lease — acquire/release", () => {
 				ttlMs: TTL_MS,
 				now: () => T0 + 10,
 			}),
-		).toBe(true);
+		).toBeTruthy();
 	});
 
 	it("reclaims when acquired_at exceeds TTL even if pid is alive", () => {
@@ -101,30 +102,32 @@ describe("clipboard_capture_lease — acquire/release", () => {
 				ttlMs: TTL_MS,
 				now: () => T0,
 			}),
-		).toBe(true);
+		).toBeTruthy();
 		expect(
 			acquireCaptureLease(db, "collabB", 200, {
 				isPidAlive: () => true,
 				ttlMs: TTL_MS,
 				now: () => T0 + TTL_MS + 1,
 			}),
-		).toBe(true);
+		).toBeTruthy();
 	});
 
 	it("release clears the holder so the next acquire succeeds", () => {
 		const db = freshDb();
 		const opts = { isPidAlive: () => true, ttlMs: TTL_MS, now: () => T0 };
-		expect(acquireCaptureLease(db, "collabA", 100, opts)).toBe(true);
-		releaseCaptureLease(db, "collabA");
-		expect(acquireCaptureLease(db, "collabB", 200, opts)).toBe(true);
+		const token = acquireCaptureLease(db, "collabA", 100, opts);
+		expect(token).toBeTruthy();
+		releaseCaptureLease(db, "collabA", token as string);
+		expect(acquireCaptureLease(db, "collabB", 200, opts)).toBeTruthy();
 	});
 
 	it("release by a non-holder is a no-op (does not free another's lease)", () => {
 		const db = freshDb();
 		const opts = { isPidAlive: () => true, ttlMs: TTL_MS, now: () => T0 };
-		expect(acquireCaptureLease(db, "collabA", 100, opts)).toBe(true);
-		releaseCaptureLease(db, "collabB"); // not the holder
-		expect(acquireCaptureLease(db, "collabB", 200, opts)).toBe(false);
+		const token = acquireCaptureLease(db, "collabA", 100, opts);
+		expect(token).toBeTruthy();
+		releaseCaptureLease(db, "collabB", token as string); // not the holder
+		expect(acquireCaptureLease(db, "collabB", 200, opts)).toBeNull();
 	});
 });
 
@@ -151,7 +154,7 @@ describe("clipboard_capture_lease — startup sweep", () => {
 				ttlMs: TTL_MS,
 				now: () => T0,
 			}),
-		).toBe(true);
+		).toBeTruthy();
 		sweepStaleCaptureLease(db, {
 			isPidAlive: () => true,
 			ttlMs: TTL_MS,
@@ -243,5 +246,82 @@ describe("clipboard_capture_lease — concurrent-writer safety (halted-workflow 
 
 		dbA.close();
 		connB.close();
+	});
+});
+
+describe("clipboard_capture_lease — token + pid scoping (timeout/watchdog reconciliation)", () => {
+	const WATCHDOG_TTL = 25_000;
+
+	it("does NOT reclaim a live holder still within the raised TTL (settling capture)", () => {
+		const db = freshDb();
+		// A capture legitimately holding for ~16s (two L1 exec timeouts) is < 25s TTL.
+		expect(
+			acquireCaptureLease(db, "collabA", 100, {
+				isPidAlive: () => true,
+				ttlMs: WATCHDOG_TTL,
+				now: () => T0,
+			}),
+		).toBeTruthy();
+		expect(
+			acquireCaptureLease(db, "collabB", 200, {
+				isPidAlive: () => true,
+				ttlMs: WATCHDOG_TTL,
+				now: () => T0 + 16_000,
+			}),
+		).toBeNull();
+	});
+
+	it("token-scoped release: a stale-token release is a no-op against a newer lease", () => {
+		const db = freshDb();
+		const tokenA = acquireCaptureLease(db, "collabA", 100, {
+			isPidAlive: () => true,
+			ttlMs: 5000,
+			now: () => T0,
+		});
+		expect(tokenA).toBeTruthy();
+		// collabA aged out; collabA re-acquires (its own retry) → a NEW token.
+		const tokenB = acquireCaptureLease(db, "collabA", 100, {
+			isPidAlive: () => true,
+			ttlMs: 5000,
+			now: () => T0 + 6000,
+		});
+		expect(tokenB).toBeTruthy();
+		expect(tokenB).not.toBe(tokenA);
+		// The orphan's late release with the OLD token must NOT clear B's lease.
+		releaseCaptureLease(db, "collabA", tokenA as string);
+		const row = db
+			.prepare("SELECT acquired_at FROM clipboard_capture_lease WHERE id = 1")
+			.get() as { acquired_at: string | null };
+		expect(row.acquired_at).toBe(tokenB);
+		// Releasing with the CURRENT token clears it.
+		releaseCaptureLease(db, "collabA", tokenB as string);
+		const cleared = db
+			.prepare("SELECT holder_collab_id FROM clipboard_capture_lease WHERE id = 1")
+			.get() as { holder_collab_id: string | null };
+		expect(cleared.holder_collab_id).toBeNull();
+	});
+
+	it("pid-scoped teardown release frees only this mount's lease, not a different-pid holder", () => {
+		const db = freshDb();
+		// A reconnected mount (same collab, different pid) holds the lease.
+		expect(
+			acquireCaptureLease(db, "collabA", 200, {
+				isPidAlive: () => true,
+				ttlMs: 5000,
+				now: () => T0,
+			}),
+		).toBeTruthy();
+		// The OLD mount (pid 100) tears down; its pid-scoped release must be a no-op.
+		releaseCaptureLeaseForHolderPid(db, "collabA", 100);
+		const still = db
+			.prepare("SELECT holder_pid FROM clipboard_capture_lease WHERE id = 1")
+			.get() as { holder_pid: number | null };
+		expect(still.holder_pid).toBe(200);
+		// The matching-pid teardown clears it.
+		releaseCaptureLeaseForHolderPid(db, "collabA", 200);
+		const cleared = db
+			.prepare("SELECT holder_collab_id FROM clipboard_capture_lease WHERE id = 1")
+			.get() as { holder_collab_id: string | null };
+		expect(cleared.holder_collab_id).toBeNull();
 	});
 });

@@ -6,7 +6,7 @@ import {
 	deleteSessionAttachment,
 	getRecoveryState,
 	reapSupersededSessions,
-	releaseCaptureLease,
+	releaseCaptureLeaseForHolderPid,
 	upsertRecoveryState,
 } from "@ai-whisper/broker";
 import { getSharedSqlitePath, getStateSocketsDir, getStateLogsDir } from "./state-root.js";
@@ -289,7 +289,11 @@ export function createMountSessionRuntime(input: {
 							});
 							// Release any held capture lease on teardown (mirrors dead-daemon
 							// handling; the startup sweep / TTL is the backstop if missed).
-							releaseCaptureLease(db, resolvedClaim.collabId);
+							releaseCaptureLeaseForHolderPid(
+								db,
+								resolvedClaim.collabId,
+								process.pid,
+							);
 						} finally {
 							db.close();
 						}

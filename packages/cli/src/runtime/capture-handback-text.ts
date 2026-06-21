@@ -95,7 +95,7 @@ export async function captureHandbackText(
 	const sig = input.copySignature;
 
 	// --- bounded poll-acquire; degrade to PTY-only on timeout (no racy read) ---
-	let acquired = false;
+	let acquired: string | null = null;
 	const deadline = Date.now() + acquireMaxWaitMs;
 	for (;;) {
 		try {
@@ -110,7 +110,7 @@ export async function captureHandbackText(
 			// busy_timeout must not propagate — an uncaught throw here is swallowed
 			// upstream into an empty handback that halts the workflow. Treat it as
 			// "not acquired" and retry within the deadline, then degrade to PTY-only.
-			acquired = false;
+			acquired = null;
 		}
 		if (acquired) break;
 		if (Date.now() >= deadline) break;
@@ -120,6 +120,7 @@ export async function captureHandbackText(
 		return { status: "degraded_pty_only", text: null, interferenceDetected: false };
 	}
 
+	const leaseToken = acquired;
 	try {
 		let interferenceDetected = false;
 		// attempt 0 = initial capture; up to recaptureAttempts re-captures after.
@@ -194,6 +195,6 @@ export async function captureHandbackText(
 		// Every attempt showed a foreign write and never content-validated.
 		return { status: "degraded_pty_only", text: null, interferenceDetected: true };
 	} finally {
-		releaseCaptureLease(input.db, input.collabId);
+		releaseCaptureLease(input.db, input.collabId, leaseToken);
 	}
 }
