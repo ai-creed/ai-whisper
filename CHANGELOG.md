@@ -5,6 +5,61 @@ All notable changes to the `ai-whisper` package are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-06-21
+
+### Fixed
+
+- **Capture-path hang on a wedged pasteboard** — when the host slept, locked, or
+  hit an auto-logoff transition, the macOS pasteboard server (`pboard`) could
+  become unresponsive while the mount processes stayed alive, and the
+  auto-handback clipboard capture (`pbpaste` + the NSPasteboard `changeCount`
+  helper) made unbounded `execFile` calls that never returned — wedging the
+  `autoHandbackInFlight` latch and hanging the workflow indefinitely with nothing
+  delivered to the relay orchestrator. The capture subprocess calls are now
+  bounded by an `execFile` timeout (`AI_WHISPER_CLIPBOARD_IO_TIMEOUT_MS`, default
+  `8000`) plus `killSignal`; a `pbpaste` timeout surfaces as a tagged
+  `CaptureIoTimeoutError` that becomes a retryable `timed_out` capture status, and
+  a lease-acquire failure becomes `lease_unavailable`. Both — together with a new
+  relay watchdog (`AI_WHISPER_CAPTURE_WATCHDOG_MS`, default `20000`) bounding the
+  whole capture await — are routed into the existing retry ladder, releasing the
+  latch and escalating to a visible empty handback at the budget floor instead of
+  hanging, and never delivering a partial-PTY fallback on a timeout.
+
+### Changed
+
+- The host-global clipboard capture lease is reconciled with the longer capture
+  windows: `DEFAULT_LEASE_TTL_MS` raised `5000` → `25000` and kept ≥ the watchdog
+  (derived at the mount as `max(watchdog + 5000, DEFAULT_LEASE_TTL_MS)`);
+  per-capture release is now token-scoped on `acquired_at` (a late orphan release
+  can no longer clear a newer lease); and the mount-teardown release is pid-scoped
+  so it frees only this mount's own lease.
+
+## [0.6.0] - 2026-06-19
+
+> Backfilled retroactively — `0.6.0` shipped to npm without a CHANGELOG entry
+> or a `v0.6.0` git tag.
+
+### Added
+
+- **Mounted ezio `/resume` + `/rename`** — a `whisper collab mount ezio` pane can
+  now resume a prior conversation and rename the current one. A host-owned
+  `runInteractiveOverlay` renders the `/resume` picker, backed by new
+  `OverlayIO` / `OverlayRunner` types in `@ai-whisper/shared` and a `resume`
+  method on the ai-ezio engine facet.
+
+### Changed
+
+- **Windows guidance** — `whisper collab mount` / `reconnect` now fail fast with
+  explicit WSL2 setup guidance instead of an opaque error on native Windows.
+- Bundled ai-ezio `v0.2.0-beta.5`.
+- Dependency hygiene — overrode `hono` to `4.12.26` and bumped `esbuild`, `tsx`,
+  `@anthropic-ai/sdk`, and `postcss` to clear Dependabot alerts.
+
+### Fixed
+
+- Mounted ezio sessions are marked busy at input submit rather than on
+  turn-start, closing a window where a fast follow-up could interleave.
+
 ## [0.5.9] - 2026-06-14
 
 ### Added
@@ -605,6 +660,9 @@ Requires `@ai-creed/ai-ezio` ≥ 0.2.0-beta.4 (the `@ai-ezio/surface` slash seam
   (Claude + Codex) driven by structured workflows, with npm metadata
   (description, repository, homepage).
 
+[0.6.1]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.6.1
+[0.6.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.6.0
+[0.5.9]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.9
 [0.5.8]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.8
 [0.5.7]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.7
 [0.5.6]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.6
