@@ -41,3 +41,15 @@ describe("changeCount reader", () => {
 		expect(await read()).toBeNull();
 	});
 });
+
+describe("changeCount reader — timeout", () => {
+	it("returns null when the helper rejects with a CaptureIoTimeoutError", async () => {
+		const read = makeChangeCountReader({
+			platform: "darwin",
+			runHelper: async () => {
+				throw new Error("changeCount timed out");
+			},
+		});
+		expect(await read()).toBeNull();
+	});
+});

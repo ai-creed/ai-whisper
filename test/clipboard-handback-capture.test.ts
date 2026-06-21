@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { captureClipboardHandback } from "../packages/cli/src/runtime/clipboard-handback-capture.ts";
+import {
+	captureClipboardHandback,
+	CaptureIoTimeoutError,
+} from "../packages/cli/src/runtime/clipboard-handback-capture.ts";
 
 describe("clipboard handback capture", () => {
 	it("returns the changed clipboard text after triggering /copy", async () => {
@@ -86,5 +89,22 @@ describe("clipboard handback capture", () => {
 
 		expect(result).toBe("instant response");
 		expect(confirmPicker).not.toHaveBeenCalled();
+	});
+});
+
+describe("clipboard handback capture — pbpaste timeout", () => {
+	it("propagates a CaptureIoTimeoutError thrown by the clipboard read (pboard wedge)", async () => {
+		const readClipboard = vi.fn<() => Promise<string>>().mockRejectedValue(
+			new CaptureIoTimeoutError("pbpaste"),
+		);
+		await expect(
+			captureClipboardHandback({
+				triggerCopy: vi.fn(),
+				readClipboard,
+				sleep: () => Promise.resolve(),
+				attempts: 2,
+				delayMs: 0,
+			}),
+		).rejects.toBeInstanceOf(CaptureIoTimeoutError);
 	});
 });

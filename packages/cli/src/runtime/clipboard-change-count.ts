@@ -5,15 +5,24 @@ import { dirname, join } from "node:path";
 
 const HELPER_BIN_NAME = "clipboard-change-count";
 
-function execFileText(command: string, args: string[] = []): Promise<string> {
+function execFileText(
+	command: string,
+	args: string[] = [],
+	timeoutMs?: number,
+): Promise<string> {
 	return new Promise((resolve, reject) => {
-		execFile(command, args, { encoding: "utf8" }, (error, stdout) => {
-			if (error) {
-				reject(error instanceof Error ? error : new Error("helper failed"));
-				return;
-			}
-			resolve(stdout);
-		});
+		execFile(
+			command,
+			args,
+			{ encoding: "utf8", timeout: timeoutMs ?? 0, killSignal: "SIGTERM" },
+			(error, stdout) => {
+				if (error) {
+					reject(error instanceof Error ? error : new Error("helper failed"));
+					return;
+				}
+				resolve(stdout);
+			},
+		);
 	});
 }
 
@@ -27,6 +36,7 @@ function execFileText(command: string, args: string[] = []): Promise<string> {
 export function makeChangeCountReader(deps?: {
 	platform?: NodeJS.Platform;
 	runHelper?: () => Promise<string>;
+	timeoutMs?: number;
 }): () => Promise<number | null> {
 	const platform = deps?.platform ?? process.platform;
 	const runHelper =
@@ -36,7 +46,7 @@ export function makeChangeCountReader(deps?: {
 			const here = dirname(fileURLToPath(import.meta.url));
 			const bin = join(here, "..", "native", HELPER_BIN_NAME);
 			if (!existsSync(bin)) throw new Error("changeCount helper not built");
-			return execFileText(bin);
+			return execFileText(bin, [], deps?.timeoutMs);
 		});
 
 	return async (): Promise<number | null> => {
