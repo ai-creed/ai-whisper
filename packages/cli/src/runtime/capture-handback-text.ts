@@ -77,8 +77,9 @@ function contentMatches(turnText: string, clip: string): boolean {
 
 /**
  * Lease-wrapped clipboard capture. Acquires the host-global capture lease (or
- * degrades to PTY-only on timeout — never a racy read), snapshots changeCount
- * (C0), runs the /copy, re-reads changeCount (Cn).
+ * returns lease_unavailable on acquire-timeout — never a racy read; the relay
+ * retries, never a partial-PTY handback), snapshots changeCount (C0), runs the
+ * /copy, re-reads changeCount (Cn).
  *
  * The clean-accept threshold is the agent's /copy write-SIGNATURE, not a hardcoded
  * 1: one /copy advances changeCount by a fixed agent-specific amount (codex 1;
@@ -99,7 +100,7 @@ export async function captureHandbackText(
 	const recaptureBackoffMs = input.recaptureBackoffMs ?? 50;
 	const sig = input.copySignature;
 
-	// --- bounded poll-acquire; degrade to PTY-only on timeout (no racy read) ---
+	// --- bounded poll-acquire; return lease_unavailable on timeout (no racy read) ---
 	let acquired: string | null = null;
 	const deadline = Date.now() + acquireMaxWaitMs;
 	for (;;) {
@@ -114,7 +115,7 @@ export async function captureHandbackText(
 			// Defense in depth: a residual SQLITE_BUSY ("database is locked") past
 			// busy_timeout must not propagate — an uncaught throw here is swallowed
 			// upstream into an empty handback that halts the workflow. Treat it as
-			// "not acquired" and retry within the deadline, then degrade to PTY-only.
+			// "not acquired" and retry within the deadline, then return lease_unavailable.
 			acquired = null;
 		}
 		if (acquired) break;
