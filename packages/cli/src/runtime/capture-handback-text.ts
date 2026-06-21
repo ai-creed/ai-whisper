@@ -8,8 +8,13 @@ import {
 	computeOrderedJaccard,
 	computeContainment,
 } from "./mounted-turn-owned-relay.js";
+import { CaptureIoTimeoutError } from "./clipboard-handback-capture.js";
 
-export type CaptureHandbackStatus = "captured" | "degraded_pty_only";
+export type CaptureHandbackStatus =
+	| "captured"
+	| "degraded_pty_only"
+	| "timed_out"
+	| "lease_unavailable";
 
 export interface CaptureHandbackResult {
 	status: CaptureHandbackStatus;
@@ -117,7 +122,11 @@ export async function captureHandbackText(
 		await sleep(acquireBackoffMs);
 	}
 	if (!acquired) {
-		return { status: "degraded_pty_only", text: null, interferenceDetected: false };
+		// Couldn't acquire the host-global lease within the bounded poll (another
+		// mount is capturing, or a watchdog-abandoned orphan still holds it). This is
+		// a transient-busy condition: the relay routes lease_unavailable into the
+		// retry ladder, never a PTY fallback.
+		return { status: "lease_unavailable", text: null, interferenceDetected: false };
 	}
 
 	const leaseToken = acquired;
@@ -128,7 +137,15 @@ export async function captureHandbackText(
 			if (attempt > 0) await sleep(recaptureBackoffMs);
 
 			const c0 = await input.readChangeCount();
-			const clip = await input.runCapture();
+			let clip: string | null;
+			try {
+				clip = await input.runCapture();
+			} catch (err) {
+				if (err instanceof CaptureIoTimeoutError) {
+					return { status: "timed_out", text: null, interferenceDetected };
+				}
+				throw err;
+			}
 			const cn = await input.readChangeCount();
 
 			// changeCount unavailable on either read → skip the ownership check.

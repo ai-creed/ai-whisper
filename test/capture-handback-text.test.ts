@@ -6,6 +6,7 @@ import { applyMigrations } from "../packages/broker/src/storage/apply-migrations
 import { openDatabase } from "../packages/broker/src/storage/open-database.ts";
 import { acquireCaptureLease } from "../packages/broker/src/storage/clipboard-capture-lease.ts";
 import { captureHandbackText } from "../packages/cli/src/runtime/capture-handback-text.ts";
+import { CaptureIoTimeoutError } from "../packages/cli/src/runtime/clipboard-handback-capture.ts";
 
 function freshDb() {
 	const dir = mkdtempSync(join(tmpdir(), "capwrap-"));
@@ -58,7 +59,7 @@ describe("captureHandbackText — serialization", () => {
 			runCapture: async () => "should never run",
 			readChangeCount: async () => 1,
 		});
-		expect(result.status).toBe("degraded_pty_only");
+		expect(result.status).toBe("lease_unavailable");
 		expect(result.text).toBeNull();
 	});
 });
@@ -80,7 +81,7 @@ describe("captureHandbackText — degrade path", () => {
 			},
 			readChangeCount: async () => 1,
 		});
-		expect(result.status).toBe("degraded_pty_only");
+		expect(result.status).toBe("lease_unavailable");
 		expect(result.interferenceDetected).toBe(false);
 		expect(captureCalled).toBe(false); // never proceed to a racy read
 	});
@@ -336,8 +337,128 @@ describe("captureHandbackText — lock resilience (defense in depth)", () => {
 			},
 			readChangeCount: async () => 1,
 		});
-		expect(result.status).toBe("degraded_pty_only");
+		expect(result.status).toBe("lease_unavailable");
 		expect(result.text).toBeNull();
 		expect(captureCalled).toBe(false);
+	});
+});
+
+describe("captureHandbackText — pbpaste timeout", () => {
+	it("returns status timed_out (not a throw, not degraded) when runCapture times out, AND releases the lease", async () => {
+		const db = freshDb();
+		const result = await captureHandbackText({
+			db,
+			...baseDeps,
+			recaptureAttempts: 2,
+			recaptureBackoffMs: 1,
+			sleep: async () => {},
+			readChangeCount: async () => 10,
+			runCapture: async () => {
+				throw new CaptureIoTimeoutError("pbpaste");
+			},
+		});
+		expect(result.status).toBe("timed_out");
+		expect(result.text).toBeNull();
+		// Spec: the finally must release the lease (token-scoped) even on a timeout —
+		// a later acquire by a DIFFERENT collab must succeed (no lease leak). With
+		// leaseOptions.now() === 0 and ttlMs 5000, a still-held collabA lease would
+		// block this acquire, so a truthy token proves the row was cleared.
+		expect(acquireCaptureLease(db, "collabB", 200, leaseOptions)).toBeTruthy();
+	});
+
+	it("still propagates a NON-timeout throw from runCapture, AND releases the lease", async () => {
+		const db = freshDb();
+		await expect(
+			captureHandbackText({
+				db,
+				...baseDeps,
+				recaptureAttempts: 0,
+				sleep: async () => {},
+				readChangeCount: async () => 10,
+				runCapture: async () => {
+					throw new Error("some other failure");
+				},
+			}),
+		).rejects.toThrow("some other failure");
+		// Spec: even when the error propagates, the finally must have released the
+		// lease before the throw escaped — prove it with a later acquire (no leak).
+		expect(acquireCaptureLease(db, "collabB", 200, leaseOptions)).toBeTruthy();
+	});
+});
+
+describe("captureHandbackText — orphan timeline (controlled-time lease TTL boundary)", () => {
+	// The watchdog/TTL timing RELATIONSHIP, driven with an injected clock: a retry
+	// while a watchdog-abandoned orphan still holds the lease (age < TTL) must get
+	// lease_unavailable WITHOUT double-capturing; a retry past TTL must reclaim the
+	// orphan and make forward progress. This is the lease-side half of the spec's
+	// orphan-timeline requirement (the relay-side no-double-deliver/no-PTY half is in
+	// test/pty-idle-auto-handback.test.ts).
+	const ORPHAN_TTL = 25_000;
+	const ORPHAN_T0 = Date.parse("2026-06-21T00:00:00Z");
+
+	it("age BETWEEN watchdog and TTL: a retry gets lease_unavailable and does NOT double-capture", async () => {
+		const db = freshDb();
+		// Simulate the watchdog-abandoned orphan still holding the lease (never released).
+		expect(
+			acquireCaptureLease(db, "collabA", 100, {
+				isPidAlive: () => true,
+				ttlMs: ORPHAN_TTL,
+				now: () => ORPHAN_T0,
+			}),
+		).toBeTruthy();
+		let runCaptureCalls = 0;
+		const result = await captureHandbackText({
+			db,
+			collabId: "collabA",
+			pid: 100,
+			turnText: "irrelevant",
+			leaseOptions: {
+				isPidAlive: () => true,
+				ttlMs: ORPHAN_TTL,
+				now: () => ORPHAN_T0 + 22_000, // 22s: BETWEEN the 20000 watchdog and the 25000 TTL
+			},
+			acquireMaxWaitMs: 30,
+			acquireBackoffMs: 10,
+			sleep: async () => {},
+			runCapture: async () => {
+				runCaptureCalls += 1;
+				return "should never run";
+			},
+			readChangeCount: async () => 1,
+		});
+		expect(result.status).toBe("lease_unavailable");
+		expect(runCaptureCalls).toBe(0); // no concurrent /copy while the orphan holds the lease
+	});
+
+	it("age PAST TTL: a retry reclaims the orphan's lease and makes forward progress (captured)", async () => {
+		const db = freshDb();
+		expect(
+			acquireCaptureLease(db, "collabA", 100, {
+				isPidAlive: () => true,
+				ttlMs: ORPHAN_TTL,
+				now: () => ORPHAN_T0,
+			}),
+		).toBeTruthy();
+		let cc = 5;
+		const result = await captureHandbackText({
+			db,
+			collabId: "collabA",
+			pid: 100,
+			turnText: "",
+			leaseOptions: {
+				isPidAlive: () => true,
+				ttlMs: ORPHAN_TTL,
+				now: () => ORPHAN_T0 + 26_000, // 26s: past the 25000 TTL → orphan reclaimable
+			},
+			recaptureAttempts: 2,
+			recaptureBackoffMs: 1,
+			sleep: async () => {},
+			readChangeCount: async () => cc,
+			runCapture: async () => {
+				cc += 1;
+				return "A clean post-wake capture exceeding one hundred characters so the lease-held fast path trusts it as this collab's own.";
+			},
+		});
+		expect(result.status).toBe("captured");
 	});
 });
