@@ -45,6 +45,8 @@ import {
 	derivePlanPath,
 	ralphRunDir,
 	bugfixPaths,
+	deliberationRunDir,
+	deriveFindingsPath,
 	RALPH_GOAL_COMPLETE_MARKER,
 	ralphFinalLineMarker,
 	type PhaseConfig,
@@ -111,6 +113,14 @@ export function safeDerivePlanPath(specPath: string, createdAt: string): string 
 		const dotIdx = base.lastIndexOf(".");
 		const stem = dotIdx > 0 ? base.slice(0, dotIdx) : base;
 		return `${dir}${stem}.plan.md`;
+	}
+}
+
+export function safeDeriveFindingsPath(specPath: string, createdAt: string): string {
+	try {
+		return deriveFindingsPath(specPath, createdAt);
+	} catch {
+		return specPath;
 	}
 }
 
@@ -452,6 +462,13 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 			bugfixDir: bf.bugfixDir,
 			diagnosisPath: bf.diagnosisPath,
 			postmortemPath: bf.postmortemPath,
+			deliberationDir: collab
+				? deliberationRunDir(collab.workspaceRoot, input.workflow.workflowId)
+				: "",
+			findingsPath: safeDeriveFindingsPath(
+				input.workflow.specPath,
+				input.workflow.createdAt,
+			),
 		});
 	}
 
@@ -559,6 +576,13 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 			bugfixDir: bf.bugfixDir,
 			diagnosisPath: bf.diagnosisPath,
 			postmortemPath: bf.postmortemPath,
+			deliberationDir: collab
+				? deliberationRunDir(collab.workspaceRoot, input.workflow.workflowId)
+				: "",
+			findingsPath: safeDeriveFindingsPath(
+				input.workflow.specPath,
+				input.workflow.createdAt,
+			),
 		});
 		const chainId = `relay_ch_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
 		const phaseRunId = `wfp_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
@@ -930,6 +954,13 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 						bugfixDir: bf.bugfixDir,
 						diagnosisPath: bf.diagnosisPath,
 						postmortemPath: bf.postmortemPath,
+						deliberationDir: collab
+							? deliberationRunDir(collab.workspaceRoot, workflow.workflowId)
+							: "",
+						findingsPath: safeDeriveFindingsPath(
+							workflow.specPath,
+							workflow.createdAt,
+						),
 					});
 					fixRequestText = `${fixTmpl}\n\nReviewer findings:\n${findingsText}`;
 				} else {
