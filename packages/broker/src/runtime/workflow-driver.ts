@@ -7,9 +7,12 @@ import {
 	renderTemplate,
 	ralphRunDir,
 	bugfixPaths,
+	deliberationRunDir,
+	deriveFindingsPath,
 } from "./workflow-registry.js";
 import { ensureRalphWorkspace } from "./ralph-setup.js";
 import { ensureBugfixWorkspace } from "./bugfix-setup.js";
+import { ensureDeliberationWorkspace } from "./deliberation-setup.js";
 
 type WorkflowStatus = "running" | "paused" | "halted" | "done" | "canceled";
 type WorkflowRecordLike = {
@@ -186,6 +189,22 @@ export function createWorkflowDriver(deps: WorkflowDriverDeps): WorkflowDriver {
 		}
 		const bugfix = bugfixPaths(collab.workspaceRoot, workflowId);
 
+		if (workflow.workflowType === "deliberation") {
+			try {
+				ensureDeliberationWorkspace(collab.workspaceRoot, workflowId);
+			} catch (err) {
+				broker.control.haltWorkflow({ workflowId, reason: `deliberation setup failed: ${String(err)}`, now });
+				return;
+			}
+		}
+		const deliberationDir = deliberationRunDir(collab.workspaceRoot, workflowId);
+		let findingsPath = workflow.specPath; // safe fallback
+		try {
+			findingsPath = deriveFindingsPath(workflow.specPath, workflow.createdAt);
+		} catch {
+			// seed/date doesn't derive a findings path; fall back to specPath
+		}
+
 		// Render kickoff text
 		const ctx = workflow.workflowContext as { commitRange?: string };
 		let planPath = workflow.specPath; // safe fallback
@@ -203,6 +222,8 @@ export function createWorkflowDriver(deps: WorkflowDriverDeps): WorkflowDriver {
 			bugfixDir: bugfix.bugfixDir,
 			diagnosisPath: bugfix.diagnosisPath,
 			postmortemPath: bugfix.postmortemPath,
+			deliberationDir,
+			findingsPath,
 		});
 
 		try {

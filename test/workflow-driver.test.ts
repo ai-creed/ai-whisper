@@ -131,6 +131,34 @@ describe("WorkflowDriver", () => {
 		driver.stop();
 	});
 
+	it("deliberation: renders the objectives kickoff with the run-dir resolved and no placeholder leaks", async () => {
+		const broker = boot();
+		const driver = createWorkflowDriver({
+			broker,
+			headReader: { readHead: async () => "abc1234" },
+			sweepIntervalMs: 0,
+		});
+		driver.start();
+		const { workflowId } = broker.control.createWorkflow({
+			collabId: "collab_c1",
+			workflowType: "deliberation",
+			specPath: "docs/ideas/14all-samantha.md",
+			roleBindings: { implementer: "claude", reviewer: "codex" },
+			now: "2026-04-21T00:00:00Z",
+		});
+		await new Promise((r) => setImmediate(r));
+		const row = broker.db
+			.prepare(
+				"SELECT request_text FROM relay_handoff WHERE workflow_id = ? ORDER BY created_at ASC LIMIT 1",
+			)
+			.get(workflowId) as { request_text: string } | undefined;
+		const firstKickoffText = row?.request_text ?? "";
+		expect(firstKickoffText).toContain(".ai-whisper/deliberation/");
+		expect(firstKickoffText).not.toContain("{deliberationDir}");
+		expect(firstKickoffText).not.toContain("{findingsPath}");
+		driver.stop();
+	});
+
 	it("unbound target agent → workflow halted with descriptive reason", async () => {
 		const broker = createBrokerRuntime({
 			sqlitePath: ":memory:",

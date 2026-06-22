@@ -17,7 +17,7 @@ describe("ai-whisper-bugfix skill", () => {
 	});
 
 	it("documents the operator pause-control flow with the Codex Ctrl+C gotcha", () => {
-		for (const name of ["ai-whisper-sdd", "ai-whisper-ralph", "ai-whisper-bugfix"]) {
+		for (const name of ["ai-whisper-sdd", "ai-whisper-ralph", "ai-whisper-bugfix", "ai-whisper-deliberation"]) {
 			const md = readFileSync(`packages/cli/skills/${name}/SKILL.md`, "utf8");
 			expect(md, `${name} missing pause section`).toContain("whisper workflow pause");
 			expect(md, `${name} missing resume --message`).toContain("whisper workflow resume");

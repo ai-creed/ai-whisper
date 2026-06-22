@@ -15,7 +15,7 @@ export type RelayEvaluatorDiagnosticRecord = {
 	workflowId: string | null;
 	phaseRunId: string | null;
 	evaluatorBranch: "legacy" | "review" | "delivered" | "execution";
-	evaluatorPromptKey: "review-loop" | "ralph-loop" | "execution-gate" | null;
+	evaluatorPromptKey: "review-loop" | "ralph-loop" | "execution-gate" | "deliberation-loop" | null;
 	handoffStep: "review" | "fix" | "implement" | "execute" | null;
 	attemptKind: "primary" | "fallback";
 	callGroupId: string;

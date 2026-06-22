@@ -42,7 +42,7 @@ export interface PhaseConfig {
 	initialHandoffStep: HandoffStep;
 	kickoffTemplate: string;
 	stepTemplates: Partial<Record<HandoffStep, string>>;
-	evaluatorPromptKey: "review-loop" | "execution-gate" | "ralph-loop";
+	evaluatorPromptKey: "review-loop" | "execution-gate" | "ralph-loop" | "deliberation-loop";
 	artifactOut: { kind: ArtifactKind; pathTemplate?: string };
 	repeatUntilComplete?: boolean;
 	maxIterations?: number;
@@ -149,6 +149,46 @@ Non-blocking risks:
 - <risk that does NOT block this gate, or "None.">
 --- end protocol ---`;
 
+export const WORKFLOW_DELIBERATION_PROTOCOL = `--- ai-whisper deliberation review protocol ---
+You are the Challenger at an ai-whisper Deliberation layer gate. No human is in the loop. The Explorer has proposed this layer's output; your job is to produce GENUINE adversarial pressure, not to rubber-stamp. The gate stays shut until the layer's output survives real attack — OR the only remaining material questions are preference-dependent forks, which you RECORD rather than resolve.
+
+Decision-materiality is the bar. Sort every finding four ways:
+- BLOCKING (drives not-approved): it would change a reasonable decision-maker's choice.
+- OPEN QUESTION (non-blocking): material but depends on the human's private preference — surface it, do not resolve it, do not block on it.
+- NON-BLOCKING RISK (non-blocking): a real but non-decision-changing risk — surface it under the Non-blocking risks section (always last), never gag it.
+- SUPPRESS: pure noise (style/taste) only.
+
+Required procedure:
+1. Independent derivation (skin in the game): on this layer's FIRST review, derive your OWN candidate (your own objectives / approach set / tradeoff map) BEFORE reading the Explorer's, then diff. Report the material gap. On fix-rounds, re-audit the revision.
+2. Forbid recall-based verification: you may NOT clear a material claim with "that matches what I know" — you and the Explorer share priors and therefore blind spots. Verify every material claim against an EXTERNAL source (re-run the grep, open the cited file, fetch the source, check the actual API) and tag it "verified against <source>". A material claim you cannot externally verify becomes an Open Question marked "could not verify — you should".
+3. Verify by materiality and surface, not by felt uncertainty: verify what is load-bearing and what is a specific or suspiciously-convenient fact (version numbers, API signatures, file paths, citations, benchmarks), regardless of how confident it sounds.
+4. Steelman, then attack, with coverage: state the strongest version of the Explorer's position, then surface at least one unexamined assumption, one missing alternative, and one material risk — or explicitly certify that each lens was run and why none is decision-material. "Looks good" is not a legal handback.
+5. Generative mandate: beyond auditing the Explorer, independently GENERATE angles and alternatives it did not raise.
+6. Distrust your own agreement: treat your own "yeah, that's right" as a red flag to verify, not a green light.
+
+Per-layer attack weighting: objectives -> framing + assumption (is the QUESTION itself right?); approaches -> alternative + evidence (is the set complete, is each grounded and feasible?); tradeoffs -> feasibility + second-order (honest, or cherry-picked / buried costs?); synthesis -> faithfulness (does the findings doc match the deliberation; are the Open Questions the right ones?).
+
+You emit approved / not-approved + findings ONLY. You do NOT label the workflow outcome (advance / loop / escalate) — whether the gate result causes the run to advance, loop, or escalate is the evaluator's job. Approve only when the layer survived real attack with the work shown. If a required input is missing and the Explorer cannot supply it, do NOT approve — name the missing input and state you cannot proceed (so the gate escalates). If exploring this layer reveals that an EARLIER ratified layer is wrong, state you cannot proceed and why (the run escalates; it does not silently re-open the earlier layer).
+
+Never reply with only a bare verdict; your full reply must be well over 100 characters.
+
+Output format — the verdict line MUST come before the Non-blocking risks section, which is always LAST:
+Deliberation review matrix:
+| Claim / candidate | My independent derivation | Material gap | Verified against | Result |
+| ... |
+
+Findings:           (omit this block entirely if none)
+- <blocking finding tied to a decision-material gap, with external-verification evidence>
+
+Open Questions:     (omit if none)
+- <material but preference-dependent fork, or "could not verify X — you should">
+
+<verdict line: "Approved. <one or two sentences>" OR, when blocked/cannot-proceed, state you cannot proceed and why>
+
+Non-blocking risks:
+- <risk that does NOT block this gate, or "None.">
+--- end protocol ---`;
+
 // Code-review skill guidance prepended to code-bearing review handoffs only.
 // It tells the reviewer to use the ai-whisper-code-review skill for HOW to
 // inspect code, while WORKFLOW_REVIEW_PROTOCOL (which follows it) remains
@@ -165,6 +205,14 @@ export const CODE_REVIEW_SKILL_GUIDANCE =
 // mirroring the SDD_CODE_REVIEW composition order.
 export const PLAN_EXECUTION_SKILL_GUIDANCE =
 	"Use the ai-whisper-plan-execution skill to structure HOW you execute this plan: subagent fan-out with model allocation where your harness supports it, disciplined inline execution otherwise. The handback contract above remains authoritative — settle all delegated work before handing back, and state which execution mode you used.";
+
+// Deliberation craft-skill guidance, prepended to the Explorer's per-layer
+// kickoff/fix handoffs and the Challenger's review handoff. It names the
+// how-to skill (research contract + attack taxonomy); the inline
+// WORKFLOW_DELIBERATION_PROTOCOL remains the single source of truth for the
+// gate contract, so the skill must never restate it (spec §12.5).
+export const DELIBERATION_CRAFT_SKILL_GUIDANCE =
+	"Use the ai-whisper-deliberation-craft skill for HOW to do the research and the attack — the Explorer's research contract and the Challenger's attack taxonomy. The deliberation review protocol below remains authoritative for the gate contract and output format; the craft skill is how-to only and does not restate it.\n\n";
 
 const SDD_SPEC_REVIEW =
 	"Review the spec at {specPath}. This is an autonomous workflow with no human in the loop.\n\n" +
@@ -423,6 +471,151 @@ export const COMPLEX_BUG_FIXING: WorkflowDefinition = {
 	],
 };
 
+const DELIB_REVIEW =
+	"You are the Challenger reviewing the Explorer's output for the current Deliberation layer, grounded in the seed at {specPath}. The Explorer's working notes are under {deliberationDir}. This is an autonomous workflow with no human in the loop.\n\n" +
+	DELIBERATION_CRAFT_SKILL_GUIDANCE +
+	WORKFLOW_DELIBERATION_PROTOCOL;
+
+// Synthesis is the terminal layer and its deliverable is the COMMITTED findings
+// document at {findingsPath} (NOT the gitignored {deliberationDir} notes the other
+// layers produce). Its review must point the Challenger at that committed doc, or
+// the final gate could ratify without inspecting the actual deliverable.
+const DELIB_SYNTHESIS_REVIEW =
+	"You are the Challenger reviewing the Explorer's SYNTHESIS layer — the committed findings document at {findingsPath}. Read {findingsPath}: it is the deliverable under review. It must faithfully collapse the ratified objectives/approaches/tradeoffs (the working notes under {deliberationDir}) into the findings skeleton — verify that faithfulness and that the Open Questions are the right ones (no material decision silently resolved, none invented). Grounded in the seed at {specPath}. This is an autonomous workflow with no human in the loop.\n\n" +
+	DELIBERATION_CRAFT_SKILL_GUIDANCE +
+	WORKFLOW_DELIBERATION_PROTOCOL;
+
+const DELIB_FIX =
+	"Apply the Challenger's findings to your working notes under {deliberationDir} now, re-grounding against the seed at {specPath}. This is an autonomous workflow — no human will respond. Do the research/edits yourself; never ask for confirmation, permission, or clarification. Append one JSON line to {deliberationDir}/metrics.jsonl with the two signals spec §12.6 requires — \"materialFindings\" (the count of decision-material findings you are addressing this round) and \"revisionMagnitude\" (how much your output changed: \"none\"/\"minor\"/\"moderate\"/\"major\") — plus \"layer\" and \"round\". End your handback with a 1-2 sentence summary of what you changed; your reply must be at least two sentences, well over 100 characters — never hand back only a single word.\n\n" +
+	DELIBERATION_CRAFT_SKILL_GUIDANCE;
+
+const DELIB_OBJECTIVES = `You are the Explorer in an autonomous Deliberation workflow — no human is in the loop; never ask for confirmation, permission, or clarification, and do the work yourself.
+
+LAYER 1 of 4: OBJECTIVES. Read the seed at {specPath}. Research the REAL situation it points at — current state, the actual pain, the constraints. Ground every claim in the project (code, tests, git history, docs) where the seed is project-anchored; use web research only where the question reaches beyond the project. Do NOT restate the seed — DERIVE the objectives and success criteria from evidence.
+
+Write your objectives working notes to {deliberationDir}/objectives.md: each derived objective with why-it-matters and its grounding source; the interpretation you took (and any you discarded) when the seed was vague; and an explicit list of known-unknowns. Append one JSON line to {deliberationDir}/metrics.jsonl with the two signals spec §12.6 requires — "materialFindings" (0 on this initial proposal) and "revisionMagnitude" ("initial" on the first proposal) — plus "layer" and "round". Example: {"layer":"objectives","round":1,"materialFindings":0,"revisionMagnitude":"initial"}.
+
+${DELIBERATION_CRAFT_SKILL_GUIDANCE}End your handback with a 1-2 sentence summary; your reply must be at least two sentences, well over 100 characters — never hand back only a single word.`;
+
+const DELIB_APPROACHES = `You are the Explorer in an autonomous Deliberation workflow — no human is in the loop; do the work yourself.
+
+LAYER 2 of 4: APPROACHES. The objectives in {deliberationDir}/objectives.md are ratified — treat them as ground truth. Research and propose AT LEAST THREE genuinely distinct approaches to reach them. Survey the space first (prior art + in-repo idioms + candidate techniques) before evaluating any candidate; ground each approach in a real precedent. You MAY NOT pick a winner in this layer — that is the guard against premature convergence.
+
+Write your approaches working notes to {deliberationDir}/approaches.md: one section per approach (gist, grounding/precedent, why it is distinct), plus the known-unknowns each carries. Append one JSON line to {deliberationDir}/metrics.jsonl with "materialFindings" and "revisionMagnitude" (plus "layer" and "round"), the two per-round signals spec §12.6 requires.
+
+${DELIBERATION_CRAFT_SKILL_GUIDANCE}End your handback with a 1-2 sentence summary; your reply must be at least two sentences, well over 100 characters — never hand back only a single word.`;
+
+const DELIB_TRADEOFFS = `You are the Explorer in an autonomous Deliberation workflow — no human is in the loop; do the work yourself.
+
+LAYER 3 of 4: TRADEOFFS & DIFFICULTY. The approaches in {deliberationDir}/approaches.md are ratified. For EACH surviving approach, map the tradeoffs, difficulty, blast radius, and material risks — stress-tested against reality (feasibility checks and blast radius in the ACTUAL codebase, named risks, not hand-waving). Do not bury costs or cherry-pick.
+
+Write your tradeoffs working notes to {deliberationDir}/tradeoffs.md: a per-approach tradeoff/difficulty/risk breakdown, with the grounding for each claim. Append one JSON line to {deliberationDir}/metrics.jsonl with "materialFindings" and "revisionMagnitude" (plus "layer" and "round"), the two per-round signals spec §12.6 requires.
+
+${DELIBERATION_CRAFT_SKILL_GUIDANCE}End your handback with a 1-2 sentence summary; your reply must be at least two sentences, well over 100 characters — never hand back only a single word.`;
+
+const DELIB_SYNTHESIS_FIX =
+	"Apply the Challenger's findings by RE-WRITING the corrected findings document to {findingsPath} (keep the §9 skeleton). Then RE-COMMIT it: `git add {findingsPath} && git commit` (do NOT commit {deliberationDir}; it is gitignored). Re-ground against the seed at {specPath} to confirm the revision is consistent. Append one JSON line to {deliberationDir}/metrics.jsonl with the two signals spec §12.6 requires — \"materialFindings\" (the count of decision-material findings you are addressing this round) and \"revisionMagnitude\" (how much your output changed: \"none\"/\"minor\"/\"moderate\"/\"major\") — plus \"layer\" and \"round\". End your handback with a 1-2 sentence summary of what you changed; your reply must be at least two sentences, well over 100 characters — never hand back only a single word.\n\n" +
+	DELIBERATION_CRAFT_SKILL_GUIDANCE;
+
+const DELIB_SYNTHESIS = `You are the Explorer in an autonomous Deliberation workflow — no human is in the loop; do the work yourself.
+
+LAYER 4 of 4: SYNTHESIS. The objectives, approaches, and tradeoffs working notes under {deliberationDir} are all ratified. Collapse them into a single findings document optimized for fast human review, and WRITE it to {findingsPath} (create the directory if needed). Use exactly this skeleton:
+
+# Deliberation: <topic>
+seed: {specPath} · <date> · <implementer>/<challenger>
+
+## TL;DR
+- Recommended direction: <one line> (PROPOSAL)
+- Decisions that need you: <the 1-2 top Open Questions>
+
+## Objectives (ratified)
+- <objective> — why it matters [source]
+- interpretation taken: ...; discarded: ...   (only when the seed was vague)
+
+## Approaches considered
+| Approach | Gist | Grounding/precedent | Key tradeoff | Difficulty |
+(one short paragraph per surviving approach only)
+
+## Recommendation (PROPOSAL — overridable)
+<which, why over the others, and what the Challenger attacked + how it held>
+
+## Risks
+- <material risk to the recommended direction>
+
+## Open Questions (for you)
+- <decision> — what is at stake / why it was not settled
+- <"could not verify X — you should">
+
+## Grounding & confidence (footer)
+verified against source: ... · assumed (unverified): ... · couldn't verify: ...
+
+The recommendation is a clearly-marked PROPOSAL the human may override — do NOT present it as settled. Then COMMIT the findings doc: \`git add {findingsPath} && git commit\` (do NOT commit {deliberationDir}; it is gitignored). Append one JSON line to {deliberationDir}/metrics.jsonl with "materialFindings" and "revisionMagnitude" (plus "layer" and "round"), the two per-round signals spec §12.6 requires.
+
+${DELIBERATION_CRAFT_SKILL_GUIDANCE}End your handback with a 1-2 sentence summary; your reply must be at least two sentences, well over 100 characters — never hand back only a single word.`;
+
+export const DELIBERATION: WorkflowDefinition = {
+	type: "deliberation",
+	displayName: "Deliberation",
+	description:
+		"Paired-agent pre-spec exploration: the Explorer proposes and the Challenger adversarially stress-tests across Objectives -> Approaches -> Tradeoffs -> Synthesis, producing a findings doc for human review",
+	defaultImplementer: "claude" as const,
+	defaultReviewer: "codex" as const,
+	phases: [
+		{
+			name: "objectives",
+			implementerRole: "implementer",
+			reviewerRole: "reviewer",
+			maxRounds: 6,
+			initialHandoffStep: "implement",
+			kickoffTemplate: DELIB_OBJECTIVES,
+			stepTemplates: { implement: DELIB_OBJECTIVES, review: DELIB_REVIEW, fix: DELIB_FIX },
+			reviewMode: "phase-review",
+			evaluatorPromptKey: "deliberation-loop",
+			artifactOut: { kind: "spec", pathTemplate: "{deliberationDir}/objectives.md" },
+			renderFixTemplateOnFindings: true,
+		},
+		{
+			name: "approaches",
+			implementerRole: "implementer",
+			reviewerRole: "reviewer",
+			maxRounds: 10,
+			initialHandoffStep: "implement",
+			kickoffTemplate: DELIB_APPROACHES,
+			stepTemplates: { implement: DELIB_APPROACHES, review: DELIB_REVIEW, fix: DELIB_FIX },
+			reviewMode: "phase-review",
+			evaluatorPromptKey: "deliberation-loop",
+			artifactOut: { kind: "spec", pathTemplate: "{deliberationDir}/approaches.md" },
+			renderFixTemplateOnFindings: true,
+		},
+		{
+			name: "tradeoffs",
+			implementerRole: "implementer",
+			reviewerRole: "reviewer",
+			maxRounds: 10,
+			initialHandoffStep: "implement",
+			kickoffTemplate: DELIB_TRADEOFFS,
+			stepTemplates: { implement: DELIB_TRADEOFFS, review: DELIB_REVIEW, fix: DELIB_FIX },
+			reviewMode: "phase-review",
+			evaluatorPromptKey: "deliberation-loop",
+			artifactOut: { kind: "spec", pathTemplate: "{deliberationDir}/tradeoffs.md" },
+			renderFixTemplateOnFindings: true,
+		},
+		{
+			name: "synthesis",
+			implementerRole: "implementer",
+			reviewerRole: "reviewer",
+			maxRounds: 5,
+			initialHandoffStep: "implement",
+			kickoffTemplate: DELIB_SYNTHESIS,
+			stepTemplates: { implement: DELIB_SYNTHESIS, review: DELIB_SYNTHESIS_REVIEW, fix: DELIB_SYNTHESIS_FIX },
+			reviewMode: "phase-review",
+			evaluatorPromptKey: "deliberation-loop",
+			artifactOut: { kind: "spec", pathTemplate: "{findingsPath}" },
+			renderFixTemplateOnFindings: true,
+		},
+	],
+};
+
 /**
  * Append the operator-control fragment to every phase's kickoff template so the
  * mid-workflow "pause the workflow" guidance rides the handoff prompt the agent
@@ -444,6 +637,7 @@ const REGISTRY: Record<string, WorkflowDefinition> = {
 	[SPEC_DRIVEN_DEVELOPMENT.type]: withOperatorControl(SPEC_DRIVEN_DEVELOPMENT),
 	[RALPH_LOOP.type]: withOperatorControl(RALPH_LOOP),
 	[COMPLEX_BUG_FIXING.type]: withOperatorControl(COMPLEX_BUG_FIXING),
+	[DELIBERATION.type]: withOperatorControl(DELIBERATION),
 };
 
 export function ralphRunDir(workspaceRoot: string, workflowId: string): string {
@@ -464,6 +658,39 @@ export function bugfixPaths(
 		diagnosisPath: join(bugfixDir, "diagnosis.md"),
 		postmortemPath: join(bugfixDir, "postmortem.md"),
 	};
+}
+
+export function deliberationRunDir(
+	workspaceRoot: string,
+	workflowId: string,
+): string {
+	return join(workspaceRoot, ".ai-whisper", "deliberation", workflowId);
+}
+
+/**
+ * Derive the committed findings-doc path for a deliberation run.
+ *
+ * Unlike `derivePlanPath`, the seed is free-form (it need not end with
+ * `-design.md`), so this is lenient about the filename and only requires a
+ * `YYYY-MM-DD`-leading `dateIso`. The seed basename is slugified; a seed with
+ * no usable characters falls back to the slug "deliberation".
+ */
+export function deriveFindingsPath(specPath: string, dateIso: string): string {
+	if (!/^\d{4}-\d{2}-\d{2}/.test(dateIso)) {
+		throw new Error(
+			`deriveFindingsPath: dateIso must start with YYYY-MM-DD, got "${dateIso}"`,
+		);
+	}
+	const basename = specPath.split("/").pop() ?? "";
+	const withoutExt = basename.replace(/\.[^.]+$/, "");
+	const slug =
+		withoutExt
+			.replace(/^\d{4}-\d{2}-\d{2}-/, "")
+			.replace(/[^a-zA-Z0-9]+/g, "-")
+			.replace(/^-+|-+$/g, "")
+			.toLowerCase() || "deliberation";
+	const date = dateIso.slice(0, 10);
+	return `docs/superpowers/deliberations/${date}-${slug}.md`;
 }
 
 export function getWorkflowDefinition(
