@@ -466,6 +466,39 @@ export function bugfixPaths(
 	};
 }
 
+export function deliberationRunDir(
+	workspaceRoot: string,
+	workflowId: string,
+): string {
+	return join(workspaceRoot, ".ai-whisper", "deliberation", workflowId);
+}
+
+/**
+ * Derive the committed findings-doc path for a deliberation run.
+ *
+ * Unlike `derivePlanPath`, the seed is free-form (it need not end with
+ * `-design.md`), so this is lenient about the filename and only requires a
+ * `YYYY-MM-DD`-leading `dateIso`. The seed basename is slugified; a seed with
+ * no usable characters falls back to the slug "deliberation".
+ */
+export function deriveFindingsPath(specPath: string, dateIso: string): string {
+	if (!/^\d{4}-\d{2}-\d{2}/.test(dateIso)) {
+		throw new Error(
+			`deriveFindingsPath: dateIso must start with YYYY-MM-DD, got "${dateIso}"`,
+		);
+	}
+	const basename = specPath.split("/").pop() ?? "";
+	const withoutExt = basename.replace(/\.[^.]+$/, "");
+	const slug =
+		withoutExt
+			.replace(/^\d{4}-\d{2}-\d{2}-/, "")
+			.replace(/[^a-zA-Z0-9]+/g, "-")
+			.replace(/^-+|-+$/g, "")
+			.toLowerCase() || "deliberation";
+	const date = dateIso.slice(0, 10);
+	return `docs/superpowers/deliberations/${date}-${slug}.md`;
+}
+
 export function getWorkflowDefinition(
 	type: string,
 ): WorkflowDefinition | undefined {
