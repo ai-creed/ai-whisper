@@ -159,4 +159,19 @@ describe("workflow-control (read + create)", () => {
 		});
 		expect(broker.control.getWorkflowPhaseRuns(workflowId)).toEqual([]);
 	});
+
+	it("createWorkflow accepts the deliberation type", () => {
+		const broker = setupCollab();
+		const { workflowId } = broker.control.createWorkflow({
+			collabId: TEST_COLLAB_ID,
+			workflowType: "deliberation",
+			specPath: "docs/ideas/x.md",
+			roleBindings: { implementer: "claude", reviewer: "codex" },
+			now: "2026-04-21T00:00:00Z",
+		});
+		expect(workflowId).toMatch(/^wf_/);
+		const wf = broker.control.getWorkflow(workflowId);
+		expect(wf?.status).toBe("running");
+		expect(wf?.currentPhaseIndex).toBe(0);
+	});
 });
