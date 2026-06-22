@@ -2,6 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import { ZodError } from "zod";
 import {
 	createRelayOrchestratorEvaluator,
+	DELIBERATION_REVIEW_SYSTEM_PROMPT,
+	REVIEW_SYSTEM_PROMPT,
+	selectBranch,
 	type AnthropicClientLike,
 	type EvaluatorCallEvent,
 	type EvaluatorInput,
@@ -725,25 +728,59 @@ describe("review classification strips the risks block before the provider call"
 });
 
 // ---------------------------------------------------------------------------
-// deliberation-loop key — rides reviewBranch until Task 5 adds its own branch
+// deliberation-loop key
 // ---------------------------------------------------------------------------
 
 describe("deliberation-loop key", () => {
-	it("accepts a deliberation-loop review payload and parses approve", async () => {
+	// Wiring: a deliberation-loop review routes to the deliberation branch and its
+	// verdict parses. The mock supplies the verdict, so this guards routing + schema,
+	// NOT the model's runtime judgement (that is the v1 experiment's job, spec §13).
+	it("routes a deliberation-loop review to the deliberation branch and parses its verdict", async () => {
 		const client = makeOllamaClient(
-			JSON.stringify({ verdict: "approve", confidence: 0.9, reason: "layer ratified" }),
+			JSON.stringify({ verdict: "findings", confidence: 0.8, reason: "hollow approval — no adversarial work shown" }),
 		);
 		const evaluate = createRelayOrchestratorEvaluator({ primary: { provider: "ollama", client } });
 		const result = await evaluate({
 			payload: makeWorkflowPayload({
 				evaluatorPromptKey: "deliberation-loop",
 				handoffStep: "review",
-				workflowId: "wf_d",
-				phaseRunId: "pr_1",
-				phaseName: "objectives",
+				workflowId: "wf_d", phaseRunId: "pr_1", phaseName: "objectives",
+				handbackText: "Approved. Looks good to me.",
 			}),
 			context: makeContext(),
 		});
-		expect(result.verdict).toBe("approve");
+		expect(result.verdict).toBe("findings");
+	});
+
+	it("selects the deliberation prompt (not the generic review prompt) for review steps", () => {
+		const branch = selectBranch(
+			makeWorkflowPayload({ evaluatorPromptKey: "deliberation-loop", handoffStep: "review",
+				workflowId: "wf_d", phaseRunId: "pr_1", phaseName: "objectives" }),
+		);
+		expect(branch.systemPrompt).toBe(DELIBERATION_REVIEW_SYSTEM_PROMPT);
+		expect(branch.systemPrompt).not.toBe(REVIEW_SYSTEM_PROMPT);
+	});
+
+	// The reviewer-flagged guard: the deliberation prompt must INSTRUCT the full §7
+	// hollow-approval audit, not merely carry the catchphrase. An implementation that
+	// kept the word "HOLLOW" but dropped the audit dimensions must fail here.
+	it("the deliberation prompt audits the §7 rigor artifacts before accepting an approval", () => {
+		const p = DELIBERATION_REVIEW_SYSTEM_PROMPT;
+		expect(p).toMatch(/derived its own candidate independently/i); // independent derivation
+		expect(p).toMatch(/ran the named lenses/i);                    // lens coverage
+		expect(p).toMatch(/verified against/i);                        // external verification
+		// the audit must DRIVE the verdict: a bare approval with none of these -> findings
+		expect(p).toMatch(/NONE of the required (adversarial )?artifacts/i);
+		expect(p).toMatch(/classify it "findings"/i);
+	});
+
+	it("routes deliberation implement/fix steps to the delivered branch (Explorer propose/refine)", () => {
+		for (const step of ["implement", "fix"] as const) {
+			const branch = selectBranch(
+				makeWorkflowPayload({ evaluatorPromptKey: "deliberation-loop", handoffStep: step,
+					workflowId: "wf_d", phaseRunId: "pr_1", phaseName: "objectives" }),
+			);
+			expect(branch.systemPrompt).not.toBe(DELIBERATION_REVIEW_SYSTEM_PROMPT);
+		}
 	});
 });
