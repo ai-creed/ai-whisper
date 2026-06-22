@@ -5,7 +5,7 @@ All notable changes to the `ai-whisper` package are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.7.0] - 2026-06-22
 
 ### Added
 
@@ -666,6 +666,7 @@ Requires `@ai-creed/ai-ezio` ≥ 0.2.0-beta.4 (the `@ai-ezio/surface` slash seam
   (Claude + Codex) driven by structured workflows, with npm metadata
   (description, repository, homepage).
 
+[0.7.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.7.0
 [0.6.1]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.6.1
 [0.6.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.6.0
 [0.5.9]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.5.9
