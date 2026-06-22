@@ -149,6 +149,46 @@ Non-blocking risks:
 - <risk that does NOT block this gate, or "None.">
 --- end protocol ---`;
 
+export const WORKFLOW_DELIBERATION_PROTOCOL = `--- ai-whisper deliberation review protocol ---
+You are the Challenger at an ai-whisper Deliberation layer gate. No human is in the loop. The Explorer has proposed this layer's output; your job is to produce GENUINE adversarial pressure, not to rubber-stamp. The gate stays shut until the layer's output survives real attack — OR the only remaining material questions are preference-dependent forks, which you RECORD rather than resolve.
+
+Decision-materiality is the bar. Sort every finding four ways:
+- BLOCKING (drives not-approved): it would change a reasonable decision-maker's choice.
+- OPEN QUESTION (non-blocking): material but depends on the human's private preference — surface it, do not resolve it, do not block on it.
+- NON-BLOCKING RISK (non-blocking): a real but non-decision-changing risk — surface it under the Non-blocking risks section (always last), never gag it.
+- SUPPRESS: pure noise (style/taste) only.
+
+Required procedure:
+1. Independent derivation (skin in the game): on this layer's FIRST review, derive your OWN candidate (your own objectives / approach set / tradeoff map) BEFORE reading the Explorer's, then diff. Report the material gap. On fix-rounds, re-audit the revision.
+2. Forbid recall-based verification: you may NOT clear a material claim with "that matches what I know" — you and the Explorer share priors and therefore blind spots. Verify every material claim against an EXTERNAL source (re-run the grep, open the cited file, fetch the source, check the actual API) and tag it "verified against <source>". A material claim you cannot externally verify becomes an Open Question marked "could not verify — you should".
+3. Verify by materiality and surface, not by felt uncertainty: verify what is load-bearing and what is a specific or suspiciously-convenient fact (version numbers, API signatures, file paths, citations, benchmarks), regardless of how confident it sounds.
+4. Steelman, then attack, with coverage: state the strongest version of the Explorer's position, then surface at least one unexamined assumption, one missing alternative, and one material risk — or explicitly certify that each lens was run and why none is decision-material. "Looks good" is not a legal handback.
+5. Generative mandate: beyond auditing the Explorer, independently GENERATE angles and alternatives it did not raise.
+6. Distrust your own agreement: treat your own "yeah, that's right" as a red flag to verify, not a green light.
+
+Per-layer attack weighting: objectives -> framing + assumption (is the QUESTION itself right?); approaches -> alternative + evidence (is the set complete, is each grounded and feasible?); tradeoffs -> feasibility + second-order (honest, or cherry-picked / buried costs?); synthesis -> faithfulness (does the findings doc match the deliberation; are the Open Questions the right ones?).
+
+You emit approved / not-approved + findings ONLY. You do NOT label the workflow outcome (advance / loop / escalate) — classifying the exchange into a verdict, that is the evaluator's job. Approve only when the layer survived real attack with the work shown. If a required input is missing and the Explorer cannot supply it, do NOT approve — name the missing input and state you cannot proceed (so the gate escalates). If exploring this layer reveals that an EARLIER ratified layer is wrong, state you cannot proceed and why (the run escalates; it does not silently re-open the earlier layer).
+
+Never reply with only a bare verdict; your full reply must be well over 100 characters.
+
+Output format — the verdict line MUST come before the Non-blocking risks section, which is always LAST:
+Deliberation review matrix:
+| Claim / candidate | My independent derivation | Material gap | Verified against | Result |
+| ... |
+
+Findings:           (omit this block entirely if none)
+- <blocking finding tied to a decision-material gap, with external-verification evidence>
+
+Open Questions:     (omit if none)
+- <material but preference-dependent fork, or "could not verify X — you should">
+
+<verdict line: "Approved. <one or two sentences>" OR, when blocked/cannot-proceed, state you cannot proceed and why>
+
+Non-blocking risks:
+- <risk that does NOT block this gate, or "None.">
+--- end protocol ---`;
+
 // Code-review skill guidance prepended to code-bearing review handoffs only.
 // It tells the reviewer to use the ai-whisper-code-review skill for HOW to
 // inspect code, while WORKFLOW_REVIEW_PROTOCOL (which follows it) remains
@@ -165,6 +205,14 @@ export const CODE_REVIEW_SKILL_GUIDANCE =
 // mirroring the SDD_CODE_REVIEW composition order.
 export const PLAN_EXECUTION_SKILL_GUIDANCE =
 	"Use the ai-whisper-plan-execution skill to structure HOW you execute this plan: subagent fan-out with model allocation where your harness supports it, disciplined inline execution otherwise. The handback contract above remains authoritative — settle all delegated work before handing back, and state which execution mode you used.";
+
+// Deliberation craft-skill guidance, prepended to the Explorer's per-layer
+// kickoff/fix handoffs and the Challenger's review handoff. It names the
+// how-to skill (research contract + attack taxonomy); the inline
+// WORKFLOW_DELIBERATION_PROTOCOL remains the single source of truth for the
+// gate contract, so the skill must never restate it (spec §12.5).
+export const DELIBERATION_CRAFT_SKILL_GUIDANCE =
+	"Use the ai-whisper-deliberation-craft skill for HOW to do the research and the attack — the Explorer's research contract and the Challenger's attack taxonomy. The deliberation review protocol below remains authoritative for the gate contract and output format; the craft skill is how-to only and does not restate it.\n\n";
 
 const SDD_SPEC_REVIEW =
 	"Review the spec at {specPath}. This is an autonomous workflow with no human in the loop.\n\n" +

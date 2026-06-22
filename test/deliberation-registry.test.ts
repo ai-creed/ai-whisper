@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
 	deliberationRunDir,
 	deriveFindingsPath,
+	WORKFLOW_DELIBERATION_PROTOCOL,
+	DELIBERATION_CRAFT_SKILL_GUIDANCE,
 } from "../packages/broker/src/runtime/workflow-registry.ts";
 
 describe("deliberationRunDir", () => {
@@ -30,5 +32,40 @@ describe("deriveFindingsPath", () => {
 	});
 	it("throws on a malformed dateIso", () => {
 		expect(() => deriveFindingsPath("seed.md", "nope")).toThrow(/YYYY-MM-DD/);
+	});
+});
+
+describe("WORKFLOW_DELIBERATION_PROTOCOL content contract (spec §7)", () => {
+	const p = WORKFLOW_DELIBERATION_PROTOCOL;
+	it("requires independent derivation before reading the Explorer", () => {
+		expect(p).toMatch(/independent derivation/i);
+		expect(p).toMatch(/before reading the Explorer/i);
+	});
+	it("forbids recall-based verification and demands external sources", () => {
+		expect(p).toMatch(/may NOT clear a material claim/i);
+		expect(p).toMatch(/verified against/i);
+	});
+	it("encodes the four-way materiality sort", () => {
+		expect(p).toMatch(/BLOCKING/);
+		expect(p).toMatch(/OPEN QUESTION/);
+		expect(p).toMatch(/NON-BLOCKING RISK/);
+		expect(p).toMatch(/SUPPRESS/);
+	});
+	it("requires steelman + lens coverage and bans 'looks good'", () => {
+		expect(p).toMatch(/steelman/i);
+		expect(p).toMatch(/"Looks good" is not a legal handback/i);
+	});
+	it("keeps the reviewer/evaluator boundary (no workflow verdicts)", () => {
+		expect(p).toMatch(/approved \/ not-approved \+ findings ONLY/);
+		expect(p).toMatch(/that is the evaluator's job/i);
+	});
+	it("keeps verdict line before the always-last Non-blocking risks section", () => {
+		expect(p.indexOf("verdict line")).toBeLessThan(p.indexOf("Non-blocking risks:"));
+	});
+});
+
+describe("DELIBERATION_CRAFT_SKILL_GUIDANCE", () => {
+	it("names the craft skill and defers gate semantics to the protocol", () => {
+		expect(DELIBERATION_CRAFT_SKILL_GUIDANCE).toMatch(/ai-whisper-deliberation-craft/);
 	});
 });
