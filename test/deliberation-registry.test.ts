@@ -71,3 +71,51 @@ describe("DELIBERATION_CRAFT_SKILL_GUIDANCE", () => {
 		expect(DELIBERATION_CRAFT_SKILL_GUIDANCE).not.toMatch(/not-approved/);
 	});
 });
+
+import {
+	getWorkflowDefinition,
+	listWorkflowTypes,
+} from "../packages/broker/src/runtime/workflow-registry.ts";
+
+describe("deliberation workflow definition", () => {
+	const def = getWorkflowDefinition("deliberation");
+	it("is registered and listed", () => {
+		expect(def).toBeDefined();
+		expect(listWorkflowTypes()).toContain("deliberation");
+	});
+	it("has the four ordered layers", () => {
+		expect(def?.phases.map((p) => p.name)).toEqual([
+			"objectives", "approaches", "tradeoffs", "synthesis",
+		]);
+	});
+	it("uses the deliberation-loop evaluator key on every layer", () => {
+		for (const p of def!.phases) expect(p.evaluatorPromptKey).toBe("deliberation-loop");
+	});
+	it("applies the spec round budgets", () => {
+		expect(def!.phases.map((p) => p.maxRounds)).toEqual([6, 10, 10, 5]);
+	});
+	it("starts each layer with the Explorer (implement) and renders the fix template on findings", () => {
+		for (const p of def!.phases) {
+			expect(p.initialHandoffStep).toBe("implement");
+			expect(p.renderFixTemplateOnFindings).toBe(true);
+			expect(p.stepTemplates.implement).toBeTruthy();
+			expect(p.stepTemplates.review).toBeTruthy();
+			expect(p.stepTemplates.fix).toBeTruthy();
+		}
+	});
+	it("every layer review template carries the gate protocol + craft guidance", () => {
+		for (const p of def!.phases) {
+			expect(p.stepTemplates.review).toContain("deliberation review protocol");
+			expect(p.stepTemplates.review).toContain("ai-whisper-deliberation-craft");
+		}
+	});
+	it("the synthesis layer writes and commits the findings doc", () => {
+		const synth = def!.phases.find((p) => p.name === "synthesis")!;
+		expect(synth.stepTemplates.implement).toContain("{findingsPath}");
+		expect(synth.stepTemplates.implement).toMatch(/commit/i);
+		expect(synth.artifactOut).toEqual({ kind: "spec", pathTemplate: "{findingsPath}" });
+	});
+	it("embeds the operator-control fragment in every kickoff (via withOperatorControl)", () => {
+		for (const p of def!.phases) expect(p.kickoffTemplate).toContain("ai-whisper operator control");
+	});
+});
