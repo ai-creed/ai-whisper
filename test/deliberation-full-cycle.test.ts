@@ -53,19 +53,23 @@ describe("deliberation full cycle (mock orchestrator)", () => {
 				return execSync(`git -C "${repo}" rev-parse HEAD`).toString().trim();
 			}
 
-			// Verdict sequence — one findings→fix round on objectives so the fix
-			// render site fires (renderFixTemplateOnFindings: true on all deliberation phases):
+			// Verdict sequence — one findings→fix round on objectives (to exercise the
+			// renderFixTemplateOnFindings: true render site for objectives/approaches/tradeoffs)
+			// AND one findings→fix round on synthesis (to exercise DELIB_SYNTHESIS_FIX, which
+			// must target the committed findings doc and re-commit it):
 			//
-			// Step 0: objectives implement  → delivered   (Explorer proposes)
-			// Step 1: objectives review     → findings    (Challenger has concerns)
-			// Step 2: objectives fix        → delivered   (Explorer addresses findings)
-			// Step 3: objectives review     → approve     (Challenger approves; advance to approaches)
-			// Step 4: approaches implement  → delivered
-			// Step 5: approaches review     → approve     (advance to tradeoffs)
-			// Step 6: tradeoffs implement   → delivered
-			// Step 7: tradeoffs review      → approve     (advance to synthesis)
-			// Step 8: synthesis implement   → delivered
-			// Step 9: synthesis review      → approve     (workflow done)
+			// Step  0: objectives implement  → delivered   (Explorer proposes)
+			// Step  1: objectives review     → findings    (Challenger has concerns)
+			// Step  2: objectives fix        → delivered   (Explorer addresses findings)
+			// Step  3: objectives review     → approve     (Challenger approves; advance to approaches)
+			// Step  4: approaches implement  → delivered
+			// Step  5: approaches review     → approve     (advance to tradeoffs)
+			// Step  6: tradeoffs implement   → delivered
+			// Step  7: tradeoffs review      → approve     (advance to synthesis)
+			// Step  8: synthesis implement   → delivered   (Explorer writes + commits findings doc)
+			// Step  9: synthesis review      → findings    (Challenger has concerns about synthesis)
+			// Step 10: synthesis fix         → delivered   (Explorer rewrites + re-commits findings doc)
+			// Step 11: synthesis review      → approve     (workflow done)
 			const verdicts: Array<"approve" | "delivered" | "findings"> = [
 				"delivered", // 0
 				"findings",  // 1
@@ -76,7 +80,9 @@ describe("deliberation full cycle (mock orchestrator)", () => {
 				"delivered", // 6
 				"approve",   // 7
 				"delivered", // 8
-				"approve",   // 9
+				"findings",  // 9
+				"delivered", // 10
+				"approve",   // 11
 			];
 			let step = 0;
 
@@ -116,6 +122,9 @@ describe("deliberation full cycle (mock orchestrator)", () => {
 			const capturedHandoffs: string[] = [];
 			const visitedPhases: string[] = [];
 
+			// Capture synthesis fix handoff for re-commit assertion (Finding 1 coverage).
+			let synthesisFix: string | undefined;
+
 			// Drive each verdict round.
 			for (let i = 0; i < verdicts.length; i++) {
 				// Find the oldest pending handoff for this workflow, joined with its phase name.
@@ -144,6 +153,11 @@ describe("deliberation full cycle (mock orchestrator)", () => {
 
 				// Capture the rendered request_text for the placeholder-guard assertion
 				capturedHandoffs.push(row.request_text);
+
+				// Capture synthesis fix handoff (step 10) for the re-commit assertion
+				if (row.phase_name === "synthesis" && row.handoff_step === "fix") {
+					synthesisFix = row.request_text;
+				}
 
 				// Track phase order (avoid duplicates for the implement→review→fix sequence)
 				const phaseName = row.phase_name ?? "unknown";
@@ -181,7 +195,7 @@ describe("deliberation full cycle (mock orchestrator)", () => {
 			expect(visitedPhases).toEqual(["objectives", "approaches", "tradeoffs", "synthesis"]);
 
 			// (c) No captured request_text leaks a literal placeholder
-			expect(capturedHandoffs.length).toBeGreaterThanOrEqual(10);
+			expect(capturedHandoffs.length).toBeGreaterThanOrEqual(12);
 			for (const text of capturedHandoffs) {
 				expect(text).not.toContain("{deliberationDir}");
 				expect(text).not.toContain("{findingsPath}");
@@ -194,6 +208,13 @@ describe("deliberation full cycle (mock orchestrator)", () => {
 			);
 			expect(synthesisKickoff).toBeDefined();
 			expect(synthesisKickoff!).toContain("docs/superpowers/deliberations/");
+
+			// (e) The synthesis fix handoff (DELIB_SYNTHESIS_FIX) targets the committed findings
+			//     doc — it must contain the resolved findingsPath and a re-commit instruction.
+			expect(synthesisFix).toBeDefined();
+			expect(synthesisFix!).toContain("docs/superpowers/deliberations/");
+			// Must instruct re-committing the findings doc (git add + git commit)
+			expect(synthesisFix!).toMatch(/git add|git commit/i);
 		} finally {
 			await broker.stop();
 		}

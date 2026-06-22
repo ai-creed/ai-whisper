@@ -637,7 +637,12 @@ export function createRelayOrchestratorEvaluator(input: {
 						: "execution";
 
 		// reviewBranch is a module singleton; identity comparison is intentional. Strip the
-		// Non-blocking risks block only for review classification so it is never misread as findings.
+		// Non-blocking risks block ONLY for the review-loop's reviewBranch so it is never
+		// misread as findings. deliberationReviewBranch is intentionally excluded: the
+		// DELIBERATION_REVIEW_SYSTEM_PROMPT handles Open Questions / Non-blocking risks
+		// inline, and those sections surface the material Open Questions the deliberation gate
+		// needs to forward to the human — widening this guard to deliberationReviewBranch
+		// would silence those Open Questions and gag the deliberation's primary output signal.
 		const effectivePayload: EvaluatorAnyInput =
 			branch === reviewBranch && "handbackText" in call.payload
 				? {

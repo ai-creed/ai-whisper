@@ -7,11 +7,12 @@ import {
 	renderTemplate,
 	ralphRunDir,
 	bugfixPaths,
+	deliberationRunDir,
+	deriveFindingsPath,
 } from "./workflow-registry.js";
 import { ensureRalphWorkspace } from "./ralph-setup.js";
 import { ensureBugfixWorkspace } from "./bugfix-setup.js";
 import { ensureDeliberationWorkspace } from "./deliberation-setup.js";
-import { deliberationRunDir, deriveFindingsPath } from "./workflow-registry.js";
 
 type WorkflowStatus = "running" | "paused" | "halted" | "done" | "canceled";
 type WorkflowRecordLike = {

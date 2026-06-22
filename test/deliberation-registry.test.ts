@@ -124,14 +124,17 @@ describe("deliberation instrumentation (spec §12.6 — evidence only)", () => {
 	const def = getWorkflowDefinition("deliberation")!;
 	it("every layer's propose + fix templates require the two spec-named per-round fields", () => {
 		// spec §12.6 names exactly these two signals; a metrics line without them is non-compliant.
+		// This covers all four phases including synthesis (which uses DELIB_SYNTHESIS_FIX).
 		for (const p of def.phases) {
 			expect(p.stepTemplates.implement).toContain("metrics.jsonl");
 			expect(p.stepTemplates.implement).toContain("materialFindings");
 			expect(p.stepTemplates.implement).toContain("revisionMagnitude");
+			// Every phase's fix template must also carry the metrics instrumentation
+			// (synthesis uses DELIB_SYNTHESIS_FIX; objectives/approaches/tradeoffs use DELIB_FIX).
+			const fix = p.stepTemplates.fix!;
+			expect(fix).toContain("metrics.jsonl");
+			expect(fix).toContain("materialFindings");
+			expect(fix).toContain("revisionMagnitude");
 		}
-		const fix = def.phases[0]!.stepTemplates.fix!;
-		expect(fix).toContain("metrics.jsonl");
-		expect(fix).toContain("materialFindings");
-		expect(fix).toContain("revisionMagnitude");
 	});
 });

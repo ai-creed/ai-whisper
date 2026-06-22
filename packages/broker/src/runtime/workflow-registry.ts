@@ -504,6 +504,10 @@ Write your tradeoffs working notes to {deliberationDir}/tradeoffs.md: a per-appr
 
 ${DELIBERATION_CRAFT_SKILL_GUIDANCE}End your handback with a 1-2 sentence summary; your reply must be at least two sentences, well over 100 characters — never hand back only a single word.`;
 
+const DELIB_SYNTHESIS_FIX =
+	"Apply the Challenger's findings by RE-WRITING the corrected findings document to {findingsPath} (keep the §9 skeleton). Then RE-COMMIT it: `git add {findingsPath} && git commit` (do NOT commit {deliberationDir}; it is gitignored). Re-ground against the seed at {specPath} to confirm the revision is consistent. Append one JSON line to {deliberationDir}/metrics.jsonl with the two signals spec §12.6 requires — \"materialFindings\" (the count of decision-material findings you are addressing this round) and \"revisionMagnitude\" (how much your output changed: \"none\"/\"minor\"/\"moderate\"/\"major\") — plus \"layer\" and \"round\". End your handback with a 1-2 sentence summary of what you changed; your reply must be at least two sentences, well over 100 characters — never hand back only a single word.\n\n" +
+	DELIBERATION_CRAFT_SKILL_GUIDANCE;
+
 const DELIB_SYNTHESIS = `You are the Explorer in an autonomous Deliberation workflow — no human is in the loop; do the work yourself.
 
 LAYER 4 of 4: SYNTHESIS. The objectives, approaches, and tradeoffs working notes under {deliberationDir} are all ratified. Collapse them into a single findings document optimized for fast human review, and WRITE it to {findingsPath} (create the directory if needed). Use exactly this skeleton:
@@ -594,7 +598,7 @@ export const DELIBERATION: WorkflowDefinition = {
 			maxRounds: 5,
 			initialHandoffStep: "implement",
 			kickoffTemplate: DELIB_SYNTHESIS,
-			stepTemplates: { implement: DELIB_SYNTHESIS, review: DELIB_REVIEW, fix: DELIB_FIX },
+			stepTemplates: { implement: DELIB_SYNTHESIS, review: DELIB_REVIEW, fix: DELIB_SYNTHESIS_FIX },
 			reviewMode: "phase-review",
 			evaluatorPromptKey: "deliberation-loop",
 			artifactOut: { kind: "spec", pathTemplate: "{findingsPath}" },
