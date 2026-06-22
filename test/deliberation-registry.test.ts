@@ -57,7 +57,7 @@ describe("WORKFLOW_DELIBERATION_PROTOCOL content contract (spec §7)", () => {
 	});
 	it("keeps the reviewer/evaluator boundary (no workflow verdicts)", () => {
 		expect(p).toMatch(/approved \/ not-approved \+ findings ONLY/);
-		expect(p).toMatch(/that is the evaluator's job/i);
+		expect(p).toMatch(/is the evaluator's job/i);
 	});
 	it("keeps verdict line before the always-last Non-blocking risks section", () => {
 		expect(p.indexOf("verdict line")).toBeLessThan(p.indexOf("Non-blocking risks:"));
@@ -67,5 +67,7 @@ describe("WORKFLOW_DELIBERATION_PROTOCOL content contract (spec §7)", () => {
 describe("DELIBERATION_CRAFT_SKILL_GUIDANCE", () => {
 	it("names the craft skill and defers gate semantics to the protocol", () => {
 		expect(DELIBERATION_CRAFT_SKILL_GUIDANCE).toMatch(/ai-whisper-deliberation-craft/);
+		expect(DELIBERATION_CRAFT_SKILL_GUIDANCE).not.toMatch(/BLOCKING/);
+		expect(DELIBERATION_CRAFT_SKILL_GUIDANCE).not.toMatch(/not-approved/);
 	});
 });
