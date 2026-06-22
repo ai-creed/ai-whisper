@@ -119,3 +119,19 @@ describe("deliberation workflow definition", () => {
 		for (const p of def!.phases) expect(p.kickoffTemplate).toContain("ai-whisper operator control");
 	});
 });
+
+describe("deliberation instrumentation (spec §12.6 — evidence only)", () => {
+	const def = getWorkflowDefinition("deliberation")!;
+	it("every layer's propose + fix templates require the two spec-named per-round fields", () => {
+		// spec §12.6 names exactly these two signals; a metrics line without them is non-compliant.
+		for (const p of def.phases) {
+			expect(p.stepTemplates.implement).toContain("metrics.jsonl");
+			expect(p.stepTemplates.implement).toContain("materialFindings");
+			expect(p.stepTemplates.implement).toContain("revisionMagnitude");
+		}
+		const fix = def.phases[0]!.stepTemplates.fix!;
+		expect(fix).toContain("metrics.jsonl");
+		expect(fix).toContain("materialFindings");
+		expect(fix).toContain("revisionMagnitude");
+	});
+});
