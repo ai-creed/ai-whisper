@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- feat(deliberation): new fourth workflow — paired Explorer/Challenger dialectic across Objectives → Approaches → Tradeoffs → Synthesis, producing a committed findings doc; adds the `deliberation-loop` evaluator key that rejects hollow approvals.
+- **deliberation**: new fourth workflow — paired Explorer/Challenger dialectic across Objectives → Approaches → Tradeoffs → Synthesis, producing a committed findings doc; adds the `deliberation-loop` evaluator key that rejects hollow approvals.
 
 ## [0.6.1] - 2026-06-21
 
