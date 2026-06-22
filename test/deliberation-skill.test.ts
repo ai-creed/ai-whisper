@@ -5,9 +5,11 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { runSkillInstall } from "../packages/cli/src/commands/skill/install.ts";
+import { WORKFLOW_DELIBERATION_PROTOCOL } from "../packages/broker/src/runtime/workflow-registry.ts";
 
 // ESM-correct repo root (matches the codebase's module type; no __dirname).
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
+const CRAFT = join(repoRoot, "packages/cli/skills/ai-whisper-deliberation-craft/SKILL.md");
 const sourceSkillsDir = join(repoRoot, "packages/cli/skills");
 const deliberationSkill = join(sourceSkillsDir, "ai-whisper-deliberation", "SKILL.md");
 
@@ -64,5 +66,25 @@ describe("ai-whisper-deliberation skill", () => {
 		expect(
 			existsSync(join(home, ".codex", "skills", "ai-whisper-deliberation", "SKILL.md")),
 		).toBe(true);
+	});
+});
+
+describe("ai-whisper-deliberation-craft skill", () => {
+	const md = readFileSync(CRAFT, "utf8");
+	it("carries the research contract and the attack taxonomy", () => {
+		expect(md).toMatch(/research contract/i);
+		expect(md).toMatch(/evidence/i);
+		expect(md).toMatch(/assumption/i);
+		expect(md).toMatch(/alternative/i);
+		expect(md).toMatch(/feasibility/i);
+		expect(md).toMatch(/second-order/i);
+		expect(md).toMatch(/framing/i);
+	});
+	it("does NOT duplicate the canonical gate protocol (single source of truth)", () => {
+		const probe = WORKFLOW_DELIBERATION_PROTOCOL.slice(60, 160);
+		expect(md).not.toContain(probe);
+	});
+	it("has a name frontmatter field", () => {
+		expect(md).toMatch(/^name:\s*ai-whisper-deliberation-craft/m);
 	});
 });
