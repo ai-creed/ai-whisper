@@ -162,7 +162,7 @@ A bad capture (`captureStatus != "ok"`) bypasses the LLM and forces a re-issue a
 
 ## 2. Autonomous workflows
 
-An autonomous workflow is a multi-phase pipeline that drives both agents through a structured task. Today the only registered type is `spec-driven-development`.
+An autonomous workflow is a multi-phase pipeline that drives both agents through a structured task. Four types are registered today — `spec-driven-development`, `ralph-loop`, `complex-bug-fixing`, and `deliberation`. They share the same relay and evaluator machinery and differ in their phases, artifacts, and evaluator keys; this section walks through `spec-driven-development` as the worked example, then [Other workflow types](#other-workflow-types) maps the rest onto the same model. For when to reach for each, see [Workflows](workflows.md).
 
 ### Starting a workflow
 
@@ -208,6 +208,19 @@ This creates the workflow row, kicks off phase 0, and seeds the first handoff.
 | `execute`  | `execution-pass` / `execution-fail` / `escalate` | execution-pass → next phase (or review step); execution-fail → halt; escalate → halt |
 
 The orchestrator picks the prompt and schema based on `(evaluatorPromptKey, handoffStep)` so each step only accepts its own verdict vocabulary.
+
+### Other workflow types
+
+The same `(evaluatorPromptKey, handoffStep)` dispatch drives all four registered workflows — only the phases, artifacts, and keys differ. Four evaluator keys exist:
+
+| evaluator key | verdict vocabulary | used by |
+|---------------|--------------------|---------|
+| `review-loop` | `approve` / `findings` / `escalate` | every review phase of `spec-driven-development` (spec-refining, plan-writing, code-review) **and** all three phases of `complex-bug-fixing` (diagnosis, fix-and-verify, post-mortem) |
+| `execution-gate` | `execution-pass` / `execution-fail` / `escalate` | `spec-driven-development` plan-execution only |
+| `ralph-loop` | `approve` / `findings` / `escalate` | `ralph-loop`'s open-ended iteration phase, plus its final acceptance review against the goal |
+| `deliberation-loop` | `approve` / `findings` / `escalate` | all four `deliberation` layers (objectives → approaches → tradeoffs → synthesis) |
+
+These workflows reuse the same `review` / `implement` / `fix` steps and verdicts as the table above; what changes is the prompt behind the key. `deliberation-loop` is the sharpest case: it shares the review verdict space but runs a stricter prompt that classifies a *hollow* Challenger approval — agreement by recall, with no independent derivation and no external verification — as `findings` rather than `approve`, so a layer cannot pass on a rubber-stamp. For each workflow's phase shape and when to reach for it, see [Workflows](workflows.md).
 
 ### Auto-fire behaviour in autonomous mode
 
