@@ -27,7 +27,7 @@ export function resolveEvaluatorPromptKey(input: {
 	workflowType: string;
 	phaseName: string | null;
 	handoffStep: "review" | "fix" | "implement" | "execute";
-}): "review-loop" | "execution-gate" | "ralph-loop" {
+}): "review-loop" | "execution-gate" | "ralph-loop" | "deliberation-loop" {
 	const def = getWorkflowDefinition(input.workflowType);
 	const phase = def?.phases.find((p) => p.name === input.phaseName);
 	if (phase?.evaluatorPromptKey) return phase.evaluatorPromptKey;
@@ -113,7 +113,7 @@ type BrokerLike = {
 			targetAgent: string;
 			requestText: string;
 			rootRequestText: string | null;
-			evaluatorPromptKey: "review-loop" | "execution-gate" | "ralph-loop" | null;
+			evaluatorPromptKey: "review-loop" | "execution-gate" | "ralph-loop" | "deliberation-loop" | null;
 		} | null;
 		getWorkflow: (id: string) => { workflowType: string } | null | undefined;
 	};

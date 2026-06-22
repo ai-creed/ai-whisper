@@ -723,3 +723,27 @@ describe("review classification strips the risks block before the provider call"
 		expect(userContent).not.toMatch(/Non-blocking risks/);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// deliberation-loop key — rides reviewBranch until Task 5 adds its own branch
+// ---------------------------------------------------------------------------
+
+describe("deliberation-loop key", () => {
+	it("accepts a deliberation-loop review payload and parses approve", async () => {
+		const client = makeOllamaClient(
+			JSON.stringify({ verdict: "approve", confidence: 0.9, reason: "layer ratified" }),
+		);
+		const evaluate = createRelayOrchestratorEvaluator({ primary: { provider: "ollama", client } });
+		const result = await evaluate({
+			payload: makeWorkflowPayload({
+				evaluatorPromptKey: "deliberation-loop",
+				handoffStep: "review",
+				workflowId: "wf_d",
+				phaseRunId: "pr_1",
+				phaseName: "objectives",
+			}),
+			context: makeContext(),
+		});
+		expect(result.verdict).toBe("approve");
+	});
+});

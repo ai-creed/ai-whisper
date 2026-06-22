@@ -1490,7 +1490,7 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 		// (spec §5.3) so the orchestrator consumes the configured key rather than
 		// re-deriving it. Falls back to null for non-workflow / unconfigured phases,
 		// which the orchestrator maps to its handoffStep derivation (SDD unaffected).
-		let evaluatorPromptKey: "review-loop" | "execution-gate" | "ralph-loop" | null = null;
+		let evaluatorPromptKey: "review-loop" | "execution-gate" | "ralph-loop" | "deliberation-loop" | null = null;
 		if (meta.workflowId) {
 			const wf = getWorkflowById(db, meta.workflowId);
 			const def = wf ? getWorkflowDefinition(wf.workflowType) : undefined;

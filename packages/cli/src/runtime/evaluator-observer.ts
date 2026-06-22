@@ -21,12 +21,12 @@ function followUpLen(verdict: EvaluatorCallEvent["verdict"]): number | null {
 }
 
 type WorkflowPayloadFields = {
-	evaluatorPromptKey?: "review-loop" | "ralph-loop" | "execution-gate";
+	evaluatorPromptKey?: "review-loop" | "ralph-loop" | "execution-gate" | "deliberation-loop";
 	handoffStep?: "review" | "fix" | "implement" | "execute";
 };
 
 function extractWorkflowFields(payload: unknown): {
-	evaluatorPromptKey: "review-loop" | "ralph-loop" | "execution-gate" | null;
+	evaluatorPromptKey: "review-loop" | "ralph-loop" | "execution-gate" | "deliberation-loop" | null;
 	handoffStep: "review" | "fix" | "implement" | "execute" | null;
 } {
 	if (typeof payload !== "object" || payload === null) {

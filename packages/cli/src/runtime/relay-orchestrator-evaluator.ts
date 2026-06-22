@@ -49,7 +49,7 @@ export type RelayOrchestratorVerdict =
 	| { verdict: "escalate"; confidence: number; reason: string };
 
 export type WorkflowEvaluatorInput = EvaluatorInput & {
-	evaluatorPromptKey: "review-loop" | "ralph-loop" | "execution-gate";
+	evaluatorPromptKey: "review-loop" | "ralph-loop" | "execution-gate" | "deliberation-loop";
 	workflowId: string;
 	phaseRunId: string;
 	phaseName: string;
