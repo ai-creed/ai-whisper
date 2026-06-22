@@ -4,15 +4,17 @@ A workflow is a structured loop: a sequence of phases, each with its own role as
 
 The outcome of a run is mostly decided by two choices you make before anything starts: which workflow you pick, and what you feed it. Everything else — mounting, kickoff, watching the dashboard — is mechanics. This guide spends most of its words on those two choices.
 
-ai-whisper ships three workflows today. All run an implementer and a reviewer that take turns — the agent you trigger the run from becomes the implementer and the other becomes the reviewer (override with `--implementer` / `--reviewer`) — and all are gated by the LLM evaluator that decides, after each handback, whether to advance, loop, or escalate.
+ai-whisper ships four workflows today. All run an implementer and a reviewer that take turns — the agent you trigger the run from becomes the implementer and the other becomes the reviewer (override with `--implementer` / `--reviewer`) — and all are gated by the LLM evaluator that decides, after each handback, whether to advance, loop, or escalate.
 
-## The three workflows at a glance
+## The four workflows at a glance
 
 **`spec-driven-development`** is a phased pipeline. It moves through spec-refining → plan-writing → plan-execution → code-review. Each phase has its own gate and loops until it is approved or it escalates, then the next phase begins. You give it a spec; it sharpens that spec into a plan and executes the plan under review. Use it when you can describe the deliverable up front.
 
 **`ralph-loop`** is a single open-ended phase. It reads a goal file as ground truth and grinds toward it chunk-by-chunk: each iteration the implementer picks the next smallest independently-verifiable chunk, delivers it, and a reviewer checks that chunk. When the implementer claims the whole goal is done, an acceptance review gates completion against the goal's criteria. Use it when the work is long-horizon or hard to fully plan in advance.
 
 **`complex-bug-fixing`** is a fixed three-phase pipeline for a reported bug whose root cause is unknown: diagnosis → fix-and-verify → post-mortem. The implementer must **reproduce the bug themselves** (a committed failing test is strongly preferred — speculation from reading code is not a valid reproduction) and write a diagnosis (root cause + proposed fix + blast radius + residual risks); an adversarial reviewer independently reproduces it and keeps the gate shut until both agree the cause is proven and the fix is net-safe. The fix phase turns the reproduction GREEN and verifies across the blast radius under an acceptance review that also checks test-coverage adequacy; the post-mortem records what happened. The diagnosis and post-mortem are self-verification artifacts for you after the run — they live in the gitignored run dir `.ai-whisper/bugfix/<workflowId>/` and are **not** committed; only the fix and the reproduction test land in the repo. Use it when a bug is reported and a correct, verified, non-regressing fix matters.
+
+**`deliberation`** is an open-ended dialectic. It pairs an Explorer and a Challenger that move through four phases — Objectives, Approaches, Tradeoffs, and Synthesis — cycling independently through each phase until both agree on the space and the Synthesizer can commit a findings doc. The output is a structured handover into brainstorming or SDD; it never auto-chains. Use it when you have a fuzzy idea, cannot yet describe "done," and want the space mapped before you commit to a spec.
 
 Ralph keeps durable memory under `.ai-whisper/ralph/<workflowId>/`: `PROGRESS.md` (the work ledger) and `LEARNINGS.md` (generalizable lessons). On every iteration the implementer re-orients from the goal file plus these two files rather than from prior conversation, so progress survives context compaction over a long run. The implementer is instructed to commit each chunk's code changes as it delivers them; the reviewer's approval gates whether the loop advances to the next chunk, not whether the commit is made — so a chunk that draws findings may already be in history, followed by fix commits.
 
@@ -37,6 +39,12 @@ Reach for **complex-bug-fixing** when:
 - a bug was reported, the **root cause is unknown**, and you cannot yet describe the fix — the whole point is to investigate it;
 - a confidently-wrong fix would be expensive, so you want the cause **proven by an observed reproduction** and an adversarial reviewer guarding against symptom-patching before any code changes;
 - a correct, verified, non-regressing fix matters more than speed. (For a bug whose fix you can already specify, use SDD instead — you do not need the diagnosis gate.)
+
+Reach for **deliberation** when:
+
+- you have only a fuzzy idea and cannot yet describe "done" — you want the space mapped (objectives, approaches, tradeoffs) before you commit to a spec;
+- you want the legwork and the adversarial thinking done autonomously while you are unavailable, and handed back as a findings doc you can review and then take into brainstorming or SDD;
+- the topic is usually grounded in a concrete project, though a no-anchor topic still runs (it degrades to web-grounded research). Its output feeds the other workflows — it never auto-chains there.
 
 **Signs you picked wrong:**
 
@@ -101,6 +109,22 @@ Do **not** include your own root-cause theory as if it were settled. The workflo
 >
 > **Strong:** "After ~15 minutes idle, the first request to `/api/me` returns 401 even with a valid session. Repro: log in, wait 15 min, refresh the dashboard → 401 toast; server logs show `token expired` though the session cookie is still present. Expected: the request succeeds (or transparently refreshes). Actual: 401 until a full re-login. (Hunch, unverified: the access token TTL may be shorter than the session TTL.)"
 
+### Writing a seed for deliberation
+
+A seed is a one-to-three sentence statement of the topic you want to deliberate — the fuzzy idea, the problem area, or the question you are trying to map. The seed is the starting point for an open-ended dialectic, so write it for **exploration**, not solution.
+
+A good seed:
+
+- names the topic concretely — what domain or problem are we mapping;
+- is open-ended enough to leave room for objectives, approaches, and tradeoffs to emerge — do not prescribe the solution;
+- optionally includes an intent-anchor (a concrete grounding like a project or a goal) and/or a non-goal (what we are *not* trying to do), to shape the dialectic without closing it.
+
+Avoid: a seed that is really a spec (you already know the solution), a seed so vague it could mean anything (the Explorer and Challenger will struggle to converge), or a seed that is purely off-the-shelf research with no project grounding (use web search instead).
+
+> **Weak:** "How should we do auth?"
+>
+> **Strong:** "How should we redesign auth for the dashboard given the new mobile OAuth flow? We're not replacing the session layer, just the initial login path."
+
 ## Running a workflow
 
 The mechanics are deliberately thin. From a workspace, mount both agents in separate terminals, then start a workflow from either session:
@@ -115,9 +139,10 @@ whisper collab mount claude
 whisper workflow start --type=spec-driven-development --spec=/abs/path/to/spec.md
 whisper workflow start --type=ralph-loop --spec=/abs/path/to/goal.md
 whisper workflow start --type=complex-bug-fixing --spec=/abs/path/to/bug-report.md
+whisper workflow start --type=deliberation --spec=/abs/path/to/seed.md
 ```
 
-The `/aiw-sdd <path>`, `/aiw-ralph <path>`, and `/aiw-bugfix <path>` skills do the same thing with a readiness check first — they require the bundled skills to be installed once (`whisper skill install`; see the README quickstart). Roles follow the caller: the agent you start the run from is the implementer and the other agent reviews, so you do not normally pass `--implementer` / `--reviewer` — add them only to override. (Started outside a mounted session with no flags, the run falls back to the workflow type's default pairing and warns.)
+The `/aiw-sdd <path>`, `/aiw-ralph <path>`, `/aiw-bugfix <path>`, and `/aiw-deliberation <path>` skills do the same thing with a readiness check first — they require the bundled skills to be installed once (`whisper skill install`; see the README quickstart). Roles follow the caller: the agent you start the run from is the implementer and the other agent reviews, so you do not normally pass `--implementer` / `--reviewer` — add them only to override. (Started outside a mounted session with no flags, the run falls back to the workflow type's default pairing and warns.)
 
 Then watch it run:
 
