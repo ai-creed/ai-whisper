@@ -48,6 +48,13 @@ describe("ai-whisper-deliberation skill", () => {
 		expect(md).toContain("whisper workflow resume");
 	});
 
+	it("validates the seed is non-empty (rejects empty / whitespace-only files)", () => {
+		// Spec seed contract (§10): the kickoff skill validates the seed file resolves AND is non-empty.
+		const md = readFileSync(deliberationSkill, "utf8");
+		expect(md).toMatch(/non-empty/i);
+		expect(md).toMatch(/empty or (only )?whitespace/i);
+	});
+
 	it("ships into the post-build bundled dir, alongside ai-whisper-sdd", () => {
 		const bundled = copyRealSkills();
 		const bundledDeliberation = join(bundled, "ai-whisper-deliberation", "SKILL.md");

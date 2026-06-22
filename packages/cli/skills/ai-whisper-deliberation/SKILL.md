@@ -25,6 +25,10 @@ The user names a path. If it begins with `@`, strip the `@`. Resolve to an absol
 
 > Seed file `<path>` is not readable. Check the path and try again.
 
+Then verify the seed is **non-empty** — the resolved file must contain an actual topic, not be empty or whitespace-only. A deliberation needs a non-empty topic to reason about (spec seed contract). If the file is empty or only whitespace, do NOT start the workflow:
+
+> Seed file `<path>` is empty. A deliberation needs a non-empty topic — add at least a one-line idea, problem, or question to the file, then try again.
+
 The file is a **seed** (free-form markdown or plain text): a fuzzy idea, a question, a problem statement, or a research topic — not a spec or a bug report. One line is sufficient. Project-grounded seeds (referencing specific code, docs, or existing artifacts in the repo) get the strongest deliberation result; a seed with no project anchor degrades to web-grounded research rather than being refused. This framing is guidance for preparing the seed before kickoff; it is not runtime output.
 
 ### 2. Verify collab readiness

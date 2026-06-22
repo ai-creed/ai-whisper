@@ -115,6 +115,17 @@ describe("deliberation workflow definition", () => {
 		expect(synth.stepTemplates.implement).toMatch(/commit/i);
 		expect(synth.artifactOut).toEqual({ kind: "spec", pathTemplate: "{findingsPath}" });
 	});
+	it("the synthesis review points the Challenger at the committed findings doc, not the run-dir notes", () => {
+		// The final gate must review {findingsPath} (the committed deliverable); the generic
+		// DELIB_REVIEW only points at the gitignored {deliberationDir} notes, which is wrong for
+		// synthesis whose output is the committed doc.
+		const synth = def!.phases.find((p) => p.name === "synthesis")!;
+		expect(synth.stepTemplates.review).toContain("{findingsPath}");
+		// the other three layers keep the generic review and do NOT reference {findingsPath}
+		for (const p of def!.phases.filter((x) => x.name !== "synthesis")) {
+			expect(p.stepTemplates.review).not.toContain("{findingsPath}");
+		}
+	});
 	it("embeds the operator-control fragment in every kickoff (via withOperatorControl)", () => {
 		for (const p of def!.phases) expect(p.kickoffTemplate).toContain("ai-whisper operator control");
 	});

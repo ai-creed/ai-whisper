@@ -476,6 +476,15 @@ const DELIB_REVIEW =
 	DELIBERATION_CRAFT_SKILL_GUIDANCE +
 	WORKFLOW_DELIBERATION_PROTOCOL;
 
+// Synthesis is the terminal layer and its deliverable is the COMMITTED findings
+// document at {findingsPath} (NOT the gitignored {deliberationDir} notes the other
+// layers produce). Its review must point the Challenger at that committed doc, or
+// the final gate could ratify without inspecting the actual deliverable.
+const DELIB_SYNTHESIS_REVIEW =
+	"You are the Challenger reviewing the Explorer's SYNTHESIS layer — the committed findings document at {findingsPath}. Read {findingsPath}: it is the deliverable under review. It must faithfully collapse the ratified objectives/approaches/tradeoffs (the working notes under {deliberationDir}) into the findings skeleton — verify that faithfulness and that the Open Questions are the right ones (no material decision silently resolved, none invented). Grounded in the seed at {specPath}. This is an autonomous workflow with no human in the loop.\n\n" +
+	DELIBERATION_CRAFT_SKILL_GUIDANCE +
+	WORKFLOW_DELIBERATION_PROTOCOL;
+
 const DELIB_FIX =
 	"Apply the Challenger's findings to your working notes under {deliberationDir} now, re-grounding against the seed at {specPath}. This is an autonomous workflow — no human will respond. Do the research/edits yourself; never ask for confirmation, permission, or clarification. Append one JSON line to {deliberationDir}/metrics.jsonl with the two signals spec §12.6 requires — \"materialFindings\" (the count of decision-material findings you are addressing this round) and \"revisionMagnitude\" (how much your output changed: \"none\"/\"minor\"/\"moderate\"/\"major\") — plus \"layer\" and \"round\". End your handback with a 1-2 sentence summary of what you changed; your reply must be at least two sentences, well over 100 characters — never hand back only a single word.\n\n" +
 	DELIBERATION_CRAFT_SKILL_GUIDANCE;
@@ -598,7 +607,7 @@ export const DELIBERATION: WorkflowDefinition = {
 			maxRounds: 5,
 			initialHandoffStep: "implement",
 			kickoffTemplate: DELIB_SYNTHESIS,
-			stepTemplates: { implement: DELIB_SYNTHESIS, review: DELIB_REVIEW, fix: DELIB_SYNTHESIS_FIX },
+			stepTemplates: { implement: DELIB_SYNTHESIS, review: DELIB_SYNTHESIS_REVIEW, fix: DELIB_SYNTHESIS_FIX },
 			reviewMode: "phase-review",
 			evaluatorPromptKey: "deliberation-loop",
 			artifactOut: { kind: "spec", pathTemplate: "{findingsPath}" },
