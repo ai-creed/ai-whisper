@@ -20,7 +20,7 @@ describe("estimateTokens", () => {
 
 function sum(p: Partial<CollabSummary>): CollabSummary {
 	return {
-		collabId: "c", label: "lbl", workflowId: "wf", workflowType: "spec-driven-development",
+		collabId: "c", label: "lbl", workspaceRoot: "/tmp/ws", workflowId: "wf", workflowType: "spec-driven-development",
 		workflowStatus: "running", currentPhaseRunId: "pr1", phaseIndex: 1, phaseName: "plan-writing",
 		currentRound: 2, maxRounds: 5, chainStatus: "active",
 		turn: { owner: "codex", waiting: "claude", handoffState: "accepted" },

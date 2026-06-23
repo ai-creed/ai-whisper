@@ -6,6 +6,7 @@ import { basename } from "node:path";
 export type CollabSummary = {
 	collabId: string;
 	label: string;
+	workspaceRoot: string;
 	workflowId: string | null;
 	workflowType: string | null;
 	workflowStatus: "running" | "done" | "halted" | "canceled" | null;
@@ -256,6 +257,7 @@ function buildCollabSummary(db: Database.Database, collabId: string): CollabSumm
 		return {
 			collabId: e.collabId,
 			label,
+			workspaceRoot: collab?.workspaceRoot ?? "",
 			workflowId: wf?.workflowId ?? null,
 			workflowType: wf?.workflowType ?? null,
 			workflowStatus: wf?.status ?? null,

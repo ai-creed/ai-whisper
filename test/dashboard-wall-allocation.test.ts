@@ -9,6 +9,7 @@ function s(p: Partial<CollabSummary>): CollabSummary {
 	return {
 		collabId: p.collabId ?? "c",
 		label: "x",
+		workspaceRoot: "/tmp/ws",
 		workflowId: p.workflowId ?? "wf",
 		workflowType: "spec-driven-development",
 		workflowStatus: p.workflowStatus ?? "running",
