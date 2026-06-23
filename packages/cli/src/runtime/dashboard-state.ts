@@ -196,7 +196,7 @@ export function partitionWallGroups(summaries: CollabSummary[]): WallGroups {
 // ---- Priority-fill allocation + paging across sections ----
 
 const MIN_PANE_COLS = 40;
-const CARD_HEIGHT = { full: 6, compact: 4 } as const; // border (2) + content
+export const CARD_HEIGHT = { full: 7, compact: 5 } as const; // border (2) + content
 const HEADER_ROWS = 1;
 
 const GROUP_ORDER: WallGroupKey[] = ["active", "idleManual", "halted", "doneCanceled"];

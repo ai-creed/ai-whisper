@@ -88,6 +88,15 @@ function padRight(s: string, n: number): string {
 	return s.length >= n ? s.slice(0, n) : s + " ".repeat(n - s.length);
 }
 
+function cwdLine(cwd: string | null, width: number): ReactElement {
+	const budget = Math.max(8, width - 2 - 2 - 2); // border, indent, "⌂ "
+	return (
+		<Text wrap="truncate" color={THEME.muted}>
+			{"  "}⌂ {cwd ? keepTail(cwd, budget) : "—"}
+		</Text>
+	);
+}
+
 function statusKeyToWorkflowStatus(
 	key: WallPaneState["statusKey"],
 ): "running" | "done" | "halted" | "canceled" | null {
@@ -129,6 +138,7 @@ export function FullCard(props: {
 					<Text color={THEME.err}>⚠</Text> {pane.label}
 					{typeText ? <Text color={THEME.muted}> {typeText}</Text> : null}
 				</Text>
+				{cwdLine(pane.cwd, props.width)}
 				<Text wrap="truncate" color={THEME.err}>
 					{"  "}
 					{why.slice(0, splitAt)}
@@ -191,6 +201,7 @@ export function FullCard(props: {
 				{typeText ? <Text color={THEME.muted}> {typeText}</Text> : null}
 				{roundText ? <Text color={THEME.muted}>{roundText}</Text> : null}
 			</Text>
+			{cwdLine(pane.cwd, props.width)}
 			{artifactText ? (
 				<Text wrap="truncate" color={THEME.muted}>
 					{"  "}→{" "}
@@ -294,6 +305,7 @@ export function CompactCard(props: {
 				{typeText ? <Text color={THEME.muted}> {typeText}</Text> : null}
 				<Text color={THEME.muted}> · {statusElapsed}</Text>
 			</Text>
+			{cwdLine(pane.cwd, props.width)}
 			<Text wrap="truncate" color={THEME.muted}>
 				{"  "}→ {base ? keepTail(base, artBudget) : "—"}
 			</Text>

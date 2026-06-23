@@ -16,6 +16,7 @@ import type {
 	WallState,
 	WorkflowHistoryItem,
 } from "../packages/cli/src/runtime/dashboard-state.ts";
+import { CARD_HEIGHT } from "../packages/cli/src/runtime/dashboard-state.ts";
 import type { RelayViewState } from "../packages/cli/src/runtime/relay-view-state.ts";
 import type { Viewport } from "../packages/cli/src/runtime/relay-view.ts";
 import { readFileSync } from "node:fs";
@@ -139,6 +140,84 @@ describe("Compact card — readable filename", () => {
 		expect(noArt).toContain("→ —");
 		// Isolated card (no Wall chrome): same content-line count with/without artifact.
 		expect(cardContentLines(noArt)).toBe(cardContentLines(withArt));
+	});
+});
+
+describe("cwd line + card height budget", () => {
+	const fullPane = (over: Partial<WallPaneState> = {}) =>
+		mkPane({
+			collabId: "c1",
+			statusKey: "running",
+			label: "ai-14all",
+			cwd: "~/Dev/ai-14all/.worktrees/devel",
+			artifact: "docs/specs/2026-06-23-x-design.md",
+			events: [
+				{ step: "review", route: "ezio→claude", verdict: "pass" },
+				{ step: "draft", route: "claude→ezio", verdict: "-" },
+			],
+			...over,
+		});
+	const renderFull = (over: Partial<WallPaneState> = {}, width = 56) =>
+		stripAnsi(render(<FullCard pane={fullPane(over)} selected={false} width={width} />).lastFrame() ?? "");
+
+	it("full card WITH artifact shows the cwd line and renders exactly 5 content lines", () => {
+		const out = renderFull();
+		expect(out).toContain("⌂ ~/Dev/ai-14all/.worktrees/devel");
+		expect(out).toContain("x-design.md"); // basename artifact line present
+		expect(cardContentLines(out)).toBe(CARD_HEIGHT.full - 2); // exactly 5
+	});
+
+	it("full card with NO artifact event-displaces to still render exactly 5 lines", () => {
+		const out = renderFull({ artifact: null }); // 2 events available → eventCount 2
+		expect(out).not.toContain("x-design.md"); // artifact line gone
+		expect(cardContentLines(out)).toBe(CARD_HEIGHT.full - 2); // still exactly 5
+	});
+
+	it("full card with no artifact and fewer than two events renders fewer lines, never more", () => {
+		const out = renderFull({
+			artifact: null,
+			events: [{ step: "review", route: "ezio→claude", verdict: "pass" }], // only 1
+		});
+		expect(cardContentLines(out)).toBeLessThan(CARD_HEIGHT.full - 2); // 4 — not padded
+	});
+
+	it("stuck full card shows the cwd line (early-return) and stays within budget", () => {
+		const out = renderFull({
+			statusKey: "stuck",
+			stuckWhy: "STUCK 6m12s — round 3/3 max reached → escalated",
+		});
+		expect(out).toContain("⌂ ~/Dev/ai-14all/.worktrees/devel");
+		expect(out).toContain("STUCK 6m12s");
+		expect(cardContentLines(out)).toBeLessThanOrEqual(CARD_HEIGHT.full - 2);
+	});
+
+	it("compact card shows the cwd line and renders exactly 3 content lines", () => {
+		const out = stripAnsi(
+			render(
+				<CompactCard pane={fullPane({ statusKey: "done", cardKind: "compact", events: [] })} selected={false} width={56} />,
+			).lastFrame() ?? "",
+		);
+		expect(out).toContain("⌂ ~/Dev/ai-14all/.worktrees/devel");
+		expect(cardContentLines(out)).toBe(CARD_HEIGHT.compact - 2); // exactly 3
+	});
+
+	it("renders ⌂ — when cwd is null", () => {
+		expect(renderFull({ cwd: null })).toContain("⌂ —");
+	});
+
+	it("front-clips a long cwd on a narrow card (keepTail applied to cwd, not raw)", () => {
+		const out = renderFull({}, 32); // budget 26 < 31-char path → must clip
+		expect(out).toMatch(/⌂ …/); // leading ellipsis present
+		expect(out).toContain("worktrees/devel"); // distinctive tail kept
+		expect(out).not.toContain("⌂ ~/Dev/ai-14all/.worktrees/devel"); // full string NOT shown whole
+	});
+
+	it("renders main vs worktree cwd readably and distinctly on a wide card", () => {
+		const main = renderFull({ cwd: "~/Dev/ai-cortex" });
+		const wt = renderFull({ cwd: "~/Dev/ai-14all/.worktrees/devel" });
+		expect(main).toContain("⌂ ~/Dev/ai-cortex"); // main checkout fully readable
+		expect(main).not.toContain(".worktrees"); // clearly not a worktree
+		expect(wt).toContain("⌂ ~/Dev/ai-14all/.worktrees/devel"); // worktree fully readable + distinct
 	});
 });
 
