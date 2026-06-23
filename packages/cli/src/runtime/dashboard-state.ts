@@ -52,6 +52,10 @@ export type WallState = {
 	selected: number;
 };
 export type PhaseStat = {
+	// Unique per phase RUN (the phase_runs PK). The timeline is a list of runs,
+	// and one phaseIndex can recur — escalate→resume opens a fresh run at the same
+	// index — so phaseRunId, not phaseIndex, is the stable React list key.
+	phaseRunId: string;
 	phaseIndex: number;
 	phaseName: string;
 	roundsUsed: number;
@@ -438,6 +442,7 @@ export function buildInspectorState(input: {
 		.slice()
 		.sort((a, b) => a.phaseIndex - b.phaseIndex)
 		.map((p) => ({
+			phaseRunId: p.phaseRunId,
 			phaseIndex: p.phaseIndex,
 			phaseName: p.phaseName,
 			roundsUsed: roundsByPhase.get(p.phaseRunId) ?? 0,
