@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { render } from "ink-testing-library";
 import {
 	Wall,
@@ -257,6 +257,7 @@ function mkInspectorState(p: {
 		}),
 		timeline: p.timeline ?? [
 			{
+				phaseRunId: "pr-0",
 				phaseIndex: 0,
 				phaseName: "plan",
 				roundsUsed: 1,
@@ -779,6 +780,7 @@ describe("Inspector polish (Task 13)", () => {
 			stuck: false,
 			timeline: [
 				{
+					phaseRunId: "pr-0",
 					phaseIndex: 0,
 					phaseName: "plan",
 					roundsUsed: 1,
@@ -789,6 +791,7 @@ describe("Inspector polish (Task 13)", () => {
 					estOutTokens: 50,
 				},
 				{
+					phaseRunId: "pr-1",
 					phaseIndex: 1,
 					phaseName: "implement",
 					roundsUsed: 3,
@@ -878,6 +881,63 @@ describe("Inspector polish (Task 13)", () => {
 		expect(out).toMatch(/⚠/); // halted
 		expect(out).toMatch(/✖/); // canceled
 		expect(out).not.toContain("⏸"); // paused deferred
+	});
+
+	it("renders re-run phases (same phaseIndex after escalate→resume) without a duplicate React key warning", () => {
+		// Escalate→resume re-runs a phase: the escalated run gets endedAt set, then
+		// resume opens a fresh phase_runs row at the SAME phaseIndex. getWorkflowPhaseRuns
+		// returns both, so two timeline rows share a phaseIndex. Keying the list on the
+		// unique phaseRunId (not phaseIndex) must keep React keys unique.
+		const state = mkInspectorState({
+			stuck: false,
+			timeline: [
+				{
+					phaseRunId: "pr-escalated",
+					phaseIndex: 2,
+					phaseName: "code-review",
+					roundsUsed: 3,
+					maxRounds: 3,
+					durationMs: 120_000,
+					outcome: "escalate",
+					estInTokens: 200,
+					estOutTokens: 100,
+				},
+				{
+					phaseRunId: "pr-resumed",
+					phaseIndex: 2,
+					phaseName: "code-review",
+					roundsUsed: 1,
+					maxRounds: 3,
+					durationMs: 60_000,
+					outcome: "approve",
+					estInTokens: 150,
+					estOutTokens: 80,
+				},
+			],
+		});
+		const errors: string[] = [];
+		const spy = vi
+			.spyOn(console, "error")
+			.mockImplementation((...args: unknown[]) => {
+				errors.push(args.map(String).join(" "));
+			});
+		try {
+			render(
+				<Inspector
+					state={state}
+					section="timeline"
+					viewport={defaultViewport}
+					cols={120}
+					rows={40}
+					label="mylabel"
+					workflowType="complex-bug-fixing"
+					workflowStatus="running"
+				/>,
+			);
+		} finally {
+			spy.mockRestore();
+		}
+		expect(errors.join("\n")).not.toMatch(/same key/i);
 	});
 });
 

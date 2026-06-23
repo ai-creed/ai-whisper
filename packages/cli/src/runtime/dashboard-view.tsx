@@ -489,7 +489,7 @@ export function Inspector(props: {
 						)}  ${padRight("~TOK", 9)}  OUTCOME`}
 					</Text>
 					{s.timeline.map((p) => (
-						<Text key={p.phaseIndex} wrap="truncate">
+						<Text key={p.phaseRunId} wrap="truncate">
 							{`${padRight(p.phaseName, 18)}  ${padRight(
 								`${p.roundsUsed}/${p.maxRounds}`,
 								5,
