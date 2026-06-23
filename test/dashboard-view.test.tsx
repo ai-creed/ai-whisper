@@ -831,7 +831,7 @@ describe("Wall — artifact subline + started-at (Fix 2/3)", () => {
 		});
 		const { lastFrame } = render(<Wall state={state} cols={100} rows={20} />);
 		const out = stripAnsi(lastFrame() ?? "");
-		expect(out).toContain("→ docs/foo.md");
+		expect(out).toContain("→ foo.md"); // basename only, no directory
 		expect(out).toContain("09:15"); // UTC HH:MM from startIso
 		expect(out).toContain("1m23s");
 		expect(out).toContain("ezio");
@@ -1047,3 +1047,30 @@ describe("keepTail", () => {
 		expect(keepTail("abc", 1)).toBe("c");
 	});
 });
+
+	describe("Full card — artifact basename", () => {
+		it("renders the artifact basename (dir dropped) and keeps the time tail", () => {
+			const state = mkWallState({
+				sections: [
+					mkSection({
+						group: "active",
+						panes: [
+							mkPane({
+								collabId: "c1",
+								statusKey: "running",
+								label: "ai-cortex",
+								artifact: "docs/superpowers/specs/2026-06-23-library-design.md",
+								startIso: "2026-06-23T09:15:00.000Z",
+								elapsed: "5h12m",
+							}),
+						],
+					}),
+				],
+			});
+			const out = stripAnsi(render(<Wall state={state} cols={100} rows={20} />).lastFrame() ?? "");
+			expect(out).toContain("2026-06-23-library-design.md");
+			expect(out).not.toContain("docs/superpowers");
+			expect(out).toContain("09:15"); // time tail preserved
+			expect(out).toContain("5h12m");
+		});
+	});

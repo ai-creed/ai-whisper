@@ -193,7 +193,11 @@ export function FullCard(props: {
 			</Text>
 			{artifactText ? (
 				<Text wrap="truncate" color={THEME.muted}>
-					{"  "}→ {midEllipsis(artifactText, artifactBudget)}
+					{"  "}→{" "}
+					{keepTail(
+						artifactText.slice(artifactText.lastIndexOf("/") + 1) || artifactText,
+						artifactBudget,
+					)}
 					{timeTail}
 				</Text>
 			) : null}
