@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import type { AgentType } from "@ai-whisper/shared";
 import type {
 	LogLine,
@@ -33,6 +34,7 @@ export type WallPaneState = {
 	elapsed: string; // for compact card line 2
 	startIso: string | null; // workflow start (workflowCreatedAt) — UTC HH:MM on the card
 	artifact: string | null; // repo-relative spec/goal/bug-report path
+	cwd: string | null; // abbreviated workspace_root ($HOME→~), null when unknown
 	cardKind: "full" | "compact";
 };
 export type WallStateSection = {
@@ -152,6 +154,16 @@ function recencyKey(s: CollabSummary): string {
 
 function cmpDesc(a: string, b: string): number {
 	return a < b ? 1 : a > b ? -1 : 0;
+}
+
+// Abbreviate an absolute workspace path for the card: strip a leading /private
+// (macOS tmp/var symlink), then replace a leading $HOME with ~. Pure — `home`
+// is injected. Returns "" unchanged (caller maps that to null).
+export function abbreviateCwd(absPath: string, home: string): string {
+	let p = absPath;
+	if (p.startsWith("/private/")) p = p.slice("/private".length);
+	if (home && (p === home || p.startsWith(home + "/"))) p = "~" + p.slice(home.length);
+	return p;
 }
 
 export function partitionWallGroups(summaries: CollabSummary[]): WallGroups {
@@ -563,6 +575,7 @@ function projectPane(
 	now: string,
 	idleThresholdMs: number,
 	snap: { handoffs: RelayHandoffLogRow[]; phaseRuns: PhaseRunRef[]; totalPhases: number },
+	home: string,
 ): WallPaneState {
 	// Bug C / Task 8b: feed the active step into the liveness snapshot so the
 	// phase-aware budget (execute/review → larger) applies on the Wall too.
@@ -654,6 +667,7 @@ function projectPane(
 		elapsed,
 		startIso: s.workflowCreatedAt,
 		artifact: s.specPath,
+		cwd: s.workspaceRoot ? abbreviateCwd(s.workspaceRoot, home) : null,
 		cardKind,
 	};
 }
@@ -675,7 +689,9 @@ export function buildWallState(input: {
 		string,
 		{ handoffs: RelayHandoffLogRow[]; phaseRuns: PhaseRunRef[]; totalPhases: number }
 	>;
+	home?: string;
 }): WallState {
+	const home = input.home ?? homedir();
 	const groups = partitionWallGroups(input.summaries);
 	let cols: number;
 	let rows: number;
@@ -699,7 +715,7 @@ export function buildWallState(input: {
 				phaseRuns: [],
 				totalPhases: 0,
 			};
-			return projectPane(sum, input.now, input.idleThresholdMs, snap);
+			return projectPane(sum, input.now, input.idleThresholdMs, snap, home);
 		}),
 	}));
 	const panes = sections.flatMap((sec) => sec.panes);

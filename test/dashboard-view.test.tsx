@@ -46,6 +46,7 @@ function mkPane(p: PaneOverrides): WallPaneState {
 		elapsed: "1m23s",
 		startIso: null,
 		artifact: null,
+		cwd: null,
 		cardKind: "full",
 		...p,
 	};

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimateTokens } from "../packages/cli/src/runtime/dashboard-state.ts";
+import { estimateTokens, abbreviateCwd } from "../packages/cli/src/runtime/dashboard-state.ts";
 import { buildWallState, selectWallPage } from "../packages/cli/src/runtime/dashboard-state.ts";
 import { buildInspectorState } from "../packages/cli/src/runtime/dashboard-state.ts";
 import type { CollabSummary } from "@ai-whisper/broker";
@@ -547,5 +547,54 @@ describe("buildWallState — terminal-card elapsed is frozen across polls", () =
 		expect(a.elapsed).not.toBe(b.elapsed);
 		expect(a.elapsed).toBe("5m00s");
 		expect(b.elapsed).toBe("10m00s");
+	});
+});
+
+describe("abbreviateCwd", () => {
+	it("replaces a leading $HOME with ~", () => {
+		expect(abbreviateCwd("/Users/vuphan/Dev/ai-cortex", "/Users/vuphan")).toBe("~/Dev/ai-cortex");
+	});
+	it("maps an exact $HOME to ~", () => {
+		expect(abbreviateCwd("/Users/vuphan", "/Users/vuphan")).toBe("~");
+	});
+	it("strips a leading /private (macOS tmp/var symlink)", () => {
+		expect(abbreviateCwd("/private/tmp/deliberation-noanchor", "/Users/vuphan")).toBe("/tmp/deliberation-noanchor");
+	});
+	it("returns a non-home path verbatim", () => {
+		expect(abbreviateCwd("/tmp/x", "/Users/vuphan")).toBe("/tmp/x");
+	});
+	it("returns empty for empty input", () => {
+		expect(abbreviateCwd("", "/Users/vuphan")).toBe("");
+	});
+});
+
+describe("buildWallState — cwd", () => {
+	it("populates pane.cwd from the summary workspaceRoot via abbreviateCwd", () => {
+		const state = buildWallState({
+			summaries: [sum({ collabId: "c1", workflowStatus: "running", workspaceRoot: "/home/u/Dev/proj" })],
+			now: "2026-06-23T00:00:00.000Z",
+			idleThresholdMs: 60_000,
+			cols: 80,
+			rows: 40,
+			page: 0,
+			selected: 0,
+			snapshots: {},
+			home: "/home/u",
+		});
+		expect(state.panes[0]?.cwd).toBe("~/Dev/proj");
+	});
+	it("sets pane.cwd to null when workspaceRoot is empty", () => {
+		const state = buildWallState({
+			summaries: [sum({ collabId: "c2", workflowStatus: "running", workspaceRoot: "" })],
+			now: "2026-06-23T00:00:00.000Z",
+			idleThresholdMs: 60_000,
+			cols: 80,
+			rows: 40,
+			page: 0,
+			selected: 0,
+			snapshots: {},
+			home: "/home/u",
+		});
+		expect(state.panes[0]?.cwd).toBeNull();
 	});
 });
