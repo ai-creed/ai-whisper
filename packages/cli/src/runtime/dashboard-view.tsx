@@ -64,6 +64,12 @@ export function keepTail(s: string, width: number): string {
 	return "…" + s.slice(s.length - (width - 1));
 }
 
+// Last path segment (the filename). Falls back to the whole string for a bare
+// name or a trailing-slash path. Artifacts are repo-relative posix paths.
+function artifactBasename(p: string): string {
+	return p.slice(p.lastIndexOf("/") + 1) || p;
+}
+
 // Start time as UTC HH:MM (matches the relay logs' UTC timestamps). Null when
 // the timestamp is missing/unparseable so the caller can omit the segment.
 export function hhmmUTC(iso: string): string | null {
@@ -88,6 +94,8 @@ function padRight(s: string, n: number): string {
 	return s.length >= n ? s.slice(0, n) : s + " ".repeat(n - s.length);
 }
 
+// Intentionally ignores isWide — cwd clips identically at any width, so both
+// FullCard and CompactCard share the same budget formula.
 function cwdLine(cwd: string | null, width: number): ReactElement {
 	const budget = Math.max(8, width - 2 - 2 - 2); // border, indent, "⌂ "
 	return (
@@ -206,7 +214,7 @@ export function FullCard(props: {
 				<Text wrap="truncate" color={THEME.muted}>
 					{"  "}→{" "}
 					{keepTail(
-						artifactText.slice(artifactText.lastIndexOf("/") + 1) || artifactText,
+						artifactBasename(artifactText),
 						artifactBudget,
 					)}
 					{timeTail}
@@ -285,9 +293,7 @@ export function CompactCard(props: {
 	const compactArtifact = pane.artifact?.trim() || null;
 	// Dedicated artifact line: budget = inner width minus border(2), indent(2), "→ "(2).
 	const artBudget = Math.max(8, props.width - 2 - 2 - 2);
-	const base = compactArtifact
-		? compactArtifact.slice(compactArtifact.lastIndexOf("/") + 1) || compactArtifact
-		: null;
+	const base = compactArtifact ? artifactBasename(compactArtifact) : null;
 	return (
 		<Box
 			flexDirection="column"
