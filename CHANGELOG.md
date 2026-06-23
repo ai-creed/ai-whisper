@@ -5,6 +5,17 @@ All notable changes to the `ai-whisper` package are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-06-24
+
+### Added
+
+- **Dashboard cards — worktree/cwd line + readable artifact filename**: Wall cards now show the artifact's basename on its own line — the full, copyable filename instead of a gutted middle-ellipsis (`docs/…gn.md`) — plus a new `⌂` line with the run's abbreviated working directory (`$HOME` → `~`, a leading `/private` stripped). Worktree runs (`~/Dev/ai-14all/.worktrees/devel`) are now distinguishable from a main checkout, and runs sharing a directory are told apart by their now-readable filenames. Compact DONE/CANCELED cards drop the redundant `P4/4` token; long paths front-clip to keep the distinctive tail. The Wall allocator's `CARD_HEIGHT` budget moves in lockstep with the new card heights (`{ full: 7, compact: 5 }`) so pagination stays correct.
+- **LLM evaluator readiness in `whisper env --json`**: the env report gains an `evaluator: { status, ready }` block reporting whether the evaluator that gates the workflows has credentials, resolved from config alone (`auth.json` / `config.json` / `.env` + process env) without a running daemon. External supervisors (e.g. ai-14all's Plugins panel) can use it to warn that workflows will fail before one is started. `status` is the reason (`ready` / `missing_anthropic_key` / `invalid_config` / `disabled` / `unknown`); `ready` is the boolean rollup.
+
+### Fixed
+
+- **Inspector Timeline duplicate-key flood on resumed workflows**: the Timeline tab keyed its phase rows on `phaseIndex`, which is not unique once an escalated phase is resumed — resume opens a fresh `phase_runs` row at the same index, so `getWorkflowPhaseRuns` returned two rows sharing a key and React emitted a flood of "Encountered two children with the same key" warnings that corrupted the tab. Rows are now keyed on the unique `phaseRunId`; both the escalated attempt and the resumed retry render correctly.
+
 ## [0.7.0] - 2026-06-22
 
 ### Added
@@ -666,6 +677,7 @@ Requires `@ai-creed/ai-ezio` ≥ 0.2.0-beta.4 (the `@ai-ezio/surface` slash seam
   (Claude + Codex) driven by structured workflows, with npm metadata
   (description, repository, homepage).
 
+[0.8.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.8.0
 [0.7.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.7.0
 [0.6.1]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.6.1
 [0.6.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.6.0
