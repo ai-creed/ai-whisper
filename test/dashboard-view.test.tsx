@@ -5,6 +5,7 @@ import {
 	gridCapacity,
 	Inspector,
 	midEllipsis,
+	keepTail,
 } from "../packages/cli/src/runtime/dashboard-view.tsx";
 import type {
 	InspectorState,
@@ -971,5 +972,24 @@ describe("midEllipsis", () => {
 
 	it("returns the string unchanged when it already fits", () => {
 		expect(midEllipsis("docs/foo.md", 40)).toBe("docs/foo.md");
+	});
+});
+
+describe("keepTail", () => {
+	it("returns the string unchanged when it already fits", () => {
+		expect(keepTail("foo-design.md", 40)).toBe("foo-design.md");
+	});
+	it("keeps the tail with a leading ellipsis on overflow", () => {
+		const r = keepTail("2026-06-23-pr-e2e-gate-devel-design.md", 20);
+		expect(r.length).toBe(20);
+		expect(r.startsWith("…")).toBe(true);
+		expect(r.endsWith("-design.md")).toBe(true);
+	});
+	it("hard-slices the tail when width <= 3 (no room for an ellipsis)", () => {
+		expect(keepTail("abcdef", 3)).toBe("def");
+		expect(keepTail("abcdef", 2)).toBe("ef");
+	});
+	it("treats width <= 1 as a 1-char tail at most", () => {
+		expect(keepTail("abc", 1)).toBe("c");
 	});
 });

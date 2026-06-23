@@ -54,6 +54,16 @@ export function midEllipsis(path: string, width: number): string {
 	return path.slice(0, keepStart) + "…" + path.slice(path.length - keepEnd);
 }
 
+// Front-ellipsis: keep the END of the string (the distinctive tail — a worktree
+// leaf, or a filename's topic + extension) and drop the front. Returns the string
+// unchanged when it fits; a hard tail slice when the budget is too small for an
+// ellipsis.
+export function keepTail(s: string, width: number): string {
+	if (width <= 0 || s.length <= width) return s;
+	if (width <= 3) return s.slice(s.length - width);
+	return "…" + s.slice(s.length - (width - 1));
+}
+
 // Start time as UTC HH:MM (matches the relay logs' UTC timestamps). Null when
 // the timestamp is missing/unparseable so the caller can omit the segment.
 export function hhmmUTC(iso: string): string | null {
