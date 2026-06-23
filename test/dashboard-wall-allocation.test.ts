@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	allocateWallSections,
 	partitionWallGroups,
+	CARD_HEIGHT,
 } from "../packages/cli/src/runtime/dashboard-state.ts";
 import type { CollabSummary } from "@ai-whisper/broker";
 
@@ -9,6 +10,7 @@ function s(p: Partial<CollabSummary>): CollabSummary {
 	return {
 		collabId: p.collabId ?? "c",
 		label: "x",
+		workspaceRoot: "/tmp/ws",
 		workflowId: p.workflowId ?? "wf",
 		workflowType: "spec-driven-development",
 		workflowStatus: p.workflowStatus ?? "running",
@@ -142,7 +144,7 @@ describe("allocateWallSections", () => {
 	});
 
 	it("ACTIVE fills first; DONE only appears when there is room left for its header + at least one card row", () => {
-		// Geometry: cols=80 → colsCount=2; full card height=6; compact card height=4;
+		// Geometry: cols=80 → colsCount=2; full card height=7; compact card height=5;
 		// header rows=1 per non-empty section.
 		const groups = partitionWallGroups([
 			...Array.from({ length: 10 }, (_, i) =>
@@ -153,15 +155,15 @@ describe("allocateWallSections", () => {
 			),
 		]);
 
-		// Tight: rows=20. ACTIVE consumes 1 (header) + 3 rows × 6 = 19 rows for
-		// 6 active cards; 1 row remains, less than the 5 rows DONE needs.
-		const tight = allocateWallSections({ groups, cols: 80, rows: 20, page: 0 });
+		// Tight: rows=22. ACTIVE consumes 1 (header) + 3 rows × 7 = 22 rows for
+		// 6 active cards; 0 rows remain, so DONE cannot fit its header.
+		const tight = allocateWallSections({ groups, cols: 80, rows: 22, page: 0 });
 		const tightActive = tight.sections.find((s) => s.group === "active")!;
 		expect(tightActive.cards.length).toBe(6);
 		expect(tight.sections.find((s) => s.group === "doneCanceled")).toBeUndefined();
 
-		// Looser: rows=24. ACTIVE still consumes 19; 5 rows remain → 1-header + 1-row (4) = 5 budget → 1 compact row × 2 cols = 2 cards.
-		const loose = allocateWallSections({ groups, cols: 80, rows: 24, page: 0 });
+		// Looser: rows=28. ACTIVE still consumes 22; 6 rows remain → 1-header + 1-row (5) = 6 budget → 1 compact row × 2 cols = 2 cards.
+		const loose = allocateWallSections({ groups, cols: 80, rows: 28, page: 0 });
 		const looseActive = loose.sections.find((s) => s.group === "active")!;
 		expect(looseActive.cards.length).toBe(6);
 		const looseDone = loose.sections.find((s) => s.group === "doneCanceled");
@@ -190,6 +192,18 @@ describe("allocateWallSections", () => {
 		const groups = partitionWallGroups([activeCollab("a1", "2026-05-25T00:00:00Z")]);
 		const out = allocateWallSections({ groups, cols: 80, rows: 40, page: 0 });
 		expect(out.sections.find((s) => s.cards.length === 0)).toBeUndefined();
+	});
+
+	it("REGRESSION: a viewport sized to exactly one full-card row yields one row of cards", () => {
+		// rows = HEADER_ROWS(1) + 1×CARD_HEIGHT.full → exactly one card row fits.
+		const groups = partitionWallGroups(
+			Array.from({ length: 4 }, (_, i) => activeCollab(`a${i}`, `2026-05-${String(i + 1).padStart(2, "0")}T00:00:00Z`)),
+		);
+		const rows = 1 + CARD_HEIGHT.full; // 8
+		const out = allocateWallSections({ groups, cols: 80, rows, page: 0 });
+		const active = out.sections.find((s) => s.group === "active")!;
+		expect(active.cards.length).toBe(2); // colsCount=2 × 1 row
+		expect(out.pageCount).toBe(2); // 4 cards / 2 per page
 	});
 
 	it("paused never appears as a section group", () => {

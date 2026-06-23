@@ -5,6 +5,9 @@ import {
 	gridCapacity,
 	Inspector,
 	midEllipsis,
+	keepTail,
+	FullCard,
+	CompactCard,
 } from "../packages/cli/src/runtime/dashboard-view.tsx";
 import type {
 	InspectorState,
@@ -13,6 +16,7 @@ import type {
 	WallState,
 	WorkflowHistoryItem,
 } from "../packages/cli/src/runtime/dashboard-state.ts";
+import { CARD_HEIGHT } from "../packages/cli/src/runtime/dashboard-state.ts";
 import type { RelayViewState } from "../packages/cli/src/runtime/relay-view-state.ts";
 import type { Viewport } from "../packages/cli/src/runtime/relay-view.ts";
 import { readFileSync } from "node:fs";
@@ -43,6 +47,7 @@ function mkPane(p: PaneOverrides): WallPaneState {
 		elapsed: "1m23s",
 		startIso: null,
 		artifact: null,
+		cwd: null,
 		cardKind: "full",
 		...p,
 	};
@@ -92,6 +97,129 @@ function stripAnsi(s: string): string {
 	// eslint-disable-next-line no-control-regex
 	return s.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "");
 }
+
+// Lines of a single rendered card: total non-blank rows minus the 2 border rows.
+// A bordered Ink box renders `│…│` on every content row, so non-blank == box rows.
+function cardContentLines(frame: string): number {
+	return stripAnsi(frame).split("\n").filter((l) => l.trim().length > 0).length - 2;
+}
+
+describe("Compact card — readable filename", () => {
+	const compactPane = (artifact: string | null) =>
+		mkPane({
+			collabId: "d1",
+			statusKey: "done",
+			label: "devel",
+			workflowType: "spec-driven-development",
+			elapsed: "5h12m",
+			artifact,
+			cardKind: "compact",
+			events: [],
+		});
+
+	it("shows the full basename on its own line, status+elapsed on L1, no P4/4 packing", () => {
+		const out = stripAnsi(
+			render(
+				<CompactCard
+					pane={compactPane("docs/superpowers/specs/2026-06-23-pr-e2e-gate-devel-design.md")}
+					selected={false}
+					width={48}
+				/>,
+			).lastFrame() ?? "",
+		);
+		expect(out).toContain("2026-06-23-pr-e2e-gate-devel-design.md");
+		expect(out).toContain("done");
+		expect(out).toContain("5h12m");
+		expect(out).not.toContain("docs/superpowers"); // directory dropped
+		expect(out).not.toContain("P4/4"); // progress token gone from compact
+	});
+
+	it("renders the → — placeholder and keeps the compact content-line count", () => {
+		const noArt = stripAnsi(render(<CompactCard pane={compactPane(null)} selected={false} width={48} />).lastFrame() ?? "");
+		const withArt = stripAnsi(render(<CompactCard pane={compactPane("docs/x/foo.md")} selected={false} width={48} />).lastFrame() ?? "");
+		expect(noArt).toContain("→ —");
+		// Isolated card (no Wall chrome): same content-line count with/without artifact.
+		expect(cardContentLines(noArt)).toBe(cardContentLines(withArt));
+	});
+});
+
+describe("cwd line + card height budget", () => {
+	const fullPane = (over: Partial<WallPaneState> = {}) =>
+		mkPane({
+			collabId: "c1",
+			statusKey: "running",
+			label: "ai-14all",
+			cwd: "~/Dev/ai-14all/.worktrees/devel",
+			artifact: "docs/specs/2026-06-23-x-design.md",
+			events: [
+				{ step: "review", route: "ezio→claude", verdict: "pass" },
+				{ step: "draft", route: "claude→ezio", verdict: "-" },
+			],
+			...over,
+		});
+	const renderFull = (over: Partial<WallPaneState> = {}, width = 56) =>
+		stripAnsi(render(<FullCard pane={fullPane(over)} selected={false} width={width} />).lastFrame() ?? "");
+
+	it("full card WITH artifact shows the cwd line and renders exactly 5 content lines", () => {
+		const out = renderFull();
+		expect(out).toContain("⌂ ~/Dev/ai-14all/.worktrees/devel");
+		expect(out).toContain("x-design.md"); // basename artifact line present
+		expect(cardContentLines(out)).toBe(CARD_HEIGHT.full - 2); // exactly 5
+	});
+
+	it("full card with NO artifact event-displaces to still render exactly 5 lines", () => {
+		const out = renderFull({ artifact: null }); // 2 events available → eventCount 2
+		expect(out).not.toContain("x-design.md"); // artifact line gone
+		expect(cardContentLines(out)).toBe(CARD_HEIGHT.full - 2); // still exactly 5
+	});
+
+	it("full card with no artifact and fewer than two events renders fewer lines, never more", () => {
+		const out = renderFull({
+			artifact: null,
+			events: [{ step: "review", route: "ezio→claude", verdict: "pass" }], // only 1
+		});
+		expect(cardContentLines(out)).toBeLessThan(CARD_HEIGHT.full - 2); // 4 — not padded
+	});
+
+	it("stuck full card shows the cwd line (early-return) and stays within budget", () => {
+		const out = renderFull({
+			statusKey: "stuck",
+			stuckWhy: "STUCK 6m12s — round 3/3 max reached → escalated",
+		});
+		expect(out).toContain("⌂ ~/Dev/ai-14all/.worktrees/devel");
+		expect(out).toContain("STUCK 6m12s");
+		expect(cardContentLines(out)).toBeLessThanOrEqual(CARD_HEIGHT.full - 2);
+	});
+
+	it("compact card shows the cwd line and renders exactly 3 content lines", () => {
+		const out = stripAnsi(
+			render(
+				<CompactCard pane={fullPane({ statusKey: "done", cardKind: "compact", events: [] })} selected={false} width={56} />,
+			).lastFrame() ?? "",
+		);
+		expect(out).toContain("⌂ ~/Dev/ai-14all/.worktrees/devel");
+		expect(cardContentLines(out)).toBe(CARD_HEIGHT.compact - 2); // exactly 3
+	});
+
+	it("renders ⌂ — when cwd is null", () => {
+		expect(renderFull({ cwd: null })).toContain("⌂ —");
+	});
+
+	it("front-clips a long cwd on a narrow card (keepTail applied to cwd, not raw)", () => {
+		const out = renderFull({}, 32); // budget 26 < 31-char path → must clip
+		expect(out).toMatch(/⌂ …/); // leading ellipsis present
+		expect(out).toContain("worktrees/devel"); // distinctive tail kept
+		expect(out).not.toContain("⌂ ~/Dev/ai-14all/.worktrees/devel"); // full string NOT shown whole
+	});
+
+	it("renders main vs worktree cwd readably and distinctly on a wide card", () => {
+		const main = renderFull({ cwd: "~/Dev/ai-cortex" });
+		const wt = renderFull({ cwd: "~/Dev/ai-14all/.worktrees/devel" });
+		expect(main).toContain("⌂ ~/Dev/ai-cortex"); // main checkout fully readable
+		expect(main).not.toContain(".worktrees"); // clearly not a worktree
+		expect(wt).toContain("⌂ ~/Dev/ai-14all/.worktrees/devel"); // worktree fully readable + distinct
+	});
+});
 
 // ---- Shared Inspector fixture helpers (Task 13) ----
 
@@ -466,9 +594,11 @@ describe("Wall — compact card (Task 11)", () => {
 		expect(out).toContain("✓ donelabel");
 		expect(out).toContain("sdd");
 		expect(out).not.toContain("spec-driven-development");
-		expect(out).toContain("P5/5");
+		// New compact shape (Task 2): P token removed; status+elapsed on L1, → — on L2.
+		expect(out).not.toContain("P5/5");
 		expect(out).toContain("done");
 		expect(out).toContain("4m12s");
+		expect(out).toContain("→ —"); // no artifact → placeholder line
 	});
 
 	it("compact CANCELED card uses ✖ glyph in err color", () => {
@@ -781,7 +911,7 @@ describe("Wall — artifact subline + started-at (Fix 2/3)", () => {
 		});
 		const { lastFrame } = render(<Wall state={state} cols={100} rows={20} />);
 		const out = stripAnsi(lastFrame() ?? "");
-		expect(out).toContain("→ docs/foo.md");
+		expect(out).toContain("→ foo.md"); // basename only, no directory
 		expect(out).toContain("09:15"); // UTC HH:MM from startIso
 		expect(out).toContain("1m23s");
 		expect(out).toContain("ezio");
@@ -876,7 +1006,8 @@ describe("Wall — artifact subline + started-at (Fix 2/3)", () => {
 		expect(out).toContain("draft");
 	});
 
-	it("compact card line 2 prepends the artifact and RETAINS P/x", () => {
+	it("compact card L2 shows basename only (no dir), status+elapsed on L1, P token gone", () => {
+		// Renamed from "…prepends the artifact and RETAINS P/x" (Task 2 reflow).
 		const state = mkWallState({
 			sections: [
 				mkSection({
@@ -899,13 +1030,16 @@ describe("Wall — artifact subline + started-at (Fix 2/3)", () => {
 		});
 		const { lastFrame } = render(<Wall state={state} cols={100} rows={20} />);
 		const out = stripAnsi(lastFrame() ?? "");
-		expect(out).toContain("→ docs/foo.md");
-		expect(out).toContain("P5/5"); // progress token retained
+		// New shape: L2 shows basename only; full path dropped.
+		expect(out).toContain("→ foo.md");
+		expect(out).not.toContain("→ docs/foo.md"); // directory prefix stripped
+		expect(out).not.toContain("P5/5"); // progress token removed from compact
 		expect(out).toContain("done");
 		expect(out).toContain("4m12s");
 	});
 
-	it("compact card with no artifact keeps today's line 2 (no leading arrow)", () => {
+	it("compact card with no artifact shows → — placeholder on L2", () => {
+		// Renamed from "…keeps today's line 2 (no leading arrow)" (Task 2 reflow).
 		const state = mkWallState({
 			sections: [
 				mkSection({
@@ -928,8 +1062,9 @@ describe("Wall — artifact subline + started-at (Fix 2/3)", () => {
 		});
 		const { lastFrame } = render(<Wall state={state} cols={100} rows={20} />);
 		const out = stripAnsi(lastFrame() ?? "");
-		expect(out).not.toContain("→");
-		expect(out).toContain("P5/5");
+		// New shape: no artifact → always renders → — placeholder.
+		expect(out).toContain("→ —");
+		expect(out).not.toContain("P5/5"); // progress token removed from compact
 		expect(out).toContain("done");
 	});
 
@@ -973,3 +1108,49 @@ describe("midEllipsis", () => {
 		expect(midEllipsis("docs/foo.md", 40)).toBe("docs/foo.md");
 	});
 });
+
+describe("keepTail", () => {
+	it("returns the string unchanged when it already fits", () => {
+		expect(keepTail("foo-design.md", 40)).toBe("foo-design.md");
+	});
+	it("keeps the tail with a leading ellipsis on overflow", () => {
+		const r = keepTail("2026-06-23-pr-e2e-gate-devel-design.md", 20);
+		expect(r.length).toBe(20);
+		expect(r.startsWith("…")).toBe(true);
+		expect(r.endsWith("-design.md")).toBe(true);
+	});
+	it("hard-slices the tail when width <= 3 (no room for an ellipsis)", () => {
+		expect(keepTail("abcdef", 3)).toBe("def");
+		expect(keepTail("abcdef", 2)).toBe("ef");
+	});
+	it("treats width <= 1 as a 1-char tail at most", () => {
+		expect(keepTail("abc", 1)).toBe("c");
+	});
+});
+
+	describe("Full card — artifact basename", () => {
+		it("renders the artifact basename (dir dropped) and keeps the time tail", () => {
+			const state = mkWallState({
+				sections: [
+					mkSection({
+						group: "active",
+						panes: [
+							mkPane({
+								collabId: "c1",
+								statusKey: "running",
+								label: "ai-cortex",
+								artifact: "docs/superpowers/specs/2026-06-23-library-design.md",
+								startIso: "2026-06-23T09:15:00.000Z",
+								elapsed: "5h12m",
+							}),
+						],
+					}),
+				],
+			});
+			const out = stripAnsi(render(<Wall state={state} cols={100} rows={20} />).lastFrame() ?? "");
+			expect(out).toContain("2026-06-23-library-design.md");
+			expect(out).not.toContain("docs/superpowers");
+			expect(out).toContain("09:15"); // time tail preserved
+			expect(out).toContain("5h12m");
+		});
+	});

@@ -54,6 +54,22 @@ export function midEllipsis(path: string, width: number): string {
 	return path.slice(0, keepStart) + "…" + path.slice(path.length - keepEnd);
 }
 
+// Front-ellipsis: keep the END of the string (the distinctive tail — a worktree
+// leaf, or a filename's topic + extension) and drop the front. Returns the string
+// unchanged when it fits; a hard tail slice when the budget is too small for an
+// ellipsis.
+export function keepTail(s: string, width: number): string {
+	if (width <= 0 || s.length <= width) return s;
+	if (width <= 3) return s.slice(s.length - width);
+	return "…" + s.slice(s.length - (width - 1));
+}
+
+// Last path segment (the filename). Falls back to the whole string for a bare
+// name or a trailing-slash path. Artifacts are repo-relative posix paths.
+function artifactBasename(p: string): string {
+	return p.slice(p.lastIndexOf("/") + 1) || p;
+}
+
 // Start time as UTC HH:MM (matches the relay logs' UTC timestamps). Null when
 // the timestamp is missing/unparseable so the caller can omit the segment.
 export function hhmmUTC(iso: string): string | null {
@@ -78,6 +94,17 @@ function padRight(s: string, n: number): string {
 	return s.length >= n ? s.slice(0, n) : s + " ".repeat(n - s.length);
 }
 
+// Intentionally ignores isWide — cwd clips identically at any width, so both
+// FullCard and CompactCard share the same budget formula.
+function cwdLine(cwd: string | null, width: number): ReactElement {
+	const budget = Math.max(8, width - 2 - 2 - 2); // border, indent, "⌂ "
+	return (
+		<Text wrap="truncate" color={THEME.muted}>
+			{"  "}⌂ {cwd ? keepTail(cwd, budget) : "—"}
+		</Text>
+	);
+}
+
 function statusKeyToWorkflowStatus(
 	key: WallPaneState["statusKey"],
 ): "running" | "done" | "halted" | "canceled" | null {
@@ -86,7 +113,7 @@ function statusKeyToWorkflowStatus(
 	return key;
 }
 
-function FullCard(props: {
+export function FullCard(props: {
 	pane: WallPaneState;
 	selected: boolean;
 	width: number;
@@ -119,6 +146,7 @@ function FullCard(props: {
 					<Text color={THEME.err}>⚠</Text> {pane.label}
 					{typeText ? <Text color={THEME.muted}> {typeText}</Text> : null}
 				</Text>
+				{cwdLine(pane.cwd, props.width)}
 				<Text wrap="truncate" color={THEME.err}>
 					{"  "}
 					{why.slice(0, splitAt)}
@@ -181,9 +209,14 @@ function FullCard(props: {
 				{typeText ? <Text color={THEME.muted}> {typeText}</Text> : null}
 				{roundText ? <Text color={THEME.muted}>{roundText}</Text> : null}
 			</Text>
+			{cwdLine(pane.cwd, props.width)}
 			{artifactText ? (
 				<Text wrap="truncate" color={THEME.muted}>
-					{"  "}→ {midEllipsis(artifactText, artifactBudget)}
+					{"  "}→{" "}
+					{keepTail(
+						artifactBasename(artifactText),
+						artifactBudget,
+					)}
 					{timeTail}
 				</Text>
 			) : null}
@@ -212,7 +245,7 @@ function FullCard(props: {
 	);
 }
 
-function CompactCard(props: {
+export function CompactCard(props: {
 	pane: WallPaneState;
 	selected: boolean;
 	width: number;
@@ -244,19 +277,23 @@ function CompactCard(props: {
 				? THEME.select
 				: THEME.muted;
 	const chevron = props.selected ? "▸ " : "  ";
-	const isWide = props.width >= NARROW_PANE_COLS;
+	// CompactCard intentionally uses strict > here (not >= like FullCard).
+	// The compact L1 packs glyph + label + type + " · " + status + " · " + elapsed
+	// onto one line. At exactly NARROW_PANE_COLS (48) that string overflows and
+	// truncates elapsed unless the workflow type is abbreviated. FullCard's L1
+	// does not carry status/elapsed, so it can safely widen at >=. Do not
+	// "unify" these thresholds — the off-by-one is load-bearing.
+	const isWide = props.width > NARROW_PANE_COLS;
 	const typeText = pane.workflowType
 		? isWide
 			? pane.workflowType
 			: abbreviateWorkflowType(pane.workflowType)
 		: null;
-	const progressText = pane.progress
-		? `P${pane.progress.current}/${pane.progress.total}`
-		: "—";
-	const tail = `${progressText} · ${statusWord} · ${pane.elapsed}`;
-	const artBudget = Math.max(8, props.width - 2 - 2 - 4 - tail.length);
-	const compactArtifact = pane.artifact?.trim() || null; // whitespace → omit (no empty arrow)
-	const artifactPrefix = compactArtifact ? `→ ${midEllipsis(compactArtifact, artBudget)} · ` : "";
+	const statusElapsed = `${statusWord} · ${pane.elapsed}`;
+	const compactArtifact = pane.artifact?.trim() || null;
+	// Dedicated artifact line: budget = inner width minus border(2), indent(2), "→ "(2).
+	const artBudget = Math.max(8, props.width - 2 - 2 - 2);
+	const base = compactArtifact ? artifactBasename(compactArtifact) : null;
 	return (
 		<Box
 			flexDirection="column"
@@ -272,11 +309,11 @@ function CompactCard(props: {
 				{chevron}
 				<Text color={glyph.color}>{glyph.glyph}</Text> {pane.label}
 				{typeText ? <Text color={THEME.muted}> {typeText}</Text> : null}
+				<Text color={THEME.muted}> · {statusElapsed}</Text>
 			</Text>
+			{cwdLine(pane.cwd, props.width)}
 			<Text wrap="truncate" color={THEME.muted}>
-				{"  "}
-				{artifactPrefix}
-				{progressText} · {statusWord} · {pane.elapsed}
+				{"  "}→ {base ? keepTail(base, artBudget) : "—"}
 			</Text>
 		</Box>
 	);

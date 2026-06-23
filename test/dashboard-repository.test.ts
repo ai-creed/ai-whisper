@@ -265,6 +265,15 @@ describe("listActiveCollabSummaries", () => {
 		expect(row?.workflowId).toBe("wf4");
 		expect(row?.specPath).toBeNull();
 	});
+
+	it("projects the collab workspace_root onto the summary", () => {
+		const db = freshDb();
+		insCollab(db, "cws"); // workspace_root = /tmp/cws
+		insWorkflow(db, { id: "wfws", collab: "cws", createdAt: "2026-05-20T00:50:00.000Z" });
+		insHandoff(db, { id: "hws", collab: "cws", wf: "wfws", createdAt: "2026-05-20T00:55:00.000Z", lastAct: "2026-05-20T00:59:30.000Z" });
+		const rows = listActiveCollabSummaries(db, { sinceMs, now: NOW });
+		expect(rows.find((r) => r.collabId === "cws")?.workspaceRoot).toBe("/tmp/cws");
+	});
 });
 
 function insCostHandoff(db: ReturnType<typeof freshDb>, h: { id: string; collab: string; wf?: string | null; phase?: string | null; createdAt: string; resolvedAt?: string | null; lastAct?: string; req?: string; root?: string | null; back?: string | null }) {
