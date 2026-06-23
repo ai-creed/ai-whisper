@@ -96,7 +96,7 @@ function statusKeyToWorkflowStatus(
 	return key;
 }
 
-function FullCard(props: {
+export function FullCard(props: {
 	pane: WallPaneState;
 	selected: boolean;
 	width: number;
@@ -222,7 +222,7 @@ function FullCard(props: {
 	);
 }
 
-function CompactCard(props: {
+export function CompactCard(props: {
 	pane: WallPaneState;
 	selected: boolean;
 	width: number;
@@ -254,19 +254,25 @@ function CompactCard(props: {
 				? THEME.select
 				: THEME.muted;
 	const chevron = props.selected ? "▸ " : "  ";
-	const isWide = props.width >= NARROW_PANE_COLS;
+	// CompactCard intentionally uses strict > here (not >= like FullCard).
+	// The compact L1 packs glyph + label + type + " · " + status + " · " + elapsed
+	// onto one line. At exactly NARROW_PANE_COLS (48) that string overflows and
+	// truncates elapsed unless the workflow type is abbreviated. FullCard's L1
+	// does not carry status/elapsed, so it can safely widen at >=. Do not
+	// "unify" these thresholds — the off-by-one is load-bearing.
+	const isWide = props.width > NARROW_PANE_COLS;
 	const typeText = pane.workflowType
 		? isWide
 			? pane.workflowType
 			: abbreviateWorkflowType(pane.workflowType)
 		: null;
-	const progressText = pane.progress
-		? `P${pane.progress.current}/${pane.progress.total}`
-		: "—";
-	const tail = `${progressText} · ${statusWord} · ${pane.elapsed}`;
-	const artBudget = Math.max(8, props.width - 2 - 2 - 4 - tail.length);
-	const compactArtifact = pane.artifact?.trim() || null; // whitespace → omit (no empty arrow)
-	const artifactPrefix = compactArtifact ? `→ ${midEllipsis(compactArtifact, artBudget)} · ` : "";
+	const statusElapsed = `${statusWord} · ${pane.elapsed}`;
+	const compactArtifact = pane.artifact?.trim() || null;
+	// Dedicated artifact line: budget = inner width minus border(2), indent(2), "→ "(2).
+	const artBudget = Math.max(8, props.width - 2 - 2 - 2);
+	const base = compactArtifact
+		? compactArtifact.slice(compactArtifact.lastIndexOf("/") + 1) || compactArtifact
+		: null;
 	return (
 		<Box
 			flexDirection="column"
@@ -282,11 +288,10 @@ function CompactCard(props: {
 				{chevron}
 				<Text color={glyph.color}>{glyph.glyph}</Text> {pane.label}
 				{typeText ? <Text color={THEME.muted}> {typeText}</Text> : null}
+				<Text color={THEME.muted}> · {statusElapsed}</Text>
 			</Text>
 			<Text wrap="truncate" color={THEME.muted}>
-				{"  "}
-				{artifactPrefix}
-				{progressText} · {statusWord} · {pane.elapsed}
+				{"  "}→ {base ? keepTail(base, artBudget) : "—"}
 			</Text>
 		</Box>
 	);

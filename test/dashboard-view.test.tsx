@@ -6,6 +6,8 @@ import {
 	Inspector,
 	midEllipsis,
 	keepTail,
+	FullCard,
+	CompactCard,
 } from "../packages/cli/src/runtime/dashboard-view.tsx";
 import type {
 	InspectorState,
@@ -93,6 +95,51 @@ function stripAnsi(s: string): string {
 	// eslint-disable-next-line no-control-regex
 	return s.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "");
 }
+
+// Lines of a single rendered card: total non-blank rows minus the 2 border rows.
+// A bordered Ink box renders `│…│` on every content row, so non-blank == box rows.
+function cardContentLines(frame: string): number {
+	return stripAnsi(frame).split("\n").filter((l) => l.trim().length > 0).length - 2;
+}
+
+describe("Compact card — readable filename", () => {
+	const compactPane = (artifact: string | null) =>
+		mkPane({
+			collabId: "d1",
+			statusKey: "done",
+			label: "devel",
+			workflowType: "spec-driven-development",
+			elapsed: "5h12m",
+			artifact,
+			cardKind: "compact",
+			events: [],
+		});
+
+	it("shows the full basename on its own line, status+elapsed on L1, no P4/4 packing", () => {
+		const out = stripAnsi(
+			render(
+				<CompactCard
+					pane={compactPane("docs/superpowers/specs/2026-06-23-pr-e2e-gate-devel-design.md")}
+					selected={false}
+					width={48}
+				/>,
+			).lastFrame() ?? "",
+		);
+		expect(out).toContain("2026-06-23-pr-e2e-gate-devel-design.md");
+		expect(out).toContain("done");
+		expect(out).toContain("5h12m");
+		expect(out).not.toContain("docs/superpowers"); // directory dropped
+		expect(out).not.toContain("P4/4"); // progress token gone from compact
+	});
+
+	it("renders the → — placeholder and keeps the compact content-line count", () => {
+		const noArt = stripAnsi(render(<CompactCard pane={compactPane(null)} selected={false} width={48} />).lastFrame() ?? "");
+		const withArt = stripAnsi(render(<CompactCard pane={compactPane("docs/x/foo.md")} selected={false} width={48} />).lastFrame() ?? "");
+		expect(noArt).toContain("→ —");
+		// Isolated card (no Wall chrome): same content-line count with/without artifact.
+		expect(cardContentLines(noArt)).toBe(cardContentLines(withArt));
+	});
+});
 
 // ---- Shared Inspector fixture helpers (Task 13) ----
 
@@ -467,9 +514,11 @@ describe("Wall — compact card (Task 11)", () => {
 		expect(out).toContain("✓ donelabel");
 		expect(out).toContain("sdd");
 		expect(out).not.toContain("spec-driven-development");
-		expect(out).toContain("P5/5");
+		// New compact shape (Task 2): P token removed; status+elapsed on L1, → — on L2.
+		expect(out).not.toContain("P5/5");
 		expect(out).toContain("done");
 		expect(out).toContain("4m12s");
+		expect(out).toContain("→ —"); // no artifact → placeholder line
 	});
 
 	it("compact CANCELED card uses ✖ glyph in err color", () => {
@@ -877,7 +926,8 @@ describe("Wall — artifact subline + started-at (Fix 2/3)", () => {
 		expect(out).toContain("draft");
 	});
 
-	it("compact card line 2 prepends the artifact and RETAINS P/x", () => {
+	it("compact card L2 shows basename only (no dir), status+elapsed on L1, P token gone", () => {
+		// Renamed from "…prepends the artifact and RETAINS P/x" (Task 2 reflow).
 		const state = mkWallState({
 			sections: [
 				mkSection({
@@ -900,13 +950,16 @@ describe("Wall — artifact subline + started-at (Fix 2/3)", () => {
 		});
 		const { lastFrame } = render(<Wall state={state} cols={100} rows={20} />);
 		const out = stripAnsi(lastFrame() ?? "");
-		expect(out).toContain("→ docs/foo.md");
-		expect(out).toContain("P5/5"); // progress token retained
+		// New shape: L2 shows basename only; full path dropped.
+		expect(out).toContain("→ foo.md");
+		expect(out).not.toContain("→ docs/foo.md"); // directory prefix stripped
+		expect(out).not.toContain("P5/5"); // progress token removed from compact
 		expect(out).toContain("done");
 		expect(out).toContain("4m12s");
 	});
 
-	it("compact card with no artifact keeps today's line 2 (no leading arrow)", () => {
+	it("compact card with no artifact shows → — placeholder on L2", () => {
+		// Renamed from "…keeps today's line 2 (no leading arrow)" (Task 2 reflow).
 		const state = mkWallState({
 			sections: [
 				mkSection({
@@ -929,8 +982,9 @@ describe("Wall — artifact subline + started-at (Fix 2/3)", () => {
 		});
 		const { lastFrame } = render(<Wall state={state} cols={100} rows={20} />);
 		const out = stripAnsi(lastFrame() ?? "");
-		expect(out).not.toContain("→");
-		expect(out).toContain("P5/5");
+		// New shape: no artifact → always renders → — placeholder.
+		expect(out).toContain("→ —");
+		expect(out).not.toContain("P5/5"); // progress token removed from compact
 		expect(out).toContain("done");
 	});
 
