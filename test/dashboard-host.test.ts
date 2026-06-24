@@ -26,6 +26,9 @@ function fakeBroker(summaries: unknown[] = []) {
 		listCaptureDiagnosticsByCollabAndChain: vi.fn(() => []),
 		listRunCostRows: vi.fn(() => []),
 		listWorkflowsForCollab: vi.fn(() => []),
+		pauseWorkflow: vi.fn(),
+		resumeWorkflow: vi.fn(),
+		cancelWorkflow: vi.fn(),
 	};
 	return { db: {}, control };
 }
@@ -464,5 +467,228 @@ describe("dashboard host", () => {
 		await m.stop();
 		expect((broker.control.listAllWorkflowSummaries as { mock: { calls: unknown[] } }).mock.calls.length).toBeGreaterThan(0);
 		expect((broker.control.listActiveCollabSummaries as { mock: { calls: unknown[] } }).mock.calls.length).toBe(0);
+	});
+
+	it("p on a running card opens a pause confirm; y calls broker.pauseWorkflow", async () => {
+		const stdout = new PassThrough();
+		(stdout as unknown as { columns: number }).columns = 100;
+		(stdout as unknown as { rows: number }).rows = 24;
+		const broker = fakeBroker([S({ collabId: "c1", workflowId: "wf", workflowStatus: "running", chainStatus: "active", currentRound: 1, maxRounds: 5 })]);
+		const m = createDashboardRuntime({ broker: broker as never, dashboardId: "d1", stdout: stdout as unknown as NodeJS.WritableStream, pollIntervalMs: 10 }) as never as {
+			start(): void; stop(): Promise<void>;
+			__handleKey(ev: { key?: string; escape?: boolean }): void;
+			__pendingConfirm(): { workflowId: string; action: string } | null;
+			__actionFeedback(): { kind: string; text: string } | null;
+		};
+		m.start();
+		await new Promise((r) => setTimeout(r, 30));
+		m.__handleKey({ key: "p" });
+		expect(m.__pendingConfirm()).toEqual({ workflowId: "wf", action: "pause" });
+		m.__handleKey({ key: "y" });
+		expect(m.__pendingConfirm()).toBeNull();
+		expect(broker.control.pauseWorkflow).toHaveBeenCalledTimes(1);
+		expect(broker.control.pauseWorkflow.mock.calls[0]![0]).toMatchObject({ workflowId: "wf" });
+		expect(m.__actionFeedback()).toMatchObject({ kind: "ok" });
+		await m.stop();
+	});
+
+	it("n dismisses the confirm without calling the broker", async () => {
+		const stdout = new PassThrough();
+		(stdout as unknown as { columns: number }).columns = 100;
+		(stdout as unknown as { rows: number }).rows = 24;
+		const broker = fakeBroker([S({ collabId: "c1", workflowId: "wf", workflowStatus: "running", chainStatus: "active", currentRound: 1, maxRounds: 5 })]);
+		const m = createDashboardRuntime({ broker: broker as never, dashboardId: "d1", stdout: stdout as unknown as NodeJS.WritableStream, pollIntervalMs: 10 }) as never as {
+			start(): void; stop(): Promise<void>;
+			__handleKey(ev: { key?: string; escape?: boolean }): void;
+			__pendingConfirm(): unknown; __mode(): string; __wallSelected(): number;
+		};
+		m.start();
+		await new Promise((r) => setTimeout(r, 30));
+		m.__handleKey({ key: "c" }); // cancel-action confirm
+		expect(m.__pendingConfirm()).toEqual({ workflowId: "wf", action: "cancel" });
+		// modal: a selection key is swallowed while confirm is pending
+		m.__handleKey({ key: "j" });
+		expect(m.__wallSelected()).toBe(0);
+		m.__handleKey({ key: "n" });
+		expect(m.__pendingConfirm()).toBeNull();
+		expect(broker.control.cancelWorkflow).not.toHaveBeenCalled();
+		await m.stop();
+	});
+
+	it("invalid-for-status action shows a hint and never opens a confirm or calls the broker", async () => {
+		const stdout = new PassThrough();
+		(stdout as unknown as { columns: number }).columns = 100;
+		(stdout as unknown as { rows: number }).rows = 24;
+		const broker = fakeBroker([S({ collabId: "c1", workflowId: "wf", workflowStatus: "paused" })]);
+		const m = createDashboardRuntime({ broker: broker as never, dashboardId: "d1", stdout: stdout as unknown as NodeJS.WritableStream, pollIntervalMs: 10 }) as never as {
+			start(): void; stop(): Promise<void>;
+			__handleKey(ev: { key?: string }): void;
+			__pendingConfirm(): unknown; __actionFeedback(): { kind: string; text: string } | null;
+		};
+		m.start();
+		await new Promise((r) => setTimeout(r, 30));
+		m.__handleKey({ key: "p" }); // pause not valid on a paused run
+		expect(m.__pendingConfirm()).toBeNull();
+		expect(m.__actionFeedback()).toMatchObject({ kind: "hint" });
+		expect(broker.control.pauseWorkflow).not.toHaveBeenCalled();
+		await m.stop();
+	});
+
+	it("a no-workflow (manual) card hints and does not call the broker", async () => {
+		const stdout = new PassThrough();
+		(stdout as unknown as { columns: number }).columns = 100;
+		(stdout as unknown as { rows: number }).rows = 24;
+		const broker = fakeBroker([S({ collabId: "c1", workflowId: null, workflowStatus: null, chainStatus: null })]);
+		const m = createDashboardRuntime({ broker: broker as never, dashboardId: "d1", stdout: stdout as unknown as NodeJS.WritableStream, pollIntervalMs: 10 }) as never as {
+			start(): void; stop(): Promise<void>;
+			__handleKey(ev: { key?: string }): void;
+			__pendingConfirm(): unknown; __actionFeedback(): { kind: string } | null;
+		};
+		m.start();
+		await new Promise((r) => setTimeout(r, 30));
+		m.__handleKey({ key: "c" });
+		expect(m.__pendingConfirm()).toBeNull();
+		expect(m.__actionFeedback()).toMatchObject({ kind: "hint" });
+		expect(broker.control.cancelWorkflow).not.toHaveBeenCalled();
+		await m.stop();
+	});
+
+	it("a broker throw on execute becomes err feedback", async () => {
+		const stdout = new PassThrough();
+		(stdout as unknown as { columns: number }).columns = 100;
+		(stdout as unknown as { rows: number }).rows = 24;
+		const broker = fakeBroker([S({ collabId: "c1", workflowId: "wf", workflowStatus: "running", chainStatus: "active", currentRound: 1, maxRounds: 5 })]);
+		broker.control.pauseWorkflow.mockImplementation(() => {
+			throw new Error("workflow wf is done and cannot be paused");
+		});
+		const m = createDashboardRuntime({ broker: broker as never, dashboardId: "d1", stdout: stdout as unknown as NodeJS.WritableStream, pollIntervalMs: 10 }) as never as {
+			start(): void; stop(): Promise<void>;
+			__handleKey(ev: { key?: string }): void;
+			__actionFeedback(): { kind: string; text: string } | null;
+		};
+		m.start();
+		await new Promise((r) => setTimeout(r, 30));
+		m.__handleKey({ key: "p" });
+		m.__handleKey({ key: "y" });
+		expect(m.__actionFeedback()).toMatchObject({ kind: "err" });
+		expect((m.__actionFeedback()?.text ?? "")).toContain("cannot be paused");
+		await m.stop();
+	});
+
+	it("feedback auto-expires after the TTL using the injected clock", async () => {
+		const stdout = new PassThrough();
+		(stdout as unknown as { columns: number }).columns = 100;
+		(stdout as unknown as { rows: number }).rows = 24;
+		let clock = 1_000;
+		const broker = fakeBroker([S({ collabId: "c1", workflowId: "wf", workflowStatus: "running", chainStatus: "active", currentRound: 1, maxRounds: 5 })]);
+		const m = createDashboardRuntime({ broker: broker as never, dashboardId: "d1", stdout: stdout as unknown as NodeJS.WritableStream, pollIntervalMs: 10, nowMs: () => clock }) as never as {
+			start(): void; stop(): Promise<void>;
+			__handleKey(ev: { key?: string }): void;
+			__actionFeedback(): unknown;
+		};
+		m.start();
+		await new Promise((r) => setTimeout(r, 30));
+		m.__handleKey({ key: "p" });
+		m.__handleKey({ key: "y" });
+		expect(m.__actionFeedback()).not.toBeNull();
+		clock += 5_000; // past the 4s TTL
+		m.__handleKey({ key: "" }); // any key → rerender → node() expires feedback
+		expect(m.__actionFeedback()).toBeNull();
+		await m.stop();
+	});
+
+	it("p/r/c work from the Inspector on the focused workflow", async () => {
+		const stdout = new PassThrough();
+		(stdout as unknown as { columns: number }).columns = 100;
+		(stdout as unknown as { rows: number }).rows = 24;
+		const broker = fakeBroker([S({ collabId: "c1", workflowId: "wf", workflowStatus: "running", chainStatus: "active", currentRound: 1, maxRounds: 5 })]);
+		const m = createDashboardRuntime({ broker: broker as never, dashboardId: "d1", stdout: stdout as unknown as NodeJS.WritableStream, pollIntervalMs: 10 }) as never as {
+			start(): void; stop(): Promise<void>;
+			__handleKey(ev: { key?: string; escape?: boolean }): void;
+			__mode(): string; __pendingConfirm(): { workflowId: string; action: string } | null;
+			__section(): string;
+		};
+		m.start();
+		await new Promise((r) => setTimeout(r, 30));
+		m.__handleKey({ key: "\r" }); // enter Inspector
+		expect(m.__mode()).toBe("inspector");
+		m.__handleKey({ key: "p" });
+		expect(m.__pendingConfirm()).toEqual({ workflowId: "wf", action: "pause" });
+		m.__handleKey({ key: "y" });
+		expect(broker.control.pauseWorkflow).toHaveBeenCalledTimes(1);
+		// a confirm in the Inspector is modal: section keys are swallowed
+		m.__handleKey({ key: "c" }); // open cancel confirm
+		expect(m.__pendingConfirm()).toEqual({ workflowId: "wf", action: "cancel" });
+		m.__handleKey({ key: "2" }); // would switch section if not modal
+		expect(m.__section()).toBe("live"); // unchanged — swallowed
+		m.__handleKey({ escape: true }); // dismiss confirm (still in Inspector)
+		expect(m.__mode()).toBe("inspector");
+		await m.stop();
+	});
+
+	it("requestAction re-fetches LIVE status on each keypress (stale frame is ignored)", async () => {
+		// Regression guard: requestAction must validate against freshStatusFor()
+		// (a live broker call), not the last rendered frame. If the run transitioned
+		// from "running" to "paused" between renders, pressing "p" (pause) must fail
+		// with a hint — not open a confirm — because pause is not valid on a paused run.
+		const stdout = new PassThrough();
+		(stdout as unknown as { columns: number }).columns = 100;
+		(stdout as unknown as { rows: number }).rows = 24;
+		const broker = fakeBroker([S({ collabId: "c1", workflowId: "wf", workflowStatus: "running", chainStatus: "active", currentRound: 1, maxRounds: 5 })]);
+		const m = createDashboardRuntime({ broker: broker as never, dashboardId: "d1", stdout: stdout as unknown as NodeJS.WritableStream, pollIntervalMs: 10 }) as never as {
+			start(): void; stop(): Promise<void>;
+			__handleKey(ev: { key?: string }): void;
+			__pendingConfirm(): { workflowId: string; action: string } | null;
+			__actionFeedback(): { kind: string; text: string } | null;
+		};
+		m.start();
+		await new Promise((r) => setTimeout(r, 30));
+
+		// Transition: broker now reports the SAME run as paused (simulates a race —
+		// the run paused between the last poll and the keypress).
+		broker.control.listActiveCollabSummaries.mockImplementation(() =>
+			[S({ collabId: "c1", workflowId: "wf", workflowStatus: "paused" })],
+		);
+
+		// "p" (pause): fresh status is "paused" → actionsForStatus("paused") excludes
+		// "pause" → must produce a hint, NOT open a confirm, NOT call the broker.
+		m.__handleKey({ key: "p" });
+		expect(m.__pendingConfirm()).toBeNull();
+		expect(m.__actionFeedback()).toMatchObject({ kind: "hint" });
+		expect(broker.control.pauseWorkflow).not.toHaveBeenCalled();
+
+		// "r" (resume): fresh status is "paused" → actionsForStatus("paused") includes
+		// "resume" → must open a confirm (proving the re-fetch is actually live).
+		m.__handleKey({ key: "r" });
+		expect(m.__pendingConfirm()).toEqual({ workflowId: "wf", action: "resume" });
+
+		await m.stop();
+	});
+
+	it("summary bar counts ALL runs across ALL pages, not just the visible page", async () => {
+		// Regression guard: summarizeWall() is called with the full summaries array
+		// (not wallState.panes), so the running count must equal ALL N workflows even
+		// when they overflow onto multiple pages. At cols=80/rows=14 the active group
+		// fits 2 cards per page (colsCount=2, cardRowsFit=1), so 8 summaries → 4 pages.
+		const N = 8;
+		const many = Array.from({ length: N }, (_, i) =>
+			S({ collabId: `c${i}`, workflowId: `wf${i}`, workflowStatus: "running", chainStatus: "active", currentRound: 1, maxRounds: 5 }),
+		);
+		const stdout = new PassThrough();
+		(stdout as unknown as { columns: number }).columns = 80;
+		(stdout as unknown as { rows: number }).rows = 14;
+		let buf = "";
+		stdout.on("data", (c) => (buf += String(c)));
+		const m = createDashboardRuntime({ broker: fakeBroker(many) as never, dashboardId: "d1", stdout: stdout as unknown as NodeJS.WritableStream, pollIntervalMs: 10 });
+		m.start();
+		await new Promise((r) => setTimeout(r, 50));
+		await m.stop();
+
+		// The footer must show more than one page (pagination is real at this geometry).
+		expect(buf).toMatch(/page 1\/[2-9]/);
+
+		// The summary bar (rendered before page sections) must show the FULL count
+		// of running workflows — all N — not just however many fit on page 1.
+		expect(buf).toContain(`${N} running`);
 	});
 });

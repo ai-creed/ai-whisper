@@ -206,6 +206,57 @@ export function partitionWallGroups(summaries: CollabSummary[]): WallGroups {
 	return { active, idleManual, halted, doneCanceled };
 }
 
+export type WallSummaryCounts = {
+	running: number;
+	paused: number;
+	stuck: number;
+	done: number;
+	canceled: number;
+	idle: number;
+};
+
+// Page-independent, snapshot-free counts for the Wall summary bar. Derived only
+// from workflowStatus + the cheap Wall-side isStuckRunning signal (the same one
+// that drives stuck-pinning), so it can count the FULL visible scope without
+// fetching per-run snapshots. `stuck` is evaluated before `running` so a running
+// workflow flagged by isStuckRunning counts once, as stuck.
+export function summarizeWall(summaries: CollabSummary[]): WallSummaryCounts {
+	const counts: WallSummaryCounts = {
+		running: 0,
+		paused: 0,
+		stuck: 0,
+		done: 0,
+		canceled: 0,
+		idle: 0,
+	};
+	for (const s of summaries) {
+		const st = s.workflowStatus;
+		if (st === null) counts.idle++;
+		else if (st === "halted") counts.stuck++;
+		else if (st === "running") {
+			if (isStuckRunning(s)) counts.stuck++;
+			else counts.running++;
+		} else if (st === "paused") counts.paused++;
+		else if (st === "done") counts.done++;
+		else if (st === "canceled") counts.canceled++;
+		// Unknown future status: not counted (defensive, mirrors partitionWallGroups).
+	}
+	return counts;
+}
+
+export type WorkflowAction = "pause" | "resume" | "cancel";
+
+// Which actions the dashboard may offer for a workflow status. Mirrors the
+// broker's own guards (workflow-control.ts) so the UI never opens a confirm for
+// a transition the broker would reject. null = manual-relay slice (no workflow).
+export function actionsForStatus(
+	status: "running" | "paused" | "done" | "halted" | "canceled" | null,
+): WorkflowAction[] {
+	if (status === "running") return ["pause", "cancel"];
+	if (status === "paused" || status === "halted") return ["resume", "cancel"];
+	return [];
+}
+
 // ---- Priority-fill allocation + paging across sections ----
 
 const MIN_PANE_COLS = 40;

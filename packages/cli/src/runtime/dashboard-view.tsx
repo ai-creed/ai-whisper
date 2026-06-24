@@ -1,7 +1,7 @@
 import { Box, Text, useInput, useStdin } from "ink";
 import type { AgentType } from "@ai-whisper/shared";
 import type { ReactElement, ReactNode } from "react";
-import type { WallState, WallPaneState } from "./dashboard-state.js";
+import type { WallState, WallPaneState, WallSummaryCounts, WorkflowAction } from "./dashboard-state.js";
 import { RelayView, type Viewport } from "./relay-view.js";
 import { fmtDur } from "./relay-view-state.js";
 import type { InspectorState } from "./dashboard-state.js";
@@ -13,6 +13,55 @@ const MIN_PANE_ROWS = 5;
 const NARROW_PANE_COLS = 48;
 const BAR_FILLED = "▰";
 const BAR_EMPTY = "▱";
+
+const SUMMARY_SEGMENTS: ReadonlyArray<{
+	key: keyof WallSummaryCounts;
+	glyph: string;
+	color: string;
+	label: string;
+}> = [
+	{ key: "running", glyph: "●", color: THEME.accent, label: "running" },
+	{ key: "paused", glyph: "‖", color: THEME.muted, label: "paused" },
+	{ key: "stuck", glyph: "⚠", color: THEME.err, label: "stuck" },
+	{ key: "done", glyph: "✓", color: THEME.ok, label: "done" },
+	{ key: "canceled", glyph: "✖", color: THEME.err, label: "canceled" },
+	{ key: "idle", glyph: "◌", color: THEME.muted, label: "idle" },
+];
+
+const ACTION_VERB: Record<WorkflowAction, string> = {
+	pause: "Pause",
+	resume: "Resume",
+	cancel: "Cancel",
+};
+
+// Shared by Wall and Inspector: render the pending confirm prompt, else the
+// transient feedback line, else nothing. Confirm takes precedence over feedback.
+export function ActionStatusLine(props: {
+	confirm?: { workflowId: string; action: WorkflowAction } | null;
+	feedback?: { kind: "ok" | "err" | "hint"; text: string } | null;
+}): ReactElement | null {
+	if (props.confirm) {
+		return (
+			<Text wrap="truncate" color={THEME.warn}>
+				{`${ACTION_VERB[props.confirm.action]} ${props.confirm.workflowId}? (y/n)`}
+			</Text>
+		);
+	}
+	if (props.feedback) {
+		const color =
+			props.feedback.kind === "ok"
+				? THEME.ok
+				: props.feedback.kind === "err"
+					? THEME.err
+					: THEME.muted;
+		return (
+			<Text wrap="truncate" color={color}>
+				{props.feedback.text}
+			</Text>
+		);
+	}
+	return null;
+}
 
 // Map verbose workflow-type IDs to short, dimmed badges shown in the card
 // header on narrow panes (width < NARROW_PANE_COLS). The Inspector always
@@ -326,6 +375,9 @@ export function Wall(props: {
 	cols: number;
 	rows: number;
 	showAll?: boolean;
+	counts?: WallSummaryCounts;
+	confirm?: { workflowId: string; action: WorkflowAction } | null;
+	feedback?: { kind: "ok" | "err" | "hint"; text: string } | null;
 }): ReactElement {
 	const { state } = props;
 	if (state.sections.length === 0) {
@@ -340,6 +392,18 @@ export function Wall(props: {
 	let globalIdx = 0;
 	return (
 		<Box flexDirection="column" width={props.cols}>
+			{props.counts ? (
+				<Text wrap="truncate">
+					{SUMMARY_SEGMENTS.map((seg, i) => {
+						const n = props.counts![seg.key];
+						return (
+							<Text key={seg.key} color={n > 0 ? seg.color : THEME.muted}>
+								{(i > 0 ? "  " : "") + `${seg.glyph} ${n} ${seg.label}`}
+							</Text>
+						);
+					})}
+				</Text>
+			) : null}
 			{state.sections.map((sec) => {
 				const rows: WallPaneState[][] = [];
 				for (let i = 0; i < sec.panes.length; i += colsCount) {
@@ -379,11 +443,15 @@ export function Wall(props: {
 					props.showAll
 						? `${state.totalRuns} runs (every run, unmasked)`
 						: `${state.totalRuns} collabs (one latest run each)`
-				} · ↑↓/jk select · ↵ inspect · [ ] page · q quit`}
+				} · ↑↓/jk select · ↵ inspect · p/r/c act · [ ] page · q quit`}
 			</Text>
 			<Text color={THEME.muted}>
 				● running ‖ paused ⚠ stuck/halted ✓ done ✖ canceled ◌ idle
 			</Text>
+			<ActionStatusLine
+				{...(props.confirm != null ? { confirm: props.confirm } : {})}
+				{...(props.feedback != null ? { feedback: props.feedback } : {})}
+			/>
 		</Box>
 	);
 }
@@ -428,6 +496,8 @@ export function Inspector(props: {
 	label: string;
 	workflowType: string | null;
 	workflowStatus?: "running" | "paused" | "done" | "halted" | "canceled" | null;
+	confirm?: { workflowId: string; action: WorkflowAction } | null;
+	feedback?: { kind: "ok" | "err" | "hint"; text: string } | null;
 }): ReactElement {
 	const s = props.state;
 	const headGlyph = statusGlyph({
@@ -447,7 +517,7 @@ export function Inspector(props: {
 				<Text color={THEME.muted}>
 					{`   1-4 section${
 						props.section === "live" ? " · ↑↓/g/G/f scroll" : ""
-					} · Esc wall · q quit`}
+					} · p/r/c act · Esc wall · q quit`}
 				</Text>
 			</Text>
 			{props.section === "live" ? (
@@ -554,6 +624,10 @@ export function Inspector(props: {
 					))}
 				</Box>
 			)}
+			<ActionStatusLine
+				{...(props.confirm != null ? { confirm: props.confirm } : {})}
+				{...(props.feedback != null ? { feedback: props.feedback } : {})}
+			/>
 		</Box>
 	);
 }

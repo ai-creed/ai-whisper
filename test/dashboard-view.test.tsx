@@ -16,6 +16,7 @@ import type {
 	WallState,
 	WorkflowHistoryItem,
 } from "../packages/cli/src/runtime/dashboard-state.ts";
+import type { WallSummaryCounts } from "../packages/cli/src/runtime/dashboard-state.ts";
 import { CARD_HEIGHT } from "../packages/cli/src/runtime/dashboard-state.ts";
 import type { RelayViewState } from "../packages/cli/src/runtime/relay-view-state.ts";
 import type { Viewport } from "../packages/cli/src/runtime/relay-view.ts";
@@ -1250,5 +1251,84 @@ describe("Wall — per-run card keys (Task 3 --all support)", () => {
 		const dupKeyWarning = warn.mock.calls.some((c) => String(c[0]).includes("same key"));
 		expect(dupKeyWarning).toBe(false);
 		warn.mockRestore();
+	});
+});
+
+describe("Wall action status line", () => {
+	it("renders the confirm prompt when confirm is set", () => {
+		const state = mkWallState({
+			sections: [mkSection({ group: "active", panes: [mkPane({ collabId: "c1", statusKey: "running" })] })],
+		});
+		const { lastFrame } = render(
+			<Wall state={state} cols={120} rows={24} confirm={{ workflowId: "wf_abc", action: "cancel" }} />,
+		);
+		expect(lastFrame() ?? "").toContain("Cancel wf_abc? (y/n)");
+	});
+
+	it("renders feedback text when feedback is set and no confirm", () => {
+		const state = mkWallState({
+			sections: [mkSection({ group: "active", panes: [mkPane({ collabId: "c1", statusKey: "running" })] })],
+		});
+		const { lastFrame } = render(
+			<Wall state={state} cols={120} rows={24} feedback={{ kind: "ok", text: "paused wf_abc" }} />,
+		);
+		expect(lastFrame() ?? "").toContain("paused wf_abc");
+	});
+
+	it("footer help advertises p/r/c", () => {
+		const state = mkWallState({
+			sections: [mkSection({ group: "active", panes: [mkPane({ collabId: "c1", statusKey: "running" })] })],
+		});
+		const { lastFrame } = render(<Wall state={state} cols={120} rows={24} />);
+		expect(lastFrame() ?? "").toContain("p/r/c act");
+	});
+});
+
+describe("Wall summary bar", () => {
+	it("renders the counts as the first line, dims zero buckets", () => {
+		const counts: WallSummaryCounts = { running: 2, paused: 1, stuck: 0, done: 3, canceled: 0, idle: 1 };
+		const state = mkWallState({
+			sections: [mkSection({ group: "active", panes: [mkPane({ collabId: "c1", statusKey: "running" })] })],
+			totalRuns: 7,
+		});
+		const { lastFrame } = render(<Wall state={state} cols={120} rows={24} counts={counts} />);
+		const frame = lastFrame() ?? "";
+		// First non-empty line is the summary bar.
+		const firstLine = frame.split("\n").find((l) => l.trim().length > 0) ?? "";
+		expect(firstLine).toContain("2 running");
+		expect(firstLine).toContain("1 paused");
+		expect(firstLine).toContain("3 done");
+		expect(firstLine).toContain("1 idle");
+		expect(firstLine).toContain("0 stuck");
+	});
+
+	it("omits the bar when counts is not provided", () => {
+		const state = mkWallState({
+			sections: [mkSection({ group: "active", panes: [mkPane({ collabId: "c1", statusKey: "running" })] })],
+		});
+		const { lastFrame } = render(<Wall state={state} cols={120} rows={24} />);
+		const firstLine = (lastFrame() ?? "").split("\n").find((l) => l.trim().length > 0) ?? "";
+		expect(firstLine).not.toContain("running"); // first line is the ACTIVE section header, not a bar
+	});
+});
+
+describe("Inspector action status line", () => {
+	it("renders the confirm prompt and p/r/c help", () => {
+		const { lastFrame } = render(
+			<Inspector
+				state={mkInspectorState({ stuck: false })}
+				section="timeline"
+				viewport={defaultViewport}
+				cols={120}
+				rows={24}
+				label="oauth"
+				workflowType="spec-driven-development"
+				workflowStatus="running"
+				confirm={{ workflowId: "wf_z", action: "pause" }}
+			/>,
+		);
+		const frame = lastFrame() ?? "";
+		expect(frame).toContain("Pause wf_z? (y/n)");
+		expect(frame).toContain("p/r/c act");
 	});
 });
