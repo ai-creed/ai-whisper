@@ -112,6 +112,9 @@ export function createDashboardRuntime(input: {
 	/** Recycle (unmount+remount) the ink instance every N actual renders to
 	 * hard-bound ink's per-rerender memory retention. Test seam; default 750. */
 	__recycleEveryRenders?: number;
+	/** Render one card per workflow RUN (no per-collab masking). Sourced from
+	 * the CLI `--all`. Default false = one card per collab (latest run). */
+	showAll?: boolean;
 }) {
 	let stopping = false;
 	let started = false;
@@ -133,6 +136,7 @@ export function createDashboardRuntime(input: {
 	const cols = (input.stdout as { columns?: number }).columns ?? 120;
 	const rows = (input.stdout as { rows?: number }).rows ?? 40;
 	const windowMs = resolveDashboardWindowMs(input.windowMs);
+	const showAll = input.showAll ?? false;
 	// Memory-leak controls. ink.rerender() retains ~KB per call (ink 7.0.3), so
 	// the 250ms poll OOM'd overnight. (1) skip ink.rerender when the rendered
 	// frame is byte-identical to the last (no visual change → no leak); and
@@ -349,7 +353,9 @@ export function createDashboardRuntime(input: {
 			}
 		}
 
-		const summaries = c.listActiveCollabSummaries(windowMs, isoNow);
+		const summaries = showAll
+			? c.listAllWorkflowSummaries(windowMs, isoNow)
+			: c.listActiveCollabSummaries(windowMs, isoNow);
 		// Use the sectioned allocator to pre-decide which summaries are visible
 		// on this page so per-collab snapshot fetches stay bounded to that set.
 		const groups = partitionWallGroups(summaries);
@@ -412,7 +418,7 @@ export function createDashboardRuntime(input: {
 		wallSelected = wallState.selected;
 		lastPaneRuns = wallState.panes.map((p) => ({ collabId: p.collabId, workflowId: p.workflowId }));
 		pendingSig = `w:${JSON.stringify({ wallState, cols, rows })}`;
-		return createElement(Wall, { state: wallState, cols, rows });
+		return createElement(Wall, { state: wallState, cols, rows, showAll });
 	}
 
 	const inkOptions = {
@@ -476,10 +482,15 @@ export function createDashboardRuntime(input: {
 			else if (ev.key === "\r" || ev.key === "\n") {
 				const run = lastPaneRuns[wallSelected];
 				if (run) {
-					const sums = input.broker.control.listActiveCollabSummaries(
-						windowMs,
-						new Date().toISOString(),
-					);
+					const sums = showAll
+						? input.broker.control.listAllWorkflowSummaries(
+								windowMs,
+								new Date().toISOString(),
+							)
+						: input.broker.control.listActiveCollabSummaries(
+								windowMs,
+								new Date().toISOString(),
+							);
 					const s = sums.find(
 						(x) => x.collabId === run.collabId && x.workflowId === run.workflowId,
 					);

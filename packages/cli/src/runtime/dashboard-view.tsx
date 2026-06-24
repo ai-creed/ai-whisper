@@ -325,6 +325,7 @@ export function Wall(props: {
 	state: WallState;
 	cols: number;
 	rows: number;
+	showAll?: boolean;
 }): ReactElement {
 	const { state } = props;
 	if (state.sections.length === 0) {
@@ -375,8 +376,10 @@ export function Wall(props: {
 			})}
 			<Text color={THEME.muted}>
 				{`page ${state.page + 1}/${Math.max(1, state.pageCount)} · ${
-					state.totalRuns
-				} runs · ↑↓/jk select · ↵ inspect · [ ] page · q quit`}
+					props.showAll
+						? `${state.totalRuns} runs (every run, unmasked)`
+						: `${state.totalRuns} collabs (one latest run each)`
+				} · ↑↓/jk select · ↵ inspect · [ ] page · q quit`}
 			</Text>
 			<Text color={THEME.muted}>
 				● running ‖ paused ⚠ stuck/halted ✓ done ✖ canceled ◌ idle

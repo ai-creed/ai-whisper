@@ -452,4 +452,17 @@ describe("dashboard host", () => {
 		expect(m.__inspectorWorkflowId()).toBe("wf_b");
 		await m.stop();
 	});
+
+	it("showAll fetches listAllWorkflowSummaries instead of listActiveCollabSummaries", async () => {
+		const stdout = new PassThrough();
+		(stdout as unknown as { columns: number }).columns = 100;
+		(stdout as unknown as { rows: number }).rows = 24;
+		const broker = fakeBroker([S({ collabId: "c1", workflowId: "wf_a" })]);
+		const m = createDashboardRuntime({ broker: broker as never, dashboardId: "d1", stdout: stdout as unknown as NodeJS.WritableStream, pollIntervalMs: 10, showAll: true }) as never as { start(): void; stop(): Promise<void> };
+		m.start();
+		await new Promise((r) => setTimeout(r, 30));
+		await m.stop();
+		expect((broker.control.listAllWorkflowSummaries as { mock: { calls: unknown[] } }).mock.calls.length).toBeGreaterThan(0);
+		expect((broker.control.listActiveCollabSummaries as { mock: { calls: unknown[] } }).mock.calls.length).toBe(0);
+	});
 });
