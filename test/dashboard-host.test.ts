@@ -625,4 +625,70 @@ describe("dashboard host", () => {
 		expect(m.__mode()).toBe("inspector");
 		await m.stop();
 	});
+
+	it("requestAction re-fetches LIVE status on each keypress (stale frame is ignored)", async () => {
+		// Regression guard: requestAction must validate against freshStatusFor()
+		// (a live broker call), not the last rendered frame. If the run transitioned
+		// from "running" to "paused" between renders, pressing "p" (pause) must fail
+		// with a hint — not open a confirm — because pause is not valid on a paused run.
+		const stdout = new PassThrough();
+		(stdout as unknown as { columns: number }).columns = 100;
+		(stdout as unknown as { rows: number }).rows = 24;
+		const broker = fakeBroker([S({ collabId: "c1", workflowId: "wf", workflowStatus: "running", chainStatus: "active", currentRound: 1, maxRounds: 5 })]);
+		const m = createDashboardRuntime({ broker: broker as never, dashboardId: "d1", stdout: stdout as unknown as NodeJS.WritableStream, pollIntervalMs: 10 }) as never as {
+			start(): void; stop(): Promise<void>;
+			__handleKey(ev: { key?: string }): void;
+			__pendingConfirm(): { workflowId: string; action: string } | null;
+			__actionFeedback(): { kind: string; text: string } | null;
+		};
+		m.start();
+		await new Promise((r) => setTimeout(r, 30));
+
+		// Transition: broker now reports the SAME run as paused (simulates a race —
+		// the run paused between the last poll and the keypress).
+		broker.control.listActiveCollabSummaries.mockImplementation(() =>
+			[S({ collabId: "c1", workflowId: "wf", workflowStatus: "paused" })],
+		);
+
+		// "p" (pause): fresh status is "paused" → actionsForStatus("paused") excludes
+		// "pause" → must produce a hint, NOT open a confirm, NOT call the broker.
+		m.__handleKey({ key: "p" });
+		expect(m.__pendingConfirm()).toBeNull();
+		expect(m.__actionFeedback()).toMatchObject({ kind: "hint" });
+		expect(broker.control.pauseWorkflow).not.toHaveBeenCalled();
+
+		// "r" (resume): fresh status is "paused" → actionsForStatus("paused") includes
+		// "resume" → must open a confirm (proving the re-fetch is actually live).
+		m.__handleKey({ key: "r" });
+		expect(m.__pendingConfirm()).toEqual({ workflowId: "wf", action: "resume" });
+
+		await m.stop();
+	});
+
+	it("summary bar counts ALL runs across ALL pages, not just the visible page", async () => {
+		// Regression guard: summarizeWall() is called with the full summaries array
+		// (not wallState.panes), so the running count must equal ALL N workflows even
+		// when they overflow onto multiple pages. At cols=80/rows=14 the active group
+		// fits 2 cards per page (colsCount=2, cardRowsFit=1), so 8 summaries → 4 pages.
+		const N = 8;
+		const many = Array.from({ length: N }, (_, i) =>
+			S({ collabId: `c${i}`, workflowId: `wf${i}`, workflowStatus: "running", chainStatus: "active", currentRound: 1, maxRounds: 5 }),
+		);
+		const stdout = new PassThrough();
+		(stdout as unknown as { columns: number }).columns = 80;
+		(stdout as unknown as { rows: number }).rows = 14;
+		let buf = "";
+		stdout.on("data", (c) => (buf += String(c)));
+		const m = createDashboardRuntime({ broker: fakeBroker(many) as never, dashboardId: "d1", stdout: stdout as unknown as NodeJS.WritableStream, pollIntervalMs: 10 });
+		m.start();
+		await new Promise((r) => setTimeout(r, 50));
+		await m.stop();
+
+		// The footer must show more than one page (pagination is real at this geometry).
+		expect(buf).toMatch(/page 1\/[2-9]/);
+
+		// The summary bar (rendered before page sections) must show the FULL count
+		// of running workflows — all N — not just however many fit on page 1.
+		expect(buf).toContain(`${N} running`);
+	});
 });
