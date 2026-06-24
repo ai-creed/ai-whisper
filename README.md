@@ -108,6 +108,9 @@ whisper collab dashboard
 - `whisper collab dashboard` — live wall of recently-active collabs + per-run inspector.
   Add `--all` to show every workflow run (no per-collab masking); combine with
   `--window all` for the full run ledger.
+- From the dashboard you can pause/resume/cancel a workflow run in place
+  (`p`/`r`/`c`, each confirmed), and a header bar shows live counts of running /
+  paused / stuck / done / canceled / idle runs.
 
 > Running from a repo checkout instead of a packaged install? Build first (`pnpm build`) and invoke the CLI as `node packages/cli/dist/bin/whisper.js ...` wherever these examples say `whisper ...`.
 

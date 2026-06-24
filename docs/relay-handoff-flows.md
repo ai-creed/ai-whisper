@@ -277,6 +277,28 @@ time) falls within the window. Paused runs always appear, grouped under ACTIVE
 with the `‖` glyph. Each card inspects its own run. `--all` covers workflow runs
 only; manual relay chats appear in the default view as before.
 
+### Acting on a run from the dashboard
+
+The Wall and the Inspector are no longer read-only. With a run selected on the
+Wall (or while inspecting one), press:
+
+- `p` — pause a running workflow
+- `r` — resume a paused or halted workflow
+- `c` — cancel a non-terminal workflow
+
+Every action asks for confirmation first (`Pause wf_… ? (y/n)` — `y`/`Enter`
+confirms, `n`/`Esc` dismisses); while the prompt is up, all other keys are
+ignored. Keys that don't apply to the selected run (e.g. `p` on an already-paused
+run, or any action on a card with no workflow) show a short hint instead and do
+nothing. The result — success or the broker's error message — appears on a status
+line for a few seconds. Actions call the broker in-process; there is no separate
+`whisper workflow …` step.
+
+The header line above the cards summarizes the current view at a glance:
+`● N running ‖ N paused ⚠ N stuck ✓ N done ✖ N canceled ◌ N idle`. The counts
+cover every run in the current scope (they respect `--all`/`--window` and span all
+pages), not just the cards on the current page.
+
 ---
 
 ## State machine reference
