@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { estimateTokens, abbreviateCwd } from "../packages/cli/src/runtime/dashboard-state.ts";
 import { buildWallState, selectWallPage, partitionWallGroups, runKey } from "../packages/cli/src/runtime/dashboard-state.ts";
 import { buildInspectorState } from "../packages/cli/src/runtime/dashboard-state.ts";
+import { summarizeWall } from "../packages/cli/src/runtime/dashboard-state.ts";
 import type { CollabSummary } from "@ai-whisper/broker";
 import type { RunCostRow } from "@ai-whisper/broker";
 import type { PhaseRunRef, RelayHandoffLogRow } from "../packages/cli/src/runtime/dashboard-state.ts";
@@ -634,5 +635,25 @@ describe("buildWallState per-run snapshot keying", () => {
 		);
 		expect(byWf["wf_a"]).toBe(3);
 		expect(byWf["wf_b"]).toBe(7);
+	});
+});
+
+describe("summarizeWall", () => {
+	it("counts each bucket, evaluates stuck before running, idle = null status", () => {
+		const counts = summarizeWall([
+			sum({ collabId: "a", workflowStatus: "running", chainStatus: "active", currentRound: 1, maxRounds: 5 }),
+			sum({ collabId: "b", workflowStatus: "running", chainStatus: "active", currentRound: 1, maxRounds: 5 }),
+			sum({ collabId: "c", workflowStatus: "running", chainStatus: "escalated" }), // stuck (running + escalated)
+			sum({ collabId: "d", workflowStatus: "halted" }), // stuck
+			sum({ collabId: "e", workflowStatus: "paused" }),
+			sum({ collabId: "f", workflowStatus: "done", chainStatus: "done" }),
+			sum({ collabId: "g", workflowStatus: "canceled", chainStatus: "abandoned" }),
+			sum({ collabId: "h", workflowStatus: null, workflowId: null, chainStatus: null }), // idle/manual
+		]);
+		expect(counts).toEqual({ running: 2, paused: 1, stuck: 2, done: 1, canceled: 1, idle: 1 });
+	});
+
+	it("is all-zero for empty input", () => {
+		expect(summarizeWall([])).toEqual({ running: 0, paused: 0, stuck: 0, done: 0, canceled: 0, idle: 0 });
 	});
 });

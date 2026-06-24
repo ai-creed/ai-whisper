@@ -1,7 +1,7 @@
 import { Box, Text, useInput, useStdin } from "ink";
 import type { AgentType } from "@ai-whisper/shared";
 import type { ReactElement, ReactNode } from "react";
-import type { WallState, WallPaneState } from "./dashboard-state.js";
+import type { WallState, WallPaneState, WallSummaryCounts } from "./dashboard-state.js";
 import { RelayView, type Viewport } from "./relay-view.js";
 import { fmtDur } from "./relay-view-state.js";
 import type { InspectorState } from "./dashboard-state.js";
@@ -13,6 +13,20 @@ const MIN_PANE_ROWS = 5;
 const NARROW_PANE_COLS = 48;
 const BAR_FILLED = "▰";
 const BAR_EMPTY = "▱";
+
+const SUMMARY_SEGMENTS: ReadonlyArray<{
+	key: keyof WallSummaryCounts;
+	glyph: string;
+	color: string;
+	label: string;
+}> = [
+	{ key: "running", glyph: "●", color: THEME.accent, label: "running" },
+	{ key: "paused", glyph: "‖", color: THEME.muted, label: "paused" },
+	{ key: "stuck", glyph: "⚠", color: THEME.err, label: "stuck" },
+	{ key: "done", glyph: "✓", color: THEME.ok, label: "done" },
+	{ key: "canceled", glyph: "✖", color: THEME.err, label: "canceled" },
+	{ key: "idle", glyph: "◌", color: THEME.muted, label: "idle" },
+];
 
 // Map verbose workflow-type IDs to short, dimmed badges shown in the card
 // header on narrow panes (width < NARROW_PANE_COLS). The Inspector always
@@ -326,6 +340,7 @@ export function Wall(props: {
 	cols: number;
 	rows: number;
 	showAll?: boolean;
+	counts?: WallSummaryCounts;
 }): ReactElement {
 	const { state } = props;
 	if (state.sections.length === 0) {
@@ -340,6 +355,18 @@ export function Wall(props: {
 	let globalIdx = 0;
 	return (
 		<Box flexDirection="column" width={props.cols}>
+			{props.counts ? (
+				<Text wrap="truncate">
+					{SUMMARY_SEGMENTS.map((seg, i) => {
+						const n = props.counts![seg.key];
+						return (
+							<Text key={seg.key} color={n > 0 ? seg.color : THEME.muted}>
+								{(i > 0 ? "  " : "") + `${seg.glyph} ${n} ${seg.label}`}
+							</Text>
+						);
+					})}
+				</Text>
+			) : null}
 			{state.sections.map((sec) => {
 				const rows: WallPaneState[][] = [];
 				for (let i = 0; i < sec.panes.length; i += colsCount) {

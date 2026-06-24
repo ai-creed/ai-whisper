@@ -18,6 +18,7 @@ import {
 	buildInspectorState,
 	partitionWallGroups,
 	runKey,
+	summarizeWall,
 	type InspectorState,
 	type PhaseRunRef,
 	type RelayViewSnapshot,
@@ -417,8 +418,9 @@ export function createDashboardRuntime(input: {
 		wallPage = wallState.page;
 		wallSelected = wallState.selected;
 		lastPaneRuns = wallState.panes.map((p) => ({ collabId: p.collabId, workflowId: p.workflowId }));
-		pendingSig = `w:${JSON.stringify({ wallState, cols, rows })}`;
-		return createElement(Wall, { state: wallState, cols, rows, showAll });
+		const counts = summarizeWall(summaries);
+		pendingSig = `w:${JSON.stringify({ wallState, cols, rows, counts })}`;
+		return createElement(Wall, { state: wallState, cols, rows, showAll, counts });
 	}
 
 	const inkOptions = {
