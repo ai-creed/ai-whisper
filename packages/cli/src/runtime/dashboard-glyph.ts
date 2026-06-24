@@ -9,7 +9,7 @@ export type GlyphResult = {
 };
 
 export function statusGlyph(input: {
-	workflowStatus: "running" | "done" | "halted" | "canceled" | null;
+	workflowStatus: "running" | "paused" | "done" | "halted" | "canceled" | null;
 	stuck: boolean;
 }): GlyphResult {
 	// No bound workflow → idle/manual relay.

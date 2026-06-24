@@ -149,6 +149,7 @@ import {
 } from "../storage/repositories/relay-handoff-repository.js";
 import {
 	listActiveCollabSummaries as listActiveCollabSummariesRepo,
+	listAllWorkflowSummaries as listAllWorkflowSummariesRepo,
 	listRunCostRows as listRunCostRowsRepo,
 	listWorkflowsForCollab as listWorkflowsForCollabRepo,
 	type CollabSummary,
@@ -1124,6 +1125,12 @@ export function createControlService(db: Database.Database, events: BrokerEventB
 		},
 		listActiveCollabSummaries(sinceMs: number, now?: string): CollabSummary[] {
 			return listActiveCollabSummariesRepo(db, {
+				sinceMs,
+				...(now !== undefined ? { now } : {}),
+			});
+		},
+		listAllWorkflowSummaries(sinceMs: number, now?: string): CollabSummary[] {
+			return listAllWorkflowSummariesRepo(db, {
 				sinceMs,
 				...(now !== undefined ? { now } : {}),
 			});

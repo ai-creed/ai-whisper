@@ -107,7 +107,7 @@ function cwdLine(cwd: string | null, width: number): ReactElement {
 
 function statusKeyToWorkflowStatus(
 	key: WallPaneState["statusKey"],
-): "running" | "done" | "halted" | "canceled" | null {
+): "running" | "paused" | "done" | "halted" | "canceled" | null {
 	if (key === "idle") return null;
 	if (key === "stuck") return "running"; // stuck-while-running default
 	return key;
@@ -422,7 +422,7 @@ export function Inspector(props: {
 	rows: number;
 	label: string;
 	workflowType: string | null;
-	workflowStatus?: "running" | "done" | "halted" | "canceled" | null;
+	workflowStatus?: "running" | "paused" | "done" | "halted" | "canceled" | null;
 }): ReactElement {
 	const s = props.state;
 	const headGlyph = statusGlyph({

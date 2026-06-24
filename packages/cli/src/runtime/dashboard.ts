@@ -121,7 +121,7 @@ export function createDashboardRuntime(input: {
 	let inspectorWorkflowId: string | null = null;
 	let inspectorType: string | null = null;
 	let inspectorLabel = "";
-	let inspectorWorkflowStatus: "running" | "done" | "halted" | "canceled" | null = null;
+	let inspectorWorkflowStatus: "running" | "paused" | "done" | "halted" | "canceled" | null = null;
 	let inspectorSection: InspectorSection = "live";
 	let wallPage = 0;
 	let wallSelected = 0;
