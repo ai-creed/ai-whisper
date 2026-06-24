@@ -30,7 +30,7 @@ type PaneOverrides = Partial<WallPaneState> & {
 
 function mkPane(p: PaneOverrides): WallPaneState {
 	return {
-		workflowId: "wf1",
+		workflowId: `wf-${p.collabId}`,
 		label: "lbl",
 		workflowType: "complex-bug-fixing",
 		round: { current: 1, max: 3 },
