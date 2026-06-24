@@ -1,20 +1,24 @@
 import { THEME } from "./theme.js";
 
-export type StatusKey = "running" | "stuck" | "done" | "canceled" | "idle";
+export type StatusKey = "running" | "paused" | "stuck" | "done" | "canceled" | "idle";
 
 export type GlyphResult = {
-	glyph: "●" | "⚠" | "✓" | "✖" | "◌";
+	glyph: "●" | "‖" | "⚠" | "✓" | "✖" | "◌";
 	color: (typeof THEME)[keyof typeof THEME];
 	key: StatusKey;
 };
 
 export function statusGlyph(input: {
-	workflowStatus: "running" | "done" | "halted" | "canceled" | null;
+	workflowStatus: "running" | "paused" | "done" | "halted" | "canceled" | null;
 	stuck: boolean;
 }): GlyphResult {
 	// No bound workflow → idle/manual relay.
 	if (input.workflowStatus === null) {
 		return { glyph: "◌", color: THEME.muted, key: "idle" };
+	}
+	// Paused: operator-suspended, in-flight, resumable — quiescent, not failed.
+	if (input.workflowStatus === "paused") {
+		return { glyph: "‖", color: THEME.muted, key: "paused" };
 	}
 	// Terminal/lifecycle ends have their own glyphs, distinct from stuck.
 	if (input.workflowStatus === "done") {

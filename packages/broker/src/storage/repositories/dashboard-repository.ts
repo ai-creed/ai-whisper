@@ -9,7 +9,7 @@ export type CollabSummary = {
 	workspaceRoot: string;
 	workflowId: string | null;
 	workflowType: string | null;
-	workflowStatus: "running" | "done" | "halted" | "canceled" | null;
+	workflowStatus: "running" | "paused" | "done" | "halted" | "canceled" | null;
 	currentPhaseRunId: string | null;
 	phaseIndex: number | null;
 	phaseName: string | null;
@@ -34,7 +34,7 @@ export type WorkflowSummaryRow = {
 	workflowId: string;
 	workflowType: string;
 	name: string | null;
-	status: "running" | "done" | "halted" | "canceled";
+	status: "running" | "paused" | "done" | "halted" | "canceled";
 	currentPhaseIndex: number;
 	createdAt: string;
 };
@@ -48,10 +48,14 @@ export type RunCostRow = {
 	outChars: number;
 };
 
-// Eligible = a workflow is `running`, OR the collab had relay activity within
-// the recency window. Resolution mirrors the #1 host: running workflow (unique
-// per the schema index) → else most-recent workflow → else manual-relay (null).
-// All reads are CURRENT rows (no cursor) so in-place mutations are reflected.
+// Eligible = a workflow is in-flight (`running` or `paused`), OR the collab had
+// relay activity within the recency window. `paused` is window-independent like
+// `running` (spec paused carve-out): an operator-suspended run is current and
+// resumable, so a collab whose latest workflow is paused surfaces in the default
+// Wall (grouped ACTIVE) instead of vanishing when it has no recent handoffs.
+// Resolution mirrors the #1 host: running workflow (unique per the schema index)
+// → else most-recent workflow → else manual-relay (null). All reads are CURRENT
+// rows (no cursor) so in-place mutations are reflected.
 //
 // `minResults` (default 3): a finished run drops off the wall once its activity
 // ages past the window. To keep recent runs visible, when fewer than
@@ -80,7 +84,8 @@ export function listActiveCollabSummaries(
 			  GROUP BY c.collab_id
 			 HAVING MAX(h.last_activity_at) >= ?
 			     OR EXISTS (SELECT 1 FROM workflows w
-			                 WHERE w.collab_id = c.collab_id AND w.status = 'running')`,
+			                 WHERE w.collab_id = c.collab_id
+			                   AND w.status IN ('running','paused'))`,
 		)
 		.all(cutoff) as Array<{ collabId: string; lastAct: string }>;
 
@@ -114,170 +119,202 @@ export function listActiveCollabSummaries(
 	return out;
 }
 
-// Project a single collab into a CollabSummary. Resolution: running workflow →
-// else most-recent workflow → else manual-relay (null). Shared by the eligible
-// and backfill paths so both build identical rows.
-function buildCollabSummary(db: Database.Database, collabId: string): CollabSummary {
-	{
-		const e = { collabId };
-		const collab = db
-			.prepare(
-				`SELECT display_name AS displayName, workspace_root AS workspaceRoot
-				   FROM collab WHERE collab_id = ?`,
-			)
-			.get(e.collabId) as { displayName: string; workspaceRoot: string } | undefined;
+// One workflow row as projected onto a Wall card. Shared by the collab-latest
+// path (buildCollabSummary) and the per-run path (listAllWorkflowSummaries).
+type WorkflowProjectionRow = {
+	workflowId: string;
+	workflowType: string;
+	name: string | null;
+	status: "running" | "paused" | "done" | "halted" | "canceled";
+	currentPhaseIndex: number;
+	createdAt: string;
+	specPath: string;
+};
 
-		const wf = db
+// Project ONE run (or the manual-relay slice when `wf` is null) of a collab into
+// a CollabSummary. Per-collab facts (label, turn, sessions) are shared; per-run
+// facts (phase, chain, run-scoped last activity) come from `wf`.
+function buildWorkflowSummary(
+	db: Database.Database,
+	collabId: string,
+	wf: WorkflowProjectionRow | null,
+): CollabSummary {
+	const collab = db
+		.prepare(
+			`SELECT display_name AS displayName, workspace_root AS workspaceRoot
+			   FROM collab WHERE collab_id = ?`,
+		)
+		.get(collabId) as { displayName: string; workspaceRoot: string } | undefined;
+
+	let currentPhaseRunId: string | null = null;
+	let phaseIndex: number | null = null;
+	let phaseName: string | null = null;
+	let chainId: string | null = null;
+	if (wf) {
+		const ph = db
 			.prepare(
-				`SELECT workflow_id AS workflowId, workflow_type AS workflowType,
-				        name, status, current_phase_index AS currentPhaseIndex,
-				        created_at AS createdAt, spec_path AS specPath
-				   FROM workflows WHERE collab_id = ?
-				  ORDER BY (status = 'running') DESC, created_at DESC
+				`SELECT phase_run_id AS phaseRunId, phase_index AS phaseIndex,
+				        phase_name AS phaseName, chain_id AS chainId
+				   FROM workflow_phases WHERE workflow_id = ?
+				  ORDER BY (ended_at IS NULL) DESC, started_at DESC
 				  LIMIT 1`,
 			)
-			.get(e.collabId) as
-			| {
-					workflowId: string;
-					workflowType: string;
-					name: string | null;
-					status: "running" | "done" | "halted" | "canceled";
-					currentPhaseIndex: number;
-					createdAt: string;
-					specPath: string;
-				}
+			.get(wf.workflowId) as
+			| { phaseRunId: string; phaseIndex: number; phaseName: string; chainId: string }
 			| undefined;
-
-		let currentPhaseRunId: string | null = null;
-		let phaseIndex: number | null = null;
-		let phaseName: string | null = null;
-		let chainId: string | null = null;
-		if (wf) {
-			const ph = db
-				.prepare(
-					`SELECT phase_run_id AS phaseRunId, phase_index AS phaseIndex,
-					        phase_name AS phaseName, chain_id AS chainId
-					   FROM workflow_phases WHERE workflow_id = ?
-					  ORDER BY (ended_at IS NULL) DESC, started_at DESC
-					  LIMIT 1`,
-				)
-				.get(wf.workflowId) as
-				| { phaseRunId: string; phaseIndex: number; phaseName: string; chainId: string }
-				| undefined;
-			if (ph) {
-				currentPhaseRunId = ph.phaseRunId;
-				phaseIndex = ph.phaseIndex;
-				phaseName = ph.phaseName;
-				chainId = ph.chainId;
-			}
+		if (ph) {
+			currentPhaseRunId = ph.phaseRunId;
+			phaseIndex = ph.phaseIndex;
+			phaseName = ph.phaseName;
+			chainId = ph.chainId;
 		}
-
-		const chain = chainId
-			? (db
-					.prepare(
-						`SELECT status, current_round AS currentRound, max_rounds AS maxRounds
-						   FROM relay_chains WHERE chain_id = ?`,
-					)
-					.get(chainId) as
-					| {
-							status: "active" | "done" | "escalated" | "abandoned";
-							currentRound: number;
-							maxRounds: number;
-						}
-					| undefined)
-			: undefined;
-
-		const turn = db
-			.prepare(
-				`SELECT turn_owner AS owner, waiting_agent AS waiting, handoff_state AS handoffState
-				   FROM relay_turn_state WHERE collab_id = ?`,
-			)
-			.get(e.collabId) as
-			| { owner: AgentType | "none"; waiting: AgentType | null; handoffState: string }
-			| undefined;
-
-		// Return ONE row per agent_type: prefer the session that is the agent's
-		// bound active_session_id; otherwise fall back to the row with the
-		// greatest registered_at. This stops a stale prior-mount (degraded) row
-		// from masking a freshly re-mounted, healthy bound session (Bug A). The
-		// chosen row's health is preserved as-is (degraded is NOT coerced).
-		// The ranking key sorts the bound row first (is_bound DESC), then by
-		// registered_at DESC, then rowid DESC as a deterministic tiebreak; row 1
-		// per agent_type is the pick.
-		const sessions = db
-			.prepare(
-				`SELECT agentType, healthState FROM (
-				   SELECT s.agent_type AS agentType,
-				          s.health_state AS healthState,
-				          ROW_NUMBER() OVER (
-				            PARTITION BY s.agent_type
-				            ORDER BY CASE WHEN sb.active_session_id = s.session_id
-				                          THEN 0 ELSE 1 END ASC,
-				                     s.registered_at DESC,
-				                     s.rowid DESC
-				          ) AS rn
-				     FROM session s
-				     LEFT JOIN session_binding sb
-				       ON sb.collab_id = s.collab_id
-				      AND sb.agent_type = s.agent_type
-				    WHERE s.collab_id = ?
-				 ) ranked
-				 WHERE rn = 1
-				 ORDER BY agentType ASC`,
-			)
-			.all(e.collabId) as Array<{ agentType: string; healthState: string }>;
-
-		const label =
-			(wf?.name && wf.name.trim()) ||
-			(collab?.displayName && collab.displayName.trim()) ||
-			(collab?.workspaceRoot ? basename(collab.workspaceRoot) : "") ||
-			e.collabId.slice(0, 12);
-
-		// Scope `lastActivityAt` to the RESOLVED run so it drives Wall
-		// liveness/stuck and the sort tie-break (`actKey`) by THIS run's
-		// activity, not a collab-wide MAX. Sibling-run handoffs on the
-		// same collab must not bump a stale pane back to fresh.
-		const runLastActRow = wf
-			? (db
-					.prepare(
-						`SELECT COALESCE(MAX(last_activity_at), '') AS lastAct
-						   FROM relay_handoff
-						  WHERE collab_id = ? AND workflow_id = ?`,
-					)
-					.get(e.collabId, wf.workflowId) as { lastAct: string } | undefined)
-			: (db
-					.prepare(
-						`SELECT COALESCE(MAX(last_activity_at), '') AS lastAct
-						   FROM relay_handoff
-						  WHERE collab_id = ? AND workflow_id IS NULL`,
-					)
-					.get(e.collabId) as { lastAct: string } | undefined);
-		const runLastAct = runLastActRow?.lastAct ?? "";
-
-		return {
-			collabId: e.collabId,
-			label,
-			workspaceRoot: collab?.workspaceRoot ?? "",
-			workflowId: wf?.workflowId ?? null,
-			workflowType: wf?.workflowType ?? null,
-			workflowStatus: wf?.status ?? null,
-			currentPhaseRunId,
-			phaseIndex,
-			phaseName,
-			currentRound: chain?.currentRound ?? null,
-			maxRounds: chain?.maxRounds ?? null,
-			chainStatus: chain?.status ?? null,
-			turn: {
-				owner: turn?.owner ?? "none",
-				waiting: turn?.waiting ?? null,
-				handoffState: turn?.handoffState ?? "idle",
-			},
-			sessions,
-			workflowCreatedAt: wf?.createdAt ?? null,
-			specPath: wf ? displayArtifactPath(wf.specPath, collab?.workspaceRoot ?? "") : null,
-			lastActivityAt: runLastAct,
-		};
 	}
+
+	const chain = chainId
+		? (db
+				.prepare(
+					`SELECT status, current_round AS currentRound, max_rounds AS maxRounds
+					   FROM relay_chains WHERE chain_id = ?`,
+				)
+				.get(chainId) as
+				| {
+						status: "active" | "done" | "escalated" | "abandoned";
+						currentRound: number;
+						maxRounds: number;
+					}
+				| undefined)
+		: undefined;
+
+	const turn = db
+		.prepare(
+			`SELECT turn_owner AS owner, waiting_agent AS waiting, handoff_state AS handoffState
+			   FROM relay_turn_state WHERE collab_id = ?`,
+		)
+		.get(collabId) as
+		| { owner: AgentType | "none"; waiting: AgentType | null; handoffState: string }
+		| undefined;
+
+	const sessions = db
+		.prepare(
+			`SELECT agentType, healthState FROM (
+			   SELECT s.agent_type AS agentType,
+			          s.health_state AS healthState,
+			          ROW_NUMBER() OVER (
+			            PARTITION BY s.agent_type
+			            ORDER BY CASE WHEN sb.active_session_id = s.session_id
+			                          THEN 0 ELSE 1 END ASC,
+			                     s.registered_at DESC,
+			                     s.rowid DESC
+			          ) AS rn
+			     FROM session s
+			     LEFT JOIN session_binding sb
+			       ON sb.collab_id = s.collab_id
+			      AND sb.agent_type = s.agent_type
+			    WHERE s.collab_id = ?
+			 ) ranked
+			 WHERE rn = 1
+			 ORDER BY agentType ASC`,
+		)
+		.all(collabId) as Array<{ agentType: string; healthState: string }>;
+
+	const label =
+		(wf?.name && wf.name.trim()) ||
+		(collab?.displayName && collab.displayName.trim()) ||
+		(collab?.workspaceRoot ? basename(collab.workspaceRoot) : "") ||
+		collabId.slice(0, 12);
+
+	// Scope `lastActivityAt` to THIS run so liveness/stuck and the sort tie-break
+	// reflect the run's own activity, not a collab-wide MAX.
+	const runLastActRow = wf
+		? (db
+				.prepare(
+					`SELECT COALESCE(MAX(last_activity_at), '') AS lastAct
+					   FROM relay_handoff
+					  WHERE collab_id = ? AND workflow_id = ?`,
+				)
+				.get(collabId, wf.workflowId) as { lastAct: string } | undefined)
+		: (db
+				.prepare(
+					`SELECT COALESCE(MAX(last_activity_at), '') AS lastAct
+					   FROM relay_handoff
+					  WHERE collab_id = ? AND workflow_id IS NULL`,
+				)
+				.get(collabId) as { lastAct: string } | undefined);
+	const runLastAct = runLastActRow?.lastAct ?? "";
+
+	return {
+		collabId,
+		label,
+		workspaceRoot: collab?.workspaceRoot ?? "",
+		workflowId: wf?.workflowId ?? null,
+		workflowType: wf?.workflowType ?? null,
+		workflowStatus: wf?.status ?? null,
+		currentPhaseRunId,
+		phaseIndex,
+		phaseName,
+		currentRound: chain?.currentRound ?? null,
+		maxRounds: chain?.maxRounds ?? null,
+		chainStatus: chain?.status ?? null,
+		turn: {
+			owner: turn?.owner ?? "none",
+			waiting: turn?.waiting ?? null,
+			handoffState: turn?.handoffState ?? "idle",
+		},
+		sessions,
+		workflowCreatedAt: wf?.createdAt ?? null,
+		specPath: wf ? displayArtifactPath(wf.specPath, collab?.workspaceRoot ?? "") : null,
+		lastActivityAt: runLastAct,
+	};
+}
+
+// Project a single collab into a CollabSummary using its running-or-latest
+// workflow (LIMIT 1) — the default Wall's one-card-per-collab resolution.
+function buildCollabSummary(db: Database.Database, collabId: string): CollabSummary {
+	const wf = db
+		.prepare(
+			`SELECT workflow_id AS workflowId, workflow_type AS workflowType,
+			        name, status, current_phase_index AS currentPhaseIndex,
+			        created_at AS createdAt, spec_path AS specPath
+			   FROM workflows WHERE collab_id = ?
+			  ORDER BY (status = 'running') DESC, created_at DESC
+			  LIMIT 1`,
+		)
+		.get(collabId) as WorkflowProjectionRow | undefined;
+	return buildWorkflowSummary(db, collabId, wf ?? null);
+}
+
+// One CollabSummary per WORKFLOW RUN — no per-collab masking — for the
+// dashboard `--all` mode. Run-level eligibility (mirrors the `cutoff` math in
+// listActiveCollabSummaries): a run shows if it is non-terminal (running or
+// paused — always current), OR its own latest handoff activity is within the
+// window, OR (no handoffs) it was created within the window. Manual relays are
+// excluded (workflows only). Newest-created first.
+export function listAllWorkflowSummaries(
+	db: Database.Database,
+	input: { sinceMs: number; now?: string },
+): CollabSummary[] {
+	const nowMs = Date.parse(input.now ?? new Date().toISOString());
+	const base = Number.isFinite(nowMs) ? nowMs : Date.now();
+	const cutoff = new Date(Math.max(0, base - input.sinceMs)).toISOString();
+
+	const rows = db
+		.prepare(
+			`SELECT w.workflow_id AS workflowId, w.workflow_type AS workflowType,
+			        w.name AS name, w.status AS status,
+			        w.current_phase_index AS currentPhaseIndex,
+			        w.created_at AS createdAt, w.spec_path AS specPath,
+			        w.collab_id AS collabId
+			   FROM workflows w
+			   LEFT JOIN relay_handoff h ON h.workflow_id = w.workflow_id
+			  GROUP BY w.workflow_id
+			 HAVING w.status IN ('running','paused')
+			     OR MAX(h.last_activity_at) >= ?
+			     OR (MAX(h.last_activity_at) IS NULL AND w.created_at >= ?)
+			  ORDER BY w.created_at DESC, w.rowid DESC`,
+		)
+		.all(cutoff, cutoff) as Array<WorkflowProjectionRow & { collabId: string }>;
+
+	return rows.map((r) => buildWorkflowSummary(db, r.collabId, r));
 }
 
 // Bug B: enumerate the FULL workflow run history for a collab, newest-first.
@@ -300,7 +337,7 @@ export function listWorkflowsForCollab(
 		workflowId: string;
 		workflowType: string;
 		name: string | null;
-		status: "running" | "done" | "halted" | "canceled";
+		status: "running" | "paused" | "done" | "halted" | "canceled";
 		currentPhaseIndex: number;
 		createdAt: string;
 	}>;

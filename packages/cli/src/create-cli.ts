@@ -339,7 +339,11 @@ export function createCli(): Command {
 			"--window <duration>",
 			"Eligible-collab activity window. Accepts ms or Ns/Nm/Nh/Nd (e.g. 45s, 30m, 2h, 1d), or 'all' for no limit. Default: 30m.",
 		)
-		.action(async (opts: { window?: string }) => {
+		.option(
+			"--all",
+			"Show one card per workflow RUN (no per-collab masking). Still respects --window per run; pair with '--window all' for the complete run ledger.",
+		)
+		.action(async (opts: { window?: string; all?: boolean }) => {
 			const { parseDashboardWindow } = await import("./runtime/dashboard.js");
 			const windowMs =
 				opts.window != null ? parseDashboardWindow(opts.window) : null;
@@ -349,9 +353,10 @@ export function createCli(): Command {
 				);
 				process.exit(2);
 			}
-			await runCollabDashboard(
-				windowMs != null ? { windowMs } : undefined,
-			);
+			await runCollabDashboard({
+				...(windowMs != null ? { windowMs } : {}),
+				...(opts.all ? { showAll: true } : {}),
+			});
 		});
 
 	collab

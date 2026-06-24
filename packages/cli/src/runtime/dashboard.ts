@@ -17,6 +17,7 @@ import {
 	buildWallState,
 	buildInspectorState,
 	partitionWallGroups,
+	runKey,
 	type InspectorState,
 	type PhaseRunRef,
 	type RelayViewSnapshot,
@@ -111,6 +112,9 @@ export function createDashboardRuntime(input: {
 	/** Recycle (unmount+remount) the ink instance every N actual renders to
 	 * hard-bound ink's per-rerender memory retention. Test seam; default 750. */
 	__recycleEveryRenders?: number;
+	/** Render one card per workflow RUN (no per-collab masking). Sourced from
+	 * the CLI `--all`. Default false = one card per collab (latest run). */
+	showAll?: boolean;
 }) {
 	let stopping = false;
 	let started = false;
@@ -121,17 +125,18 @@ export function createDashboardRuntime(input: {
 	let inspectorWorkflowId: string | null = null;
 	let inspectorType: string | null = null;
 	let inspectorLabel = "";
-	let inspectorWorkflowStatus: "running" | "done" | "halted" | "canceled" | null = null;
+	let inspectorWorkflowStatus: "running" | "paused" | "done" | "halted" | "canceled" | null = null;
 	let inspectorSection: InspectorSection = "live";
 	let wallPage = 0;
 	let wallSelected = 0;
-	let lastPaneCollabIds: string[] = [];
+	let lastPaneRuns: Array<{ collabId: string; workflowId: string | null }> = [];
 	const viewport: Viewport = { offset: 0, follow: true };
 	let loopResolve!: () => void;
 	const loopDone = new Promise<void>((r) => (loopResolve = r));
 	const cols = (input.stdout as { columns?: number }).columns ?? 120;
 	const rows = (input.stdout as { rows?: number }).rows ?? 40;
 	const windowMs = resolveDashboardWindowMs(input.windowMs);
+	const showAll = input.showAll ?? false;
 	// Memory-leak controls. ink.rerender() retains ~KB per call (ink 7.0.3), so
 	// the 250ms poll OOM'd overnight. (1) skip ink.rerender when the rendered
 	// frame is byte-identical to the last (no visual change → no leak); and
@@ -348,7 +353,9 @@ export function createDashboardRuntime(input: {
 			}
 		}
 
-		const summaries = c.listActiveCollabSummaries(windowMs, isoNow);
+		const summaries = showAll
+			? c.listAllWorkflowSummaries(windowMs, isoNow)
+			: c.listActiveCollabSummaries(windowMs, isoNow);
 		// Use the sectioned allocator to pre-decide which summaries are visible
 		// on this page so per-collab snapshot fetches stay bounded to that set.
 		const groups = partitionWallGroups(summaries);
@@ -380,7 +387,7 @@ export function createDashboardRuntime(input: {
 				? c.getWorkflowPhaseRuns(s.workflowId)
 				: [];
 			const def = s.workflowType ? getWorkflowDefinition(s.workflowType) : null;
-			snapshots[s.collabId] = {
+			snapshots[runKey(s)] = {
 				handoffs,
 				phaseRuns: toPhaseRuns(phaseRaw),
 				totalPhases: def ? def.phases.length : 0,
@@ -409,9 +416,9 @@ export function createDashboardRuntime(input: {
 		});
 		wallPage = wallState.page;
 		wallSelected = wallState.selected;
-		lastPaneCollabIds = wallState.panes.map((p) => p.collabId);
+		lastPaneRuns = wallState.panes.map((p) => ({ collabId: p.collabId, workflowId: p.workflowId }));
 		pendingSig = `w:${JSON.stringify({ wallState, cols, rows })}`;
-		return createElement(Wall, { state: wallState, cols, rows });
+		return createElement(Wall, { state: wallState, cols, rows, showAll });
 	}
 
 	const inkOptions = {
@@ -473,17 +480,24 @@ export function createDashboardRuntime(input: {
 			else if (ev.key === "[") wallPage = Math.max(0, wallPage - 1);
 			else if (ev.key === "]") wallPage = wallPage + 1;
 			else if (ev.key === "\r" || ev.key === "\n") {
-				const collabId = lastPaneCollabIds[wallSelected];
-				if (collabId) {
-					const sums = input.broker.control.listActiveCollabSummaries(
-						windowMs,
-						new Date().toISOString(),
+				const run = lastPaneRuns[wallSelected];
+				if (run) {
+					const sums = showAll
+						? input.broker.control.listAllWorkflowSummaries(
+								windowMs,
+								new Date().toISOString(),
+							)
+						: input.broker.control.listActiveCollabSummaries(
+								windowMs,
+								new Date().toISOString(),
+							);
+					const s = sums.find(
+						(x) => x.collabId === run.collabId && x.workflowId === run.workflowId,
 					);
-					const s = sums.find((x) => x.collabId === collabId);
-					inspectorCollabId = collabId;
-					inspectorWorkflowId = s?.workflowId ?? null;
+					inspectorCollabId = run.collabId;
+					inspectorWorkflowId = run.workflowId;
 					inspectorType = s?.workflowType ?? null;
-					inspectorLabel = s?.label ?? collabId;
+					inspectorLabel = s?.label ?? run.collabId;
 					inspectorWorkflowStatus = s?.workflowStatus ?? null;
 					inspectorSection = "live";
 					viewport.offset = 0;
@@ -575,5 +589,6 @@ export function createDashboardRuntime(input: {
 		__renderCount: () => renderCount,
 		__recycles: () => recycles,
 		__clears: () => clearCount,
+		__inspectorWorkflowId: () => inspectorWorkflowId,
 	};
 }

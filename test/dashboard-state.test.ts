@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { estimateTokens, abbreviateCwd } from "../packages/cli/src/runtime/dashboard-state.ts";
-import { buildWallState, selectWallPage } from "../packages/cli/src/runtime/dashboard-state.ts";
+import { buildWallState, selectWallPage, partitionWallGroups, runKey } from "../packages/cli/src/runtime/dashboard-state.ts";
 import { buildInspectorState } from "../packages/cli/src/runtime/dashboard-state.ts";
 import type { CollabSummary } from "@ai-whisper/broker";
 import type { RunCostRow } from "@ai-whisper/broker";
@@ -31,6 +31,18 @@ function sum(p: Partial<CollabSummary>): CollabSummary {
 	};
 }
 const emptySnap = { handoffs: [], phaseRuns: [], totalPhases: 4 };
+
+describe("partitionWallGroups paused handling", () => {
+	it("buckets a paused run into ACTIVE (not dropped)", () => {
+		const groups = partitionWallGroups([
+			sum({ collabId: "p", workflowStatus: "paused" }),
+		]);
+		expect(groups.active.map((s) => s.collabId)).toEqual(["p"]);
+		expect(groups.idleManual).toEqual([]);
+		expect(groups.halted).toEqual([]);
+		expect(groups.doneCanceled).toEqual([]);
+	});
+});
 
 describe("buildWallState", () => {
 	it("sections sort ACTIVE (stuck-pinned) → IDLE/MANUAL → DONE; recency desc within each", () => {
@@ -596,5 +608,31 @@ describe("buildWallState — cwd", () => {
 			home: "/home/u",
 		});
 		expect(state.panes[0]?.cwd).toBeNull();
+	});
+});
+
+describe("buildWallState per-run snapshot keying", () => {
+	it("keys snapshots by run so two runs on one collab don't collide", () => {
+		const emptySnap = { handoffs: [], phaseRuns: [], totalPhases: 0 };
+		const a = sum({ collabId: "c1", workflowId: "wf_a", workflowStatus: "running", label: "A" });
+		const b = sum({ collabId: "c1", workflowId: "wf_b", workflowStatus: "running", label: "B" });
+		const snapshots = {
+			[runKey(a)]: { ...emptySnap, totalPhases: 3 },
+			[runKey(b)]: { ...emptySnap, totalPhases: 7 },
+		};
+		const w = buildWallState({
+			summaries: [a, b],
+			now: "2026-05-20T00:10:00.000Z",
+			idleThresholdMs: 30000,
+			capacity: 10,
+			page: 0,
+			selected: 0,
+			snapshots,
+		});
+		const byWf: Record<string, number | null> = Object.fromEntries(
+			w.panes.map((p) => [p.workflowId, p.progress?.total ?? null]),
+		);
+		expect(byWf["wf_a"]).toBe(3);
+		expect(byWf["wf_b"]).toBe(7);
 	});
 });

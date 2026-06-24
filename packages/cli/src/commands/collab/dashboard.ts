@@ -14,11 +14,14 @@ export async function runCollabDashboard(input?: {
 	stdout?: NodeJS.WritableStream;
 	/** Eligible-collab window in ms (overrides env + default). */
 	windowMs?: number;
+	/** Render one card per workflow run (no per-collab masking). */
+	showAll?: boolean;
 	__createBroker?: () => BrokerLike;
 	__createRuntime?: (
 		broker: BrokerLike,
 		dashboardId: string,
 		stdout: NodeJS.WritableStream,
+		opts: { showAll: boolean },
 	) => RuntimeLike;
 	__noSignals?: boolean;
 }) {
@@ -35,12 +38,14 @@ export async function runCollabDashboard(input?: {
 		}) as unknown as BrokerLike);
 
 	const dashboardId = `dash_${randomBytes(9).toString("base64url")}`;
+	const showAll = input?.showAll ?? false;
 	const runtime =
-		input?.__createRuntime?.(broker, dashboardId, stdout) ??
+		input?.__createRuntime?.(broker, dashboardId, stdout, { showAll }) ??
 		(createDashboardRuntime({
 			broker: broker as never,
 			dashboardId,
 			stdout,
+			showAll,
 			...(input?.windowMs != null ? { windowMs: input.windowMs } : {}),
 		}) as unknown as RuntimeLike);
 

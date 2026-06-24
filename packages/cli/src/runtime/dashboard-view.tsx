@@ -107,7 +107,7 @@ function cwdLine(cwd: string | null, width: number): ReactElement {
 
 function statusKeyToWorkflowStatus(
 	key: WallPaneState["statusKey"],
-): "running" | "done" | "halted" | "canceled" | null {
+): "running" | "paused" | "done" | "halted" | "canceled" | null {
 	if (key === "idle") return null;
 	if (key === "stuck") return "running"; // stuck-while-running default
 	return key;
@@ -260,7 +260,9 @@ export function CompactCard(props: {
 					? "halted"
 					: pane.statusKey === "idle"
 						? "idle"
-						: "running";
+						: pane.statusKey === "paused"
+							? "paused"
+							: "running";
 	const glyph = statusGlyph({
 		workflowStatus:
 			pane.statusKey === "idle"
@@ -323,6 +325,7 @@ export function Wall(props: {
 	state: WallState;
 	cols: number;
 	rows: number;
+	showAll?: boolean;
 }): ReactElement {
 	const { state } = props;
 	if (state.sections.length === 0) {
@@ -352,14 +355,14 @@ export function Wall(props: {
 									const selected = idx === state.selected;
 									return sec.cardKind === "full" ? (
 										<FullCard
-											key={pane.collabId}
+											key={pane.workflowId ?? pane.collabId}
 											pane={pane}
 											selected={selected}
 											width={paneWidth}
 										/>
 									) : (
 										<CompactCard
-											key={pane.collabId}
+											key={pane.workflowId ?? pane.collabId}
 											pane={pane}
 											selected={selected}
 											width={paneWidth}
@@ -373,11 +376,13 @@ export function Wall(props: {
 			})}
 			<Text color={THEME.muted}>
 				{`page ${state.page + 1}/${Math.max(1, state.pageCount)} · ${
-					state.totalRuns
-				} runs · ↑↓/jk select · ↵ inspect · [ ] page · q quit`}
+					props.showAll
+						? `${state.totalRuns} runs (every run, unmasked)`
+						: `${state.totalRuns} collabs (one latest run each)`
+				} · ↑↓/jk select · ↵ inspect · [ ] page · q quit`}
 			</Text>
 			<Text color={THEME.muted}>
-				● running ⚠ stuck/halted ✓ done ✖ canceled ◌ idle
+				● running ‖ paused ⚠ stuck/halted ✓ done ✖ canceled ◌ idle
 			</Text>
 		</Box>
 	);
@@ -422,7 +427,7 @@ export function Inspector(props: {
 	rows: number;
 	label: string;
 	workflowType: string | null;
-	workflowStatus?: "running" | "done" | "halted" | "canceled" | null;
+	workflowStatus?: "running" | "paused" | "done" | "halted" | "canceled" | null;
 }): ReactElement {
 	const s = props.state;
 	const headGlyph = statusGlyph({
@@ -460,13 +465,7 @@ export function Inspector(props: {
 								{`WORKFLOW HISTORY (${s.workflowHistory.length})`}
 							</Text>
 							{s.workflowHistory.map((w) => {
-								// Paused is excluded from this phase — broker types forbid it
-								// from reaching here. Other statuses go through statusGlyph.
-								const wfStatus =
-									w.status === "paused"
-										? null // defensive: should never happen
-										: w.status;
-								const g = statusGlyph({ workflowStatus: wfStatus, stuck: false });
+								const g = statusGlyph({ workflowStatus: w.status, stuck: false });
 								return (
 									<Text
 										key={w.workflowId}

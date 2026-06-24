@@ -9,6 +9,9 @@ function fakeBroker(summaries: unknown[] = []) {
 		listActiveCollabSummaries: vi.fn((_w: number, _n?: string) =>
 			(summaries as Array<Record<string, unknown>>).map((s) => ({ ...s })),
 		),
+		listAllWorkflowSummaries: vi.fn((_w: number, _n?: string) =>
+			(summaries as Array<Record<string, unknown>>).map((s) => ({ ...s })),
+		),
 		listRelayHandoffs: vi.fn(() => []),
 		getWorkflow: vi.fn(() => null),
 		getCollab: vi.fn(() => ({ workspaceRoot: "/repo" })),
@@ -427,5 +430,39 @@ describe("dashboard host", () => {
 		expect(m.__recycles()).toBeGreaterThan(0); // recycled at least once
 		expect(buf).toContain("oauth-"); // still rendering after a recycle
 		await m.stop();
+	});
+
+	it("Enter inspects the SELECTED pane's run, not the collab's latest (two runs, one collab)", async () => {
+		const stdout = new PassThrough();
+		(stdout as unknown as { columns: number }).columns = 100;
+		(stdout as unknown as { rows: number }).rows = 24;
+		const broker = fakeBroker([
+			S({ collabId: "c1", workflowId: "wf_a", label: "A" }),
+			S({ collabId: "c1", workflowId: "wf_b", label: "B" }),
+		]);
+		const m = createDashboardRuntime({ broker: broker as never, dashboardId: "d1", stdout: stdout as unknown as NodeJS.WritableStream, pollIntervalMs: 10 }) as never as {
+			start(): void; stop(): Promise<void>;
+			__handleKey(ev: { key?: string; downArrow?: boolean }): void;
+			__inspectorWorkflowId(): string | null;
+		};
+		m.start();
+		await new Promise((r) => setTimeout(r, 30));
+		m.__handleKey({ downArrow: true }); // move selection to the 2nd pane (wf_b)
+		m.__handleKey({ key: "\r" }); // Enter
+		expect(m.__inspectorWorkflowId()).toBe("wf_b");
+		await m.stop();
+	});
+
+	it("showAll fetches listAllWorkflowSummaries instead of listActiveCollabSummaries", async () => {
+		const stdout = new PassThrough();
+		(stdout as unknown as { columns: number }).columns = 100;
+		(stdout as unknown as { rows: number }).rows = 24;
+		const broker = fakeBroker([S({ collabId: "c1", workflowId: "wf_a" })]);
+		const m = createDashboardRuntime({ broker: broker as never, dashboardId: "d1", stdout: stdout as unknown as NodeJS.WritableStream, pollIntervalMs: 10, showAll: true }) as never as { start(): void; stop(): Promise<void> };
+		m.start();
+		await new Promise((r) => setTimeout(r, 30));
+		await m.stop();
+		expect((broker.control.listAllWorkflowSummaries as { mock: { calls: unknown[] } }).mock.calls.length).toBeGreaterThan(0);
+		expect((broker.control.listActiveCollabSummaries as { mock: { calls: unknown[] } }).mock.calls.length).toBe(0);
 	});
 });

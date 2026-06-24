@@ -30,7 +30,7 @@ type PaneOverrides = Partial<WallPaneState> & {
 
 function mkPane(p: PaneOverrides): WallPaneState {
 	return {
-		workflowId: "wf1",
+		workflowId: `wf-${p.collabId}`,
 		label: "lbl",
 		workflowType: "complex-bug-fixing",
 		round: { current: 1, max: 3 },
@@ -1214,3 +1214,41 @@ describe("keepTail", () => {
 			expect(out).toContain("5h12m");
 		});
 	});
+
+describe("Wall — footer label (Task 4 --all mode)", () => {
+	it("footer label: default counts collabs, --all counts runs", () => {
+		const state: WallState = {
+			sections: [{ group: "active", label: "ACTIVE (2)", cardKind: "full", panes: [] }],
+			panes: [], page: 0, pageCount: 1, totalRuns: 2, selected: 0,
+		};
+		const def = render(<Wall state={state} cols={120} rows={24} />);
+		expect(def.lastFrame()).toContain("2 collabs");
+		expect(def.lastFrame()).not.toContain("2 runs");
+		const all = render(<Wall state={state} cols={120} rows={24} showAll />);
+		expect(all.lastFrame()).toContain("2 runs");
+		expect(all.lastFrame()).not.toContain("2 collabs");
+	});
+});
+
+describe("Wall — per-run card keys (Task 3 --all support)", () => {
+	it("renders two runs of one collab without a duplicate-key warning (--all)", () => {
+		const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+		const mk = (workflowId: string, label: string): WallPaneState => ({
+			collabId: "c1", workflowId, statusKey: "running", label,
+			workflowType: "deliberation", round: null, progress: null,
+			agentHealth: [], stuckWhy: null, events: [], elapsed: "1m",
+			startIso: null, artifact: null, cwd: null, cardKind: "full",
+		});
+		const state: WallState = {
+			sections: [{ group: "active", label: "ACTIVE (2)", cardKind: "full", panes: [mk("wf_a", "A"), mk("wf_b", "B")] }],
+			panes: [mk("wf_a", "A"), mk("wf_b", "B")],
+			page: 0, pageCount: 1, totalRuns: 2, selected: 0,
+		};
+		const { lastFrame } = render(<Wall state={state} cols={120} rows={24} />);
+		expect(lastFrame()).toContain("A");
+		expect(lastFrame()).toContain("B");
+		const dupKeyWarning = warn.mock.calls.some((c) => String(c[0]).includes("same key"));
+		expect(dupKeyWarning).toBe(false);
+		warn.mockRestore();
+	});
+});

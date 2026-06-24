@@ -292,6 +292,12 @@ export function computeLiveness(snap: RelayViewSnapshot): {
 	let stuck = false;
 	let liveOverride: string | null = null;
 
+	if (terminal === "paused") {
+		// Operator-suspended and resumable — quiescent, never stuck. Short-circuit
+		// BEFORE the idle/mount-liveness checks (a paused run is idle with mounts
+		// torn down, which would otherwise trip the "no progress" STUCK branch).
+		return { stuck: false, why: null, liveText: "paused" };
+	}
 	if (terminal === "done") {
 		// A completed workflow is finished, never stuck. Short-circuit BEFORE the
 		// idle/mount-liveness checks — a done run backfilled onto the wall has
