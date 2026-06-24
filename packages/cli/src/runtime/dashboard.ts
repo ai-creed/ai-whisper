@@ -19,6 +19,8 @@ import {
 	partitionWallGroups,
 	runKey,
 	summarizeWall,
+	actionsForStatus,
+	type WorkflowAction,
 	type InspectorState,
 	type PhaseRunRef,
 	type RelayViewSnapshot,
@@ -116,6 +118,8 @@ export function createDashboardRuntime(input: {
 	/** Render one card per workflow RUN (no per-collab masking). Sourced from
 	 * the CLI `--all`. Default false = one card per collab (latest run). */
 	showAll?: boolean;
+	/** Injected clock for feedback-line expiry. Test seam; default Date.now. */
+	nowMs?: () => number;
 }) {
 	let stopping = false;
 	let started = false;
@@ -131,6 +135,11 @@ export function createDashboardRuntime(input: {
 	let wallPage = 0;
 	let wallSelected = 0;
 	let lastPaneRuns: Array<{ collabId: string; workflowId: string | null }> = [];
+	let pendingConfirm: { workflowId: string; action: WorkflowAction } | null = null;
+	let actionFeedback: { kind: "ok" | "err" | "hint"; text: string } | null = null;
+	let actionFeedbackAtMs = 0;
+	const nowMs = input.nowMs ?? (() => Date.now());
+	const FEEDBACK_TTL_MS = 4000;
 	const viewport: Viewport = { offset: 0, follow: true };
 	let loopResolve!: () => void;
 	const loopDone = new Promise<void>((r) => (loopResolve = r));
@@ -326,9 +335,75 @@ export function createDashboardRuntime(input: {
 		});
 	}
 
+	function setFeedback(kind: "ok" | "err" | "hint", text: string): void {
+		actionFeedback = { kind, text };
+		actionFeedbackAtMs = nowMs();
+	}
+
+	function expireFeedback(): void {
+		if (actionFeedback && nowMs() - actionFeedbackAtMs >= FEEDBACK_TTL_MS) {
+			actionFeedback = null;
+		}
+	}
+
+	// Re-fetch the target run's CURRENT summary (same scope the Wall uses) so the
+	// action is validated against live status, not a stale rendered frame.
+	function freshStatusFor(
+		collabId: string,
+		workflowId: string | null,
+	): "running" | "paused" | "done" | "halted" | "canceled" | null {
+		const sums = showAll
+			? input.broker.control.listAllWorkflowSummaries(windowMs, new Date().toISOString())
+			: input.broker.control.listActiveCollabSummaries(windowMs, new Date().toISOString());
+		const s = sums.find((x) => x.collabId === collabId && x.workflowId === workflowId);
+		return s?.workflowStatus ?? null;
+	}
+
+	function requestAction(
+		target: { collabId: string; workflowId: string | null },
+		action: WorkflowAction,
+	): void {
+		if (!target.workflowId) {
+			setFeedback("hint", "no workflow on this card");
+			return;
+		}
+		const status = freshStatusFor(target.collabId, target.workflowId);
+		if (!actionsForStatus(status).includes(action)) {
+			setFeedback("hint", `${action} not available (${status ?? "no workflow"})`);
+			return;
+		}
+		pendingConfirm = { workflowId: target.workflowId, action };
+	}
+
+	function executeConfirmed(): void {
+		if (!pendingConfirm) return;
+		const { workflowId, action } = pendingConfirm;
+		pendingConfirm = null;
+		const now = new Date().toISOString();
+		const c = input.broker.control;
+		try {
+			if (action === "pause") c.pauseWorkflow({ workflowId, now });
+			else if (action === "resume") c.resumeWorkflow({ workflowId, now });
+			else c.cancelWorkflow({ workflowId, now });
+			const verb = action === "pause" ? "paused" : action === "resume" ? "resumed" : "canceled";
+			setFeedback("ok", `${verb} ${workflowId}`);
+		} catch (err) {
+			setFeedback("err", err instanceof Error ? err.message : String(err));
+		}
+	}
+
+	// Map a wall/inspector action key to its WorkflowAction (null otherwise).
+	function actionForKey(key: string | undefined): WorkflowAction | null {
+		if (key === "p") return "pause";
+		if (key === "r") return "resume";
+		if (key === "c") return "cancel";
+		return null;
+	}
+
 	function node(): ReactElement {
 		const c = input.broker.control;
 		const isoNow = new Date().toISOString();
+		expireFeedback();
 		if (mode === "inspector" && inspectorCollabId) {
 			const st = inspectorState();
 			if (st) {
@@ -340,6 +415,8 @@ export function createDashboardRuntime(input: {
 					type: inspectorType,
 					cols,
 					rows,
+					confirm: pendingConfirm,
+					feedback: actionFeedback,
 				})}`;
 				return createElement(Inspector, {
 					state: st,
@@ -350,6 +427,8 @@ export function createDashboardRuntime(input: {
 					label: inspectorLabel,
 					workflowStatus: inspectorWorkflowStatus,
 					workflowType: inspectorType,
+					confirm: pendingConfirm,
+					feedback: actionFeedback,
 				});
 			}
 		}
@@ -419,8 +498,8 @@ export function createDashboardRuntime(input: {
 		wallSelected = wallState.selected;
 		lastPaneRuns = wallState.panes.map((p) => ({ collabId: p.collabId, workflowId: p.workflowId }));
 		const counts = summarizeWall(summaries);
-		pendingSig = `w:${JSON.stringify({ wallState, cols, rows, counts })}`;
-		return createElement(Wall, { state: wallState, cols, rows, showAll, counts });
+		pendingSig = `w:${JSON.stringify({ wallState, cols, rows, counts, confirm: pendingConfirm, feedback: actionFeedback })}`;
+		return createElement(Wall, { state: wallState, cols, rows, showAll, counts, confirm: pendingConfirm, feedback: actionFeedback });
 	}
 
 	const inkOptions = {
@@ -475,6 +554,13 @@ export function createDashboardRuntime(input: {
 		escape?: boolean;
 		key?: string;
 	}) {
+		if (pendingConfirm) {
+			if (ev.key === "y" || ev.key === "\r" || ev.key === "\n") executeConfirmed();
+			else if (ev.key === "n" || ev.escape) pendingConfirm = null;
+			// else: swallow — confirm is modal.
+			rerender();
+			return;
+		}
 		if (mode === "wall") {
 			if (ev.upArrow || ev.key === "k")
 				wallSelected = Math.max(0, wallSelected - 1);
@@ -506,6 +592,9 @@ export function createDashboardRuntime(input: {
 					viewport.follow = true;
 					mode = "inspector";
 				}
+			} else if (actionForKey(ev.key)) {
+				const run = lastPaneRuns[wallSelected];
+				if (run) requestAction(run, actionForKey(ev.key)!);
 			} else if (ev.key === "q") stopping = true;
 		} else {
 			if (ev.key === "1") inspectorSection = "live";
@@ -592,5 +681,7 @@ export function createDashboardRuntime(input: {
 		__recycles: () => recycles,
 		__clears: () => clearCount,
 		__inspectorWorkflowId: () => inspectorWorkflowId,
+		__pendingConfirm: () => pendingConfirm,
+		__actionFeedback: () => actionFeedback,
 	};
 }

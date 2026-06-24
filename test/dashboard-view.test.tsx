@@ -1254,6 +1254,36 @@ describe("Wall — per-run card keys (Task 3 --all support)", () => {
 	});
 });
 
+describe("Wall action status line", () => {
+	it("renders the confirm prompt when confirm is set", () => {
+		const state = mkWallState({
+			sections: [mkSection({ group: "active", panes: [mkPane({ collabId: "c1", statusKey: "running" })] })],
+		});
+		const { lastFrame } = render(
+			<Wall state={state} cols={120} rows={24} confirm={{ workflowId: "wf_abc", action: "cancel" }} />,
+		);
+		expect(lastFrame() ?? "").toContain("Cancel wf_abc? (y/n)");
+	});
+
+	it("renders feedback text when feedback is set and no confirm", () => {
+		const state = mkWallState({
+			sections: [mkSection({ group: "active", panes: [mkPane({ collabId: "c1", statusKey: "running" })] })],
+		});
+		const { lastFrame } = render(
+			<Wall state={state} cols={120} rows={24} feedback={{ kind: "ok", text: "paused wf_abc" }} />,
+		);
+		expect(lastFrame() ?? "").toContain("paused wf_abc");
+	});
+
+	it("footer help advertises p/r/c", () => {
+		const state = mkWallState({
+			sections: [mkSection({ group: "active", panes: [mkPane({ collabId: "c1", statusKey: "running" })] })],
+		});
+		const { lastFrame } = render(<Wall state={state} cols={120} rows={24} />);
+		expect(lastFrame() ?? "").toContain("p/r/c act");
+	});
+});
+
 describe("Wall summary bar", () => {
 	it("renders the counts as the first line, dims zero buckets", () => {
 		const counts: WallSummaryCounts = { running: 2, paused: 1, stuck: 0, done: 3, canceled: 0, idle: 1 };

@@ -3,6 +3,7 @@ import { estimateTokens, abbreviateCwd } from "../packages/cli/src/runtime/dashb
 import { buildWallState, selectWallPage, partitionWallGroups, runKey } from "../packages/cli/src/runtime/dashboard-state.ts";
 import { buildInspectorState } from "../packages/cli/src/runtime/dashboard-state.ts";
 import { summarizeWall } from "../packages/cli/src/runtime/dashboard-state.ts";
+import { actionsForStatus } from "../packages/cli/src/runtime/dashboard-state.ts";
 import type { CollabSummary } from "@ai-whisper/broker";
 import type { RunCostRow } from "@ai-whisper/broker";
 import type { PhaseRunRef, RelayHandoffLogRow } from "../packages/cli/src/runtime/dashboard-state.ts";
@@ -655,5 +656,16 @@ describe("summarizeWall", () => {
 
 	it("is all-zero for empty input", () => {
 		expect(summarizeWall([])).toEqual({ running: 0, paused: 0, stuck: 0, done: 0, canceled: 0, idle: 0 });
+	});
+});
+
+describe("actionsForStatus", () => {
+	it("mirrors broker guards", () => {
+		expect(actionsForStatus("running")).toEqual(["pause", "cancel"]);
+		expect(actionsForStatus("paused")).toEqual(["resume", "cancel"]);
+		expect(actionsForStatus("halted")).toEqual(["resume", "cancel"]);
+		expect(actionsForStatus("done")).toEqual([]);
+		expect(actionsForStatus("canceled")).toEqual([]);
+		expect(actionsForStatus(null)).toEqual([]);
 	});
 });
