@@ -629,7 +629,9 @@ describe("buildWallState per-run snapshot keying", () => {
 			selected: 0,
 			snapshots,
 		});
-		const byWf = Object.fromEntries(w.panes.map((p) => [p.workflowId, p.progress?.total ?? null]));
+		const byWf: Record<string, number | null> = Object.fromEntries(
+			w.panes.map((p) => [p.workflowId, p.progress?.total ?? null]),
+		);
 		expect(byWf["wf_a"]).toBe(3);
 		expect(byWf["wf_b"]).toBe(7);
 	});
