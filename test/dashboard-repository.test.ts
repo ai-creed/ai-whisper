@@ -112,6 +112,20 @@ describe("listActiveCollabSummaries", () => {
 		expect(listActiveCollabSummaries(db, { sinceMs, now: NOW })).toEqual([]);
 	});
 
+	// Spec paused carve-out: a paused workflow is in-flight/resumable and must
+	// surface in the DEFAULT Wall like a running one — window-independent — even
+	// with no relay activity at all (it is not "finished", so the floor backfill
+	// would never rescue it). Before the fix this collab vanished entirely.
+	it("paused latest workflow surfaces in default mode with NO recent relay activity (window-independent)", () => {
+		const db = freshDb();
+		insCollab(db, "c_paused", "Paused");
+		// paused, created well before the cutoff, and zero handoffs
+		insWorkflow(db, { id: "wfp", collab: "c_paused", status: "paused", createdAt: "2026-05-19T00:00:00.000Z" });
+		const rows = listActiveCollabSummaries(db, { sinceMs, now: NOW });
+		expect(rows.map((r) => r.collabId)).toContain("c_paused");
+		expect(rows.find((r) => r.collabId === "c_paused")?.workflowStatus).toBe("paused");
+	});
+
 	// A single collab can have multiple workflow runs over time plus manual
 	// relays. `lastActivityAt` drives Wall liveness/stuck and the sort
 	// tie-break (`actKey`). It must reflect the RESOLVED RUN's activity, not

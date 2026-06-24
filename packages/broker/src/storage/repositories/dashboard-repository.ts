@@ -48,10 +48,14 @@ export type RunCostRow = {
 	outChars: number;
 };
 
-// Eligible = a workflow is `running`, OR the collab had relay activity within
-// the recency window. Resolution mirrors the #1 host: running workflow (unique
-// per the schema index) → else most-recent workflow → else manual-relay (null).
-// All reads are CURRENT rows (no cursor) so in-place mutations are reflected.
+// Eligible = a workflow is in-flight (`running` or `paused`), OR the collab had
+// relay activity within the recency window. `paused` is window-independent like
+// `running` (spec paused carve-out): an operator-suspended run is current and
+// resumable, so a collab whose latest workflow is paused surfaces in the default
+// Wall (grouped ACTIVE) instead of vanishing when it has no recent handoffs.
+// Resolution mirrors the #1 host: running workflow (unique per the schema index)
+// → else most-recent workflow → else manual-relay (null). All reads are CURRENT
+// rows (no cursor) so in-place mutations are reflected.
 //
 // `minResults` (default 3): a finished run drops off the wall once its activity
 // ages past the window. To keep recent runs visible, when fewer than
@@ -80,7 +84,8 @@ export function listActiveCollabSummaries(
 			  GROUP BY c.collab_id
 			 HAVING MAX(h.last_activity_at) >= ?
 			     OR EXISTS (SELECT 1 FROM workflows w
-			                 WHERE w.collab_id = c.collab_id AND w.status = 'running')`,
+			                 WHERE w.collab_id = c.collab_id
+			                   AND w.status IN ('running','paused'))`,
 		)
 		.all(cutoff) as Array<{ collabId: string; lastAct: string }>;
 
