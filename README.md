@@ -105,6 +105,10 @@ The first `mount` creates the collab and starts the broker daemon for the worksp
 whisper collab dashboard
 ```
 
+- `whisper collab dashboard` — live wall of recently-active collabs + per-run inspector.
+  Add `--all` to show every workflow run (no per-collab masking); combine with
+  `--window all` for the full run ledger.
+
 > Running from a repo checkout instead of a packaged install? Build first (`pnpm build`) and invoke the CLI as `node packages/cli/dist/bin/whisper.js ...` wherever these examples say `whisper ...`.
 
 ## What happens if it fails?

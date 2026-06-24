@@ -258,6 +258,24 @@ Where to look when you need ground truth:
 - **Relay monitor pane**: `whisper collab relay-monitor` — live status of turn owner, chain state, current round, max rounds, workflow phase/step.
 - **SQLite**: `~/.ai-whisper/state.db` (single shared store across all collabs; root overridable via `AI_WHISPER_STATE_ROOT`) — `workflows`, `relay_chains`, `relay_handoff`. `evaluator_verdict` column carries the workflow verdict; `orchestrator_verdict` is a legacy bookkeeping mapping. `halt_reason` on `workflows` is what the orchestrator used to stop.
 - **CLI**: `whisper workflow inspect <workflowId>` lists phase runs and their outcomes.
+- **Dashboard**: `whisper collab dashboard` — live wall of recently-active collabs + per-run inspector.
+
+### Seeing every run with `--all`
+
+By default the Wall shows **one card per collab** (its running-or-latest run), so
+sibling runs in the same collab are masked and the footer counts collabs. To see
+**one card per workflow run** instead, use:
+
+```bash
+whisper collab dashboard --all              # every run active within the window
+whisper collab dashboard --all --window all # the complete run ledger (every run)
+```
+
+`--all` respects `--window` at the run level: a run shows if it is running or
+paused, or its own latest activity (or, for a run with no handoffs, its creation
+time) falls within the window. Paused runs always appear, grouped under ACTIVE
+with the `‖` glyph. Each card inspects its own run. `--all` covers workflow runs
+only; manual relay chats appear in the default view as before.
 
 ---
 
