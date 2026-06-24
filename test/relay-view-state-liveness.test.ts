@@ -268,6 +268,32 @@ describe("computeLiveness — decoupled phase-aware threshold + per-agent mountA
 		expect(r.why).toContain("round 5/5");
 	});
 
+	it("a PAUSED workflow is quiescent, not stuck — even when long-idle with a dead/absent mount", () => {
+		// Regression: a paused workflow fell through to idle/mount-liveness checks
+		// because there was no short-circuit for `paused`. The run is idle well past
+		// budget and its mount is gone (mountAlive absent → false), so it was
+		// wrongly reported stuck:true. A paused workflow is operator-suspended and
+		// resumable — it is quiescent, never stuck.
+		const r = computeLiveness(
+			snap({
+				workflow: {
+					workflowId: "wf_paused",
+					workflowType: "spec-driven-development",
+					name: "x",
+					status: "paused",
+					createdAt: ago(3_600_000),
+					haltReason: null,
+				},
+				lastActivityAt: ago(STEP * 5), // long past any budget
+				sessions: [], // mounts gone → mountAlive absent → false
+				turn: { turnOwner: "none", waitingAgent: null, handoffState: "idle" },
+			}),
+		);
+		expect(r.stuck).toBe(false);
+		expect(r.why).toBeNull();
+		expect(r.liveText).toBe("paused");
+	});
+
 	it("env override of AI_WHISPER_STUCK_THRESHOLD_MS changes the boundary", () => {
 		process.env[ENV] = "120000"; // 2 min base
 		// non-execute step → base budget = 120s. idle 130s with dead active → stuck.
