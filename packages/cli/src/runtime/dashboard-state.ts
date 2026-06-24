@@ -20,7 +20,7 @@ export type WallEvent = { step: string; route: string; verdict: string };
 export type WallPaneState = {
 	collabId: string;
 	workflowId: string | null;
-	statusKey: "running" | "stuck" | "done" | "canceled" | "idle";
+	statusKey: "running" | "paused" | "stuck" | "done" | "canceled" | "idle";
 	label: string;
 	workflowType: string | null;
 	round: { current: number; max: number } | null;
@@ -177,11 +177,12 @@ export function partitionWallGroups(summaries: CollabSummary[]): WallGroups {
 	const doneCanceled: CollabSummary[] = [];
 	for (const s of summaries) {
 		if (s.workflowStatus === null) idleManual.push(s);
-		else if (s.workflowStatus === "running") active.push(s);
+		else if (s.workflowStatus === "running" || s.workflowStatus === "paused")
+			active.push(s);
 		else if (s.workflowStatus === "halted") halted.push(s);
 		else if (s.workflowStatus === "done" || s.workflowStatus === "canceled")
 			doneCanceled.push(s);
-		// paused or any unknown status is dropped — see spec Non-Goals.
+		// Any unknown future status is dropped (defensive).
 	}
 	// ACTIVE: stuck-pin (stuck block first), then recency desc within each block.
 	active.sort((a, b) => {

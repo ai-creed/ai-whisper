@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { estimateTokens, abbreviateCwd } from "../packages/cli/src/runtime/dashboard-state.ts";
-import { buildWallState, selectWallPage } from "../packages/cli/src/runtime/dashboard-state.ts";
+import { buildWallState, selectWallPage, partitionWallGroups } from "../packages/cli/src/runtime/dashboard-state.ts";
 import { buildInspectorState } from "../packages/cli/src/runtime/dashboard-state.ts";
 import type { CollabSummary } from "@ai-whisper/broker";
 import type { RunCostRow } from "@ai-whisper/broker";
@@ -31,6 +31,18 @@ function sum(p: Partial<CollabSummary>): CollabSummary {
 	};
 }
 const emptySnap = { handoffs: [], phaseRuns: [], totalPhases: 4 };
+
+describe("partitionWallGroups paused handling", () => {
+	it("buckets a paused run into ACTIVE (not dropped)", () => {
+		const groups = partitionWallGroups([
+			sum({ collabId: "p", workflowStatus: "paused" }),
+		]);
+		expect(groups.active.map((s) => s.collabId)).toEqual(["p"]);
+		expect(groups.idleManual).toEqual([]);
+		expect(groups.halted).toEqual([]);
+		expect(groups.doneCanceled).toEqual([]);
+	});
+});
 
 describe("buildWallState", () => {
 	it("sections sort ACTIVE (stuck-pinned) → IDLE/MANUAL → DONE; recency desc within each", () => {

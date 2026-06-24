@@ -260,7 +260,9 @@ export function CompactCard(props: {
 					? "halted"
 					: pane.statusKey === "idle"
 						? "idle"
-						: "running";
+						: pane.statusKey === "paused"
+							? "paused"
+							: "running";
 	const glyph = statusGlyph({
 		workflowStatus:
 			pane.statusKey === "idle"
@@ -377,7 +379,7 @@ export function Wall(props: {
 				} runs · ↑↓/jk select · ↵ inspect · [ ] page · q quit`}
 			</Text>
 			<Text color={THEME.muted}>
-				● running ⚠ stuck/halted ✓ done ✖ canceled ◌ idle
+				● running ‖ paused ⚠ stuck/halted ✓ done ✖ canceled ◌ idle
 			</Text>
 		</Box>
 	);
@@ -460,13 +462,7 @@ export function Inspector(props: {
 								{`WORKFLOW HISTORY (${s.workflowHistory.length})`}
 							</Text>
 							{s.workflowHistory.map((w) => {
-								// Paused is excluded from this phase — broker types forbid it
-								// from reaching here. Other statuses go through statusGlyph.
-								const wfStatus =
-									w.status === "paused"
-										? null // defensive: should never happen
-										: w.status;
-								const g = statusGlyph({ workflowStatus: wfStatus, stuck: false });
+								const g = statusGlyph({ workflowStatus: w.status, stuck: false });
 								return (
 									<Text
 										key={w.workflowId}

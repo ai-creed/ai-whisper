@@ -50,8 +50,13 @@ describe("statusGlyph", () => {
 			key: "idle",
 		});
 	});
-	it("never returns the paused glyph this phase", () => {
-		// Defensive: even if a paused value leaked in, the mapping must not emit ⏸.
-		expect(statusGlyph({ workflowStatus: "running", stuck: false }).glyph).not.toBe("⏸");
+	it("paused → ‖ muted (distinct from running and halted)", () => {
+		expect(statusGlyph({ workflowStatus: "paused", stuck: false })).toEqual({
+			glyph: "‖",
+			color: THEME.muted,
+			key: "paused",
+		});
+		// stuck flag is irrelevant for a paused run
+		expect(statusGlyph({ workflowStatus: "paused", stuck: true }).key).toBe("paused");
 	});
 });
