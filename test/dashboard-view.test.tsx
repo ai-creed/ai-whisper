@@ -1311,3 +1311,24 @@ describe("Wall summary bar", () => {
 		expect(firstLine).not.toContain("running"); // first line is the ACTIVE section header, not a bar
 	});
 });
+
+describe("Inspector action status line", () => {
+	it("renders the confirm prompt and p/r/c help", () => {
+		const { lastFrame } = render(
+			<Inspector
+				state={mkInspectorState({ stuck: false })}
+				section="timeline"
+				viewport={defaultViewport}
+				cols={120}
+				rows={24}
+				label="oauth"
+				workflowType="spec-driven-development"
+				workflowStatus="running"
+				confirm={{ workflowId: "wf_z", action: "pause" }}
+			/>,
+		);
+		const frame = lastFrame() ?? "";
+		expect(frame).toContain("Pause wf_z? (y/n)");
+		expect(frame).toContain("p/r/c act");
+	});
+});

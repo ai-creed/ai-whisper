@@ -603,6 +603,14 @@ export function createDashboardRuntime(input: {
 			else if (ev.key === "4") inspectorSection = "cost";
 			else if (ev.escape) mode = "wall";
 			else if (ev.key === "q") stopping = true;
+			else if (actionForKey(ev.key)) {
+				if (inspectorCollabId) {
+					requestAction(
+						{ collabId: inspectorCollabId, workflowId: inspectorWorkflowId },
+						actionForKey(ev.key)!,
+					);
+				}
+			}
 			else if (inspectorSection === "live") {
 				const visibleH = logViewportHeight(rows);
 				const linesLen = inspectorState()?.live.logLines.length ?? 0;

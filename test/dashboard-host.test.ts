@@ -596,4 +596,33 @@ describe("dashboard host", () => {
 		expect(m.__actionFeedback()).toBeNull();
 		await m.stop();
 	});
+
+	it("p/r/c work from the Inspector on the focused workflow", async () => {
+		const stdout = new PassThrough();
+		(stdout as unknown as { columns: number }).columns = 100;
+		(stdout as unknown as { rows: number }).rows = 24;
+		const broker = fakeBroker([S({ collabId: "c1", workflowId: "wf", workflowStatus: "running", chainStatus: "active", currentRound: 1, maxRounds: 5 })]);
+		const m = createDashboardRuntime({ broker: broker as never, dashboardId: "d1", stdout: stdout as unknown as NodeJS.WritableStream, pollIntervalMs: 10 }) as never as {
+			start(): void; stop(): Promise<void>;
+			__handleKey(ev: { key?: string; escape?: boolean }): void;
+			__mode(): string; __pendingConfirm(): { workflowId: string; action: string } | null;
+			__section(): string;
+		};
+		m.start();
+		await new Promise((r) => setTimeout(r, 30));
+		m.__handleKey({ key: "\r" }); // enter Inspector
+		expect(m.__mode()).toBe("inspector");
+		m.__handleKey({ key: "p" });
+		expect(m.__pendingConfirm()).toEqual({ workflowId: "wf", action: "pause" });
+		m.__handleKey({ key: "y" });
+		expect(broker.control.pauseWorkflow).toHaveBeenCalledTimes(1);
+		// a confirm in the Inspector is modal: section keys are swallowed
+		m.__handleKey({ key: "c" }); // open cancel confirm
+		expect(m.__pendingConfirm()).toEqual({ workflowId: "wf", action: "cancel" });
+		m.__handleKey({ key: "2" }); // would switch section if not modal
+		expect(m.__section()).toBe("live"); // unchanged — swallowed
+		m.__handleKey({ escape: true }); // dismiss confirm (still in Inspector)
+		expect(m.__mode()).toBe("inspector");
+		await m.stop();
+	});
 });

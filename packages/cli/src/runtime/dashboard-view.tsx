@@ -517,7 +517,7 @@ export function Inspector(props: {
 				<Text color={THEME.muted}>
 					{`   1-4 section${
 						props.section === "live" ? " · ↑↓/g/G/f scroll" : ""
-					} · Esc wall · q quit`}
+					} · p/r/c act · Esc wall · q quit`}
 				</Text>
 			</Text>
 			{props.section === "live" ? (
@@ -624,6 +624,10 @@ export function Inspector(props: {
 					))}
 				</Box>
 			)}
+			<ActionStatusLine
+				{...(props.confirm != null ? { confirm: props.confirm } : {})}
+				{...(props.feedback != null ? { feedback: props.feedback } : {})}
+			/>
 		</Box>
 	);
 }
