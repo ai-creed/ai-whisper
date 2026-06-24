@@ -1214,3 +1214,26 @@ describe("keepTail", () => {
 			expect(out).toContain("5h12m");
 		});
 	});
+
+describe("Wall — per-run card keys (Task 3 --all support)", () => {
+	it("renders two runs of one collab without a duplicate-key warning (--all)", () => {
+		const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+		const mk = (workflowId: string, label: string): WallPaneState => ({
+			collabId: "c1", workflowId, statusKey: "running", label,
+			workflowType: "deliberation", round: null, progress: null,
+			agentHealth: [], stuckWhy: null, events: [], elapsed: "1m",
+			startIso: null, artifact: null, cwd: null, cardKind: "full",
+		});
+		const state: WallState = {
+			sections: [{ group: "active", label: "ACTIVE (2)", cardKind: "full", panes: [mk("wf_a", "A"), mk("wf_b", "B")] }],
+			panes: [mk("wf_a", "A"), mk("wf_b", "B")],
+			page: 0, pageCount: 1, totalRuns: 2, selected: 0,
+		};
+		const { lastFrame } = render(<Wall state={state} cols={120} rows={24} />);
+		expect(lastFrame()).toContain("A");
+		expect(lastFrame()).toContain("B");
+		const dupKeyWarning = warn.mock.calls.some((c) => String(c[0]).includes("same key"));
+		expect(dupKeyWarning).toBe(false);
+		warn.mockRestore();
+	});
+});

@@ -17,6 +17,7 @@ import {
 	buildWallState,
 	buildInspectorState,
 	partitionWallGroups,
+	runKey,
 	type InspectorState,
 	type PhaseRunRef,
 	type RelayViewSnapshot,
@@ -125,7 +126,7 @@ export function createDashboardRuntime(input: {
 	let inspectorSection: InspectorSection = "live";
 	let wallPage = 0;
 	let wallSelected = 0;
-	let lastPaneCollabIds: string[] = [];
+	let lastPaneRuns: Array<{ collabId: string; workflowId: string | null }> = [];
 	const viewport: Viewport = { offset: 0, follow: true };
 	let loopResolve!: () => void;
 	const loopDone = new Promise<void>((r) => (loopResolve = r));
@@ -380,7 +381,7 @@ export function createDashboardRuntime(input: {
 				? c.getWorkflowPhaseRuns(s.workflowId)
 				: [];
 			const def = s.workflowType ? getWorkflowDefinition(s.workflowType) : null;
-			snapshots[s.collabId] = {
+			snapshots[runKey(s)] = {
 				handoffs,
 				phaseRuns: toPhaseRuns(phaseRaw),
 				totalPhases: def ? def.phases.length : 0,
@@ -409,7 +410,7 @@ export function createDashboardRuntime(input: {
 		});
 		wallPage = wallState.page;
 		wallSelected = wallState.selected;
-		lastPaneCollabIds = wallState.panes.map((p) => p.collabId);
+		lastPaneRuns = wallState.panes.map((p) => ({ collabId: p.collabId, workflowId: p.workflowId }));
 		pendingSig = `w:${JSON.stringify({ wallState, cols, rows })}`;
 		return createElement(Wall, { state: wallState, cols, rows });
 	}
@@ -473,17 +474,19 @@ export function createDashboardRuntime(input: {
 			else if (ev.key === "[") wallPage = Math.max(0, wallPage - 1);
 			else if (ev.key === "]") wallPage = wallPage + 1;
 			else if (ev.key === "\r" || ev.key === "\n") {
-				const collabId = lastPaneCollabIds[wallSelected];
-				if (collabId) {
+				const run = lastPaneRuns[wallSelected];
+				if (run) {
 					const sums = input.broker.control.listActiveCollabSummaries(
 						windowMs,
 						new Date().toISOString(),
 					);
-					const s = sums.find((x) => x.collabId === collabId);
-					inspectorCollabId = collabId;
-					inspectorWorkflowId = s?.workflowId ?? null;
+					const s = sums.find(
+						(x) => x.collabId === run.collabId && x.workflowId === run.workflowId,
+					);
+					inspectorCollabId = run.collabId;
+					inspectorWorkflowId = run.workflowId;
 					inspectorType = s?.workflowType ?? null;
-					inspectorLabel = s?.label ?? collabId;
+					inspectorLabel = s?.label ?? run.collabId;
 					inspectorWorkflowStatus = s?.workflowStatus ?? null;
 					inspectorSection = "live";
 					viewport.offset = 0;
@@ -575,5 +578,6 @@ export function createDashboardRuntime(input: {
 		__renderCount: () => renderCount,
 		__recycles: () => recycles,
 		__clears: () => clearCount,
+		__inspectorWorkflowId: () => inspectorWorkflowId,
 	};
 }

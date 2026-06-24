@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { estimateTokens, abbreviateCwd } from "../packages/cli/src/runtime/dashboard-state.ts";
-import { buildWallState, selectWallPage, partitionWallGroups } from "../packages/cli/src/runtime/dashboard-state.ts";
+import { buildWallState, selectWallPage, partitionWallGroups, runKey } from "../packages/cli/src/runtime/dashboard-state.ts";
 import { buildInspectorState } from "../packages/cli/src/runtime/dashboard-state.ts";
 import type { CollabSummary } from "@ai-whisper/broker";
 import type { RunCostRow } from "@ai-whisper/broker";
@@ -608,5 +608,29 @@ describe("buildWallState — cwd", () => {
 			home: "/home/u",
 		});
 		expect(state.panes[0]?.cwd).toBeNull();
+	});
+});
+
+describe("buildWallState per-run snapshot keying", () => {
+	it("keys snapshots by run so two runs on one collab don't collide", () => {
+		const emptySnap = { handoffs: [], phaseRuns: [], totalPhases: 0 };
+		const a = sum({ collabId: "c1", workflowId: "wf_a", workflowStatus: "running", label: "A" });
+		const b = sum({ collabId: "c1", workflowId: "wf_b", workflowStatus: "running", label: "B" });
+		const snapshots = {
+			[runKey(a)]: { ...emptySnap, totalPhases: 3 },
+			[runKey(b)]: { ...emptySnap, totalPhases: 7 },
+		};
+		const w = buildWallState({
+			summaries: [a, b],
+			now: "2026-05-20T00:10:00.000Z",
+			idleThresholdMs: 30000,
+			capacity: 10,
+			page: 0,
+			selected: 0,
+			snapshots,
+		});
+		const byWf = Object.fromEntries(w.panes.map((p) => [p.workflowId, p.progress?.total ?? null]));
+		expect(byWf["wf_a"]).toBe(3);
+		expect(byWf["wf_b"]).toBe(7);
 	});
 });

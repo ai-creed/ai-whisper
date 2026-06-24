@@ -170,6 +170,14 @@ export function abbreviateCwd(absPath: string, home: string): string {
 	return p;
 }
 
+// A Wall pane represents ONE run: a workflow instance (keyed by workflowId) or a
+// manual-relay slice (no workflow → keyed by collabId). `--all` can place two
+// runs of the SAME collab on screen, so snapshot/pane identity keys off the run,
+// not the collab, or sibling runs collide.
+export function runKey(s: { workflowId: string | null; collabId: string }): string {
+	return s.workflowId ?? s.collabId;
+}
+
 export function partitionWallGroups(summaries: CollabSummary[]): WallGroups {
 	const active: CollabSummary[] = [];
 	const idleManual: CollabSummary[] = [];
@@ -716,11 +724,13 @@ export function buildWallState(input: {
 		label: sec.label,
 		cardKind: sec.cardKind,
 		panes: sec.cards.map((sum) => {
-			const snap = input.snapshots[sum.collabId] ?? {
-				handoffs: [],
-				phaseRuns: [],
-				totalPhases: 0,
-			};
+			const snap =
+				input.snapshots[runKey(sum)] ??
+				input.snapshots[sum.collabId] ?? {
+					handoffs: [],
+					phaseRuns: [],
+					totalPhases: 0,
+				};
 			return projectPane(sum, input.now, input.idleThresholdMs, snap, home);
 		}),
 	}));

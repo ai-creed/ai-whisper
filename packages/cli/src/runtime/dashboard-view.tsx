@@ -354,14 +354,14 @@ export function Wall(props: {
 									const selected = idx === state.selected;
 									return sec.cardKind === "full" ? (
 										<FullCard
-											key={pane.collabId}
+											key={pane.workflowId ?? pane.collabId}
 											pane={pane}
 											selected={selected}
 											width={paneWidth}
 										/>
 									) : (
 										<CompactCard
-											key={pane.collabId}
+											key={pane.workflowId ?? pane.collabId}
 											pane={pane}
 											selected={selected}
 											width={paneWidth}
