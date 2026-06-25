@@ -5,6 +5,20 @@ All notable changes to the `ai-whisper` package are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2026-06-25
+
+### Added
+
+- **Dashboard `--all` run-ledger mode**: `whisper collab dashboard --all` renders one card per workflow RUN instead of one per collab (no per-collab masking), so every run on a collab is visible at once. It still respects `--window` per run; pair it with `--window all` for the complete run ledger. Snapshots, render keys, pane selection, and Inspector focus are now keyed by run (`workflowId ?? collabId`) so two runs of the same collab no longer collide on screen.
+- **Paused workflows in the dashboard**: a `paused` workflow is now a first-class dashboard state — it renders with a `‖` glyph, groups under ACTIVE, stays eligible regardless of the activity `--window` (like running), and surfaces in the default Wall as well as under `--all`. Previously paused runs were silently dropped from the dashboard.
+- **Dashboard summary bar**: the Wall gains a header line with live counts of every run state — `● running ‖ paused ⚠ stuck ✓ done ✖ canceled ◌ idle` — counted across the full visible scope (it respects `--all`/`--window` and spans every page, not just the page on screen), so overall fleet health reads at a glance.
+- **In-dashboard workflow actions**: pause, resume, and cancel a workflow run directly from the dashboard with `p` / `r` / `c`, from both the Wall (selected card) and the Inspector (focused run), without dropping to the `whisper workflow …` CLI. Each action is behind a `(y/n)` modal confirm, validates against the run's live status first (a key that does not apply shows a hint and does nothing), and reports the result — success or the broker's error — on an auto-expiring status line.
+
+### Fixed
+
+- **Paused workflow diagnosed as STUCK in the Inspector**: the Inspector's liveness diagnosis lacked a `paused` short-circuit, so a paused (quiescent, resumable) run was reported as STUCK, contradicting its `‖` glyph. Paused runs are now treated as quiescent, not failed.
+- **Paused latest workflow vanishing from the default Wall**: the default-mode eligibility query treated only `running` as window-independent, so a collab whose latest workflow was paused with no recent activity could drop off the Wall. Paused now joins running as window-independent.
+
 ## [0.8.0] - 2026-06-24
 
 ### Added
@@ -677,6 +691,7 @@ Requires `@ai-creed/ai-ezio` ≥ 0.2.0-beta.4 (the `@ai-ezio/surface` slash seam
   (Claude + Codex) driven by structured workflows, with npm metadata
   (description, repository, homepage).
 
+[0.8.1]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.8.1
 [0.8.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.8.0
 [0.7.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.7.0
 [0.6.1]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.6.1
