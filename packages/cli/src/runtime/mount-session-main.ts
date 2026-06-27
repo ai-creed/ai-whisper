@@ -797,6 +797,14 @@ export function createMountSessionRuntime(input: {
 				if (liveSessionStarted && liveSession) {
 					await liveSession.stop();
 				}
+				if (_agyHooksFilePath) {
+					try {
+						removeAgyHooksGroup({ filePath: _agyHooksFilePath });
+					} catch {
+						// Best-effort; never mask the original startup error.
+					}
+					_agyHooksFilePath = null;
+				}
 				await input.broker.stop();
 				throw err;
 			}

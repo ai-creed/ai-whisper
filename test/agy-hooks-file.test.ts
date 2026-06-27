@@ -24,22 +24,30 @@ describe("agy hooks file", () => {
 	});
 
 	it("builds a group with the shim command (incl. --workspace-id and --event) for all five events", () => {
+		type AgyCmd = { type: string; command: string; timeout: number };
+		type AgyGroup = {
+			Stop: AgyCmd[];
+			PreInvocation: AgyCmd[];
+			PostInvocation: AgyCmd[];
+			PostToolUse: AgyCmd[];
+			PreToolUse: Array<{ matcher: string; hooks: AgyCmd[] }>;
+		};
 		const group = buildAgyHooksGroup({
 			shimPath: "/shim.js",
 			socketsDir: "/s",
 			logsDir: "/l",
 			workspaceId: "wid1",
-		}) as Record<string, any>;
+		}) as unknown as AgyGroup;
 		expect(Object.keys(group).sort()).toEqual(
 			["PostInvocation", "PostToolUse", "PreInvocation", "PreToolUse", "Stop"].sort(),
 		);
-		expect(group.Stop[0].command).toBe(
+		expect(group.Stop[0]!.command).toBe(
 			"/shim.js --provider agy --socket-dir /s --log-dir /l --workspace-id wid1 --event Stop",
 		);
-		expect(group.Stop[0].timeout).toBe(5);
+		expect(group.Stop[0]!.timeout).toBe(5);
 		// PreToolUse uses the matcher + nested-hooks form.
-		expect(group.PreToolUse[0].matcher).toBe("*");
-		expect(group.PreToolUse[0].hooks[0].command).toContain("--event PreToolUse");
+		expect(group.PreToolUse[0]!.matcher).toBe("*");
+		expect(group.PreToolUse[0]!.hooks[0]!.command).toContain("--event PreToolUse");
 	});
 
 	it("merges our group into an existing file without clobbering user groups", () => {
@@ -50,7 +58,7 @@ describe("agy hooks file", () => {
 			filePath,
 			group: buildAgyHooksGroup({ shimPath: "/shim.js", socketsDir: "/s", logsDir: "/l", workspaceId: "w" }),
 		});
-		const map = JSON.parse(readFileSync(filePath, "utf8"));
+		const map = JSON.parse(readFileSync(filePath, "utf8")) as Record<string, unknown>;
 		expect(map["user-group"]).toBeDefined();
 		expect(map[AGY_HOOKS_GROUP]).toBeDefined();
 	});
@@ -63,7 +71,7 @@ describe("agy hooks file", () => {
 			group: buildAgyHooksGroup({ shimPath: "/shim.js", socketsDir: "/s", logsDir: "/l", workspaceId: "w" }),
 		});
 		expect(existsSync(filePath)).toBe(true);
-		expect(JSON.parse(readFileSync(filePath, "utf8"))[AGY_HOOKS_GROUP]).toBeDefined();
+		expect((JSON.parse(readFileSync(filePath, "utf8")) as Record<string, unknown>)[AGY_HOOKS_GROUP]).toBeDefined();
 	});
 
 	it("removes only our group on teardown", () => {
@@ -75,7 +83,7 @@ describe("agy hooks file", () => {
 			group: buildAgyHooksGroup({ shimPath: "/shim.js", socketsDir: "/s", logsDir: "/l", workspaceId: "w" }),
 		});
 		removeAgyHooksGroup({ filePath });
-		const map = JSON.parse(readFileSync(filePath, "utf8"));
+		const map = JSON.parse(readFileSync(filePath, "utf8")) as Record<string, unknown>;
 		expect(map[AGY_HOOKS_GROUP]).toBeUndefined();
 		expect(map["user-group"]).toBeDefined();
 	});

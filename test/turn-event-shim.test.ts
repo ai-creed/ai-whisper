@@ -155,7 +155,7 @@ describe("turn-event-shim", () => {
 				// Capture stdout to assert the decision-hook allow response.
 				{ stdio: ["pipe", "pipe", "inherit"] },
 			);
-			child.stdout.on("data", (d) => (stdoutBuf += d.toString("utf8")));
+			child.stdout.on("data", (d: Buffer) => (stdoutBuf += d.toString("utf8")));
 			child.stdin.write(payload);
 			child.stdin.end();
 			child.on("exit", () => resolve());
@@ -206,7 +206,7 @@ describe("turn-event-shim", () => {
 				],
 				{ stdio: ["pipe", "pipe", "inherit"] },
 			);
-			child.stdout.on("data", (d) => (stdoutBuf += d.toString("utf8")));
+			child.stdout.on("data", (d: Buffer) => (stdoutBuf += d.toString("utf8")));
 			child.stdin.write(payload);
 			child.stdin.end();
 			child.on("exit", () => resolve());

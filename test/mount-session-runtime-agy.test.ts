@@ -7,6 +7,13 @@ import { createMountedTurnOwnedRelay } from "../packages/cli/src/runtime/mounted
 import { AGY_HOOKS_GROUP } from "../packages/cli/src/runtime/turn-events-config.ts";
 import type { TurnEvent } from "../packages/cli/src/runtime/turn-event.ts";
 
+type CapturedAgyListenerInput = {
+	provider: string;
+	agy?: { mode: string; mountCwd: string };
+	onEvent: (e: TurnEvent) => void;
+	onActivity: (info: { toolInFlight: boolean }) => void;
+};
+
 // Full fake relay api (mirrors fakeRelayApi in mount-session-runtime.test.ts).
 function fakeRelayApi(
 	extra: Partial<ReturnType<typeof createMountedTurnOwnedRelay>> = {},
@@ -94,8 +101,7 @@ describe("mount session runtime — agy turn-event wiring (faked hook stream)", 
 		const workspaceRoot = mkdtempSync(join(tmpdir(), "aiw-agy-ws-"));
 		const hooksFile = join(workspaceRoot, ".agents", "hooks.json");
 		let hooksExistedAtLaunch = false;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		let listenerInput: any;
+		let listenerInput: CapturedAgyListenerInput | undefined;
 		let capturedOnExit: (() => void) | null = null;
 
 		const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
@@ -130,7 +136,7 @@ describe("mount session runtime — agy turn-event wiring (faked hook stream)", 
 				runLoop: () => Promise.resolve(() => Promise.resolve()),
 				createTurnRelay: () => fakeRelayApi(),
 				createTurnEventListener: (async (inp: unknown) => {
-					listenerInput = inp;
+					listenerInput = inp as CapturedAgyListenerInput;
 					return { socketPath: "/tmp/fake-agy.sock", close: async () => {} };
 				}) as never,
 			});
@@ -139,20 +145,22 @@ describe("mount session runtime — agy turn-event wiring (faked hook stream)", 
 
 			// Criterion 5 (install-before-launch): the group existed when the provider launched.
 			expect(hooksExistedAtLaunch).toBe(true);
-			expect(JSON.parse(readFileSync(hooksFile, "utf8"))[AGY_HOOKS_GROUP]).toBeDefined();
+			expect((JSON.parse(readFileSync(hooksFile, "utf8")) as Record<string, unknown>)[AGY_HOOKS_GROUP]).toBeDefined();
 
 			// Listener wired for agy in the DEFAULT (workspace) adoption mode, with onActivity.
-			expect(listenerInput.provider).toBe("agy");
-			expect(listenerInput.agy.mode).toBe("workspace");
-			expect(listenerInput.agy.mountCwd).toBe(workspaceRoot);
-			expect(typeof listenerInput.onEvent).toBe("function");
-			expect(typeof listenerInput.onActivity).toBe("function");
+			expect(listenerInput).toBeDefined();
+			const li = listenerInput!;
+			expect(li.provider).toBe("agy");
+			expect(li.agy!.mode).toBe("workspace");
+			expect(li.agy!.mountCwd).toBe(workspaceRoot);
+			expect(typeof li.onEvent).toBe("function");
+			expect(typeof li.onActivity).toBe("function");
 
 			// Criterion 5 (teardown): provider exit → stop() removes ONLY our group.
 			expect(capturedOnExit).not.toBeNull();
 			capturedOnExit!();
 			await new Promise((r) => setTimeout(r, 20));
-			expect(JSON.parse(readFileSync(hooksFile, "utf8"))[AGY_HOOKS_GROUP]).toBeUndefined();
+			expect((JSON.parse(readFileSync(hooksFile, "utf8")) as Record<string, unknown>)[AGY_HOOKS_GROUP]).toBeUndefined();
 		} finally {
 			exitSpy.mockRestore();
 		}
@@ -161,8 +169,7 @@ describe("mount session runtime — agy turn-event wiring (faked hook stream)", 
 	it("routes a gated Stop to the relay and suppresses idle while a tool is in flight (criteria 1 & 3)", async () => {
 		vi.useFakeTimers();
 		const workspaceRoot = mkdtempSync(join(tmpdir(), "aiw-agy-ws2-"));
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		let listenerInput: any;
+		let listenerInput: CapturedAgyListenerInput | undefined;
 		const checkIdleActions = vi.fn(() => Promise.resolve());
 		const handleTurnEvent = vi.fn(async () => {});
 
@@ -192,7 +199,7 @@ describe("mount session runtime — agy turn-event wiring (faked hook stream)", 
 			runLoop: () => Promise.resolve(() => Promise.resolve()),
 			createTurnRelay: () => fakeRelayApi({ checkIdleActions, handleTurnEvent }),
 			createTurnEventListener: (async (inp: unknown) => {
-				listenerInput = inp;
+				listenerInput = inp as CapturedAgyListenerInput;
 				return { socketPath: "/tmp/fake-agy2.sock", close: async () => {} };
 			}) as never,
 		});
@@ -200,6 +207,7 @@ describe("mount session runtime — agy turn-event wiring (faked hook stream)", 
 		void runtime.start();
 		await vi.advanceTimersByTimeAsync(10); // let start() reach listener creation
 		expect(listenerInput).toBeDefined();
+		const li = listenerInput!;
 
 		// A gated Stop turn-end (as AgyEventReceiver would emit) routes to the relay once.
 		const turnEnd: TurnEvent = {
@@ -212,18 +220,54 @@ describe("mount session runtime — agy turn-event wiring (faked hook stream)", 
 			inputMessages: [],
 			receivedAt: "2026-06-27T00:00:00.000Z",
 		};
-		listenerInput.onEvent(turnEnd);
+		li.onEvent(turnEnd);
 		await vi.advanceTimersByTimeAsync(0);
 		expect(handleTurnEvent).toHaveBeenCalledTimes(1);
 
 		// PreToolUse with no PostToolUse → tool in flight → idle MUST NOT fire.
-		listenerInput.onActivity({ toolInFlight: true });
+		li.onActivity({ toolInFlight: true });
 		await vi.advanceTimersByTimeAsync(31_000);
 		expect(checkIdleActions).not.toHaveBeenCalled();
 
 		// PostToolUse closes the bracket → idle fallback resumes.
-		listenerInput.onActivity({ toolInFlight: false });
+		li.onActivity({ toolInFlight: false });
 		await vi.advanceTimersByTimeAsync(31_000);
 		expect(checkIdleActions).toHaveBeenCalled();
+	});
+
+	it("removes the hooks group even when provider startup fails (teardown-leak fix)", async () => {
+		const workspaceRoot = mkdtempSync(join(tmpdir(), "aiw-agy-startfail-"));
+		const hooksFile = join(workspaceRoot, ".agents", "hooks.json");
+
+		const runtime = createMountSessionRuntime({
+			target: "agy",
+			ttyPath: "/dev/ttys042",
+			workspaceRoot,
+			claimId: "claim_agy_fail",
+			secret: "secret_agy_fail",
+			turnEventsEnablement: { claude: false, codex: false, agy: true },
+			broker: agyBroker("collab_agy_fail", "session_agy_fail"),
+			createInteractiveSession: () => agyInteractiveSession(),
+			createLiveSession: () =>
+				({
+					start: () => Promise.reject(new Error("provider failed to launch")),
+					stop: () => Promise.resolve(),
+				}) as never,
+			createProvider: () =>
+				({
+					getIdentity: () => ({ providerId: "google-antigravity-cli", toolFamily: "antigravity", providerVersion: "1.0.0" }),
+					getCapabilities: () => AGY_CAPS,
+					getHealthState: () => "healthy" as const,
+					handleWork: () => Promise.resolve({ kind: "answer" as const, content: "ok", transitionIntent: null }),
+				}) as never,
+			runLoop: () => Promise.resolve(() => Promise.resolve()),
+			createTurnRelay: () => fakeRelayApi(),
+		});
+
+		await expect(runtime.start()).rejects.toThrow("provider failed to launch");
+
+		// The hooks file WILL have been written pre-launch; after the catch the group must be gone.
+		const map = JSON.parse(readFileSync(hooksFile, "utf8")) as Record<string, unknown>;
+		expect(map[AGY_HOOKS_GROUP]).toBeUndefined();
 	});
 });
