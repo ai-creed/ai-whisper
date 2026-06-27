@@ -30,7 +30,7 @@ export async function connectToWorkspaceBroker(
 	}
 	if (resolved.recovery.state === "recovered") {
 		throw new Error(
-			"Collab has been recovered and still needs reconnect. Run `whisper collab reconnect <codex|claude>`.",
+			"Collab has been recovered and still needs reconnect. Run `whisper collab reconnect <codex|claude|ezio|agy>`.",
 		);
 	}
 
