@@ -40,6 +40,10 @@ export default defineConfig({
 				__dirname,
 				"../ai-ezio/packages/surface/dist/index.js",
 			),
+			"@ai-ezio/session-hosts": resolve(
+				__dirname,
+				"../ai-ezio/packages/session-hosts/dist/index.js",
+			),
 		},
 	},
 	test: {

@@ -56,11 +56,11 @@ jobs:
       # deps resolving to dist/index.js, so dist must exist before whisper builds.
       # This --filter list is a MIRROR of ci.yml / publish.yml — keep all three in
       # sync (and tsconfig.json paths + vitest.config.ts aliases) for any new dep.
-      - name: Build ai-ezio harness + surface + mcp-host (+ protocol)
+      - name: Build ai-ezio session-hosts + surface (pulls subagent + mcp-host + harness + protocol)
         working-directory: ai-ezio
         run: |
           pnpm install --frozen-lockfile
-          pnpm --filter "@ai-ezio/harness..." --filter "@ai-ezio/surface..." --filter "@ai-ezio/mcp-host..." build
+          pnpm --filter "@ai-ezio/session-hosts..." --filter "@ai-ezio/surface..." build
 
       - name: Install dependencies
         working-directory: ai-whisper

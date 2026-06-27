@@ -41,11 +41,11 @@ jobs:
             ai-whisper/pnpm-lock.yaml
             ai-ezio/pnpm-lock.yaml
 
-      - name: Build ai-ezio harness + surface + mcp-host (+ protocol)
+      - name: Build ai-ezio session-hosts + surface (pulls subagent + mcp-host + harness + protocol)
         working-directory: ai-ezio
         run: |
           pnpm install --frozen-lockfile
-          pnpm --filter "@ai-ezio/harness..." --filter "@ai-ezio/surface..." --filter "@ai-ezio/mcp-host..." build
+          pnpm --filter "@ai-ezio/session-hosts..." --filter "@ai-ezio/surface..." build
 
       - name: Install dependencies
         working-directory: ai-whisper
