@@ -71,6 +71,26 @@ describe("AgyEventReceiver — pinned mode", () => {
 		expect(r.observe(tool(PARENT, 7), "t", "PostToolUse")).toEqual({ kind: "heartbeat", toolInFlight: false });
 	});
 
+	it("treats a PostToolUse for an unopened stepIdx as a harmless no-op", () => {
+		// agy fires some PostToolUse events for steps that never had a matching
+		// PreToolUse (observed in the smoke probe as `tool=None` steps). Deleting an
+		// absent stepIdx must not throw and must leave toolInFlight false.
+		const r = make();
+		expect(r.observe(tool(PARENT, 1), "t", "PostToolUse")).toEqual({
+			kind: "heartbeat",
+			toolInFlight: false,
+		});
+		// A real bracket still tracks correctly afterwards.
+		expect(r.observe(tool(PARENT, 6), "t", "PreToolUse")).toEqual({
+			kind: "heartbeat",
+			toolInFlight: true,
+		});
+		expect(r.observe(tool(PARENT, 6), "t", "PostToolUse")).toEqual({
+			kind: "heartbeat",
+			toolInFlight: false,
+		});
+	});
+
 	it("returns ignored for malformed JSON", () => {
 		expect(make().observe("{not json", "t", "Stop").kind).toBe("ignored");
 	});

@@ -25,12 +25,14 @@ describe("agy hooks file", () => {
 
 	it("builds a group with the shim command (incl. --workspace-id and --event) for all five events", () => {
 		type AgyCmd = { type: string; command: string; timeout: number };
+		type AgyMatcherEntry = { matcher: string; hooks: AgyCmd[] };
 		type AgyGroup = {
 			Stop: AgyCmd[];
 			PreInvocation: AgyCmd[];
 			PostInvocation: AgyCmd[];
-			PostToolUse: AgyCmd[];
-			PreToolUse: Array<{ matcher: string; hooks: AgyCmd[] }>;
+			// Tool-scoped events: agy only fires these in the matcher form.
+			PostToolUse: AgyMatcherEntry[];
+			PreToolUse: AgyMatcherEntry[];
 		};
 		const group = buildAgyHooksGroup({
 			shimPath: "/shim.js",
@@ -45,9 +47,15 @@ describe("agy hooks file", () => {
 			"/shim.js --provider agy --socket-dir /s --log-dir /l --workspace-id wid1 --event Stop",
 		);
 		expect(group.Stop[0]!.timeout).toBe(5);
-		// PreToolUse uses the matcher + nested-hooks form.
+		// Both tool-scoped events use the matcher + nested-hooks form. agy fires
+		// PreToolUse/PostToolUse ONLY in this form; the shorthand { type, command }
+		// silently never fires (verified against agy v1.0.13), which would leave the
+		// tool-in-flight bracket open forever and disable the idle fallback.
 		expect(group.PreToolUse[0]!.matcher).toBe("*");
 		expect(group.PreToolUse[0]!.hooks[0]!.command).toContain("--event PreToolUse");
+		expect(group.PostToolUse[0]!.matcher).toBe("*");
+		expect(group.PostToolUse[0]!.hooks[0]!.command).toContain("--event PostToolUse");
+		expect(group.PostToolUse[0]!.hooks[0]!.timeout).toBe(5);
 	});
 
 	it("merges our group into an existing file without clobbering user groups", () => {

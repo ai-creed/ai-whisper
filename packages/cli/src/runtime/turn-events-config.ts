@@ -98,7 +98,15 @@ export function agyHooksFilePath(input: {
  * Builds the `ai-whisper-turn-events` named group. The same shim is wired for all
  * five lifecycle events; each command carries `--workspace-id` (routing source —
  * agy payloads have no cwd) and `--event <Name>` (so the mount-side receiver can
- * distinguish Stop from the heartbeat events). PreToolUse uses the matcher form.
+ * distinguish Stop from the heartbeat events).
+ *
+ * Tool-scoped events (PreToolUse AND PostToolUse) MUST use the matcher form
+ * `{ matcher, hooks }`. Verified against agy v1.0.13: agy fires tool-scoped hooks
+ * only in the matcher form — the shorthand `{ type, command }` parses but silently
+ * never fires. Registering PostToolUse in shorthand left the tool-in-flight bracket
+ * (opened by PreToolUse, closed by PostToolUse) open forever, latching the idle
+ * fallback off for the session. Non-tool events (Stop/PreInvocation/PostInvocation)
+ * fire correctly in shorthand.
  */
 export function buildAgyHooksGroup(input: {
 	shimPath: string;
@@ -117,7 +125,7 @@ export function buildAgyHooksGroup(input: {
 		Stop: [cmd("Stop")],
 		PreInvocation: [cmd("PreInvocation")],
 		PostInvocation: [cmd("PostInvocation")],
-		PostToolUse: [cmd("PostToolUse")],
+		PostToolUse: [{ matcher: "*", hooks: [cmd("PostToolUse")] }],
 		PreToolUse: [{ matcher: "*", hooks: [cmd("PreToolUse")] }],
 	};
 }

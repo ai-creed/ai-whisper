@@ -1,7 +1,8 @@
 # Antigravity Turn-Events via Lifecycle Hooks — Design
 
 **Date:** 2026-06-27
-**Status:** Approved design (empirically verified 2026-06-27), ready for planning
+**Status:** Implemented & smoke-verified against live interactive `agy` v1.0.13 (2026-06-28). All §11 open questions resolved; one registration bug found and fixed (see §11).
+**Revision (2026-06-28, smoke):** Manual smoke against a real interactive `agy` (spec §9). All four §11 open questions resolved positively (per-turn `Stop`, workspace hooks load, shell semantics, `workspacePaths` populated). The smoke caught one bug: tool-scoped hooks (`PreToolUse` AND `PostToolUse`) fire only in the matcher form `{ matcher, hooks }` — the shorthand `{ type, command }` parses but silently never fires — so `PostToolUse` was never delivered and the tool-in-flight bracket never closed. Fixed by registering `PostToolUse` in matcher form (§5.1, §11).
 **Revision (2026-06-27, review):** Hardened the hook transport/gating contract per review. (1) agy hook routing no longer depends on a payload `cwd` — agy payloads have none — so the shim routes by a `--workspace-id` baked into the hook command (§5.1–5.2). (2) Parent-`conversationId` adoption now requires **positive identification** of the launched session (pinned id, workspace-scoped first event, or `workspacePaths` match); with no discriminator the global fallback adopts nothing and degrades to idle, so it can never adopt or capture an unrelated concurrent agy session — including one that fires first (§4.2, §5.3). Acceptance criteria 8–9 and tests added.
 **Context:** ai-whisper — turn-end detection for a mounted Antigravity (`agy`) session, enabling `agy` to run as an autonomous workflow implementer/reviewer with reliable turn capture.
 
@@ -130,8 +131,11 @@ v1 reuses the shared capture unchanged: a confirmed turn-end triggers the existi
 ### 5.1 `writeAgyHooksFile` (analogue of `writeClaudeSettingsFile`)
 A new writer emits/updates a single named group — `"ai-whisper-turn-events"` — inside the target `hooks.json`, registering:
 - `Stop` → shim command (turn-end signal).
-- `PreInvocation`, `PostInvocation`, `PostToolUse` → shim command (heartbeat).
+- `PreInvocation`, `PostInvocation` → shim command (heartbeat).
 - `PreToolUse` → shim command (heartbeat + tool-in-flight open; always returns allow).
+- `PostToolUse` → shim command (heartbeat + tool-in-flight close).
+
+**Hook-form requirement (smoke-verified 2026-06-28).** The two **tool-scoped** events — `PreToolUse` AND `PostToolUse` — must be registered in the **matcher form** `[{ "matcher": "*", "hooks": [ … ] }]`. The shorthand `[{ "type": "command", "command": … }]` parses but **silently never fires** for tool-scoped events; non-tool events (`Stop`, `PreInvocation`, `PostInvocation`) fire correctly in shorthand. The initial implementation registered `PostToolUse` in shorthand, so it never fired and the tool-in-flight bracket (opened by `PreToolUse`, closed by `PostToolUse`) never closed — latching the idle fallback off for the session. `buildAgyHooksGroup` now uses the matcher form for both.
 
 The shim command is `<shimPath> --provider agy --socket-dir <socketsDir> --log-dir <logsDir> --workspace-id <workspaceId>` with a small `timeout` (e.g. `5`). Unlike claude/codex — whose payloads carry `cwd`, from which the shim derives the socket's workspace id — **verified `agy` payloads contain no `cwd`** (§3). The writer therefore **bakes the mount's `workspaceId` into the command** as the routing source; it is the same id the listener uses to name the socket (`${workspaceId}-agy.sock`). Because the schema is a **map of named groups**, the writer adds/removes only the `ai-whisper-turn-events` group, leaving any user-authored groups intact (non-destructive merge).
 
@@ -207,12 +211,16 @@ The shim command is `<shimPath> --provider agy --socket-dir <socketsDir> --log-d
 8. An `agy` hook payload with no `cwd` is routed to the correct mount socket via the baked `--workspace-id` — no event is dropped for lack of `cwd`.
 9. With a global hooks file, an unrelated concurrent `agy` session — **even one that fires its first hook before the mounted session and sends no `workspacePaths`** — never causes this mount to adopt the wrong parent `conversationId` or capture the unrelated session's `Stop`; absent a positive discriminator the mount adopts nothing and degrades to the idle timer (§4.2).
 
-## 11. Open questions (confirm during implementation)
+## 11. Open questions — RESOLVED (manual smoke, interactive `agy` v1.0.13, 2026-06-28)
 
-1. **Interactive per-turn `Stop`.** Verified that `Stop`+`fullyIdle:true` fires at turn-end in **print** mode (which then exits). Confirm it also fires after **each turn** in a long-lived **interactive** session (the expected behavior, since `fullyIdle:true`/`terminationReason:NO_TOOL_CALL` denotes "finished responding"). If interactive only fires `Stop` on process exit, fall back to the heartbeat-absence design (idle, kept honest by the heartbeat) for turn-end.
-2. **Workspace hooks loading.** `agy -p` ignores cwd (uses `~/.gemini/antigravity-cli/scratch`). Confirm a mounted **interactive** `agy` launched in the workspace cwd loads `.agents/hooks.json` from that cwd. If not, use the global `~/.gemini/config/hooks.json` fallback (§5.3) with the `conversationId` gate.
-3. **Hook command shell semantics.** Confirm the `timeout` field's unit/behavior and that a `Stop`/observational hook needs no specific stdout (we return allow regardless). Confirm the `command` is run via a shell so the shim path + args resolve.
-4. **Session discriminator strength (global fallback).** Confirm whether interactive `agy` populates `workspacePaths` in hook payloads (empty in print mode — §3). If populated with the workspace path, it is the global-fallback discriminator (§4.2); if not, the global fallback adopts nothing and degrades to the idle timer. Also confirm whether `agy` accepts a caller-supplied conversation id at launch (e.g. `--conversation <uuid>`); if so, pinning it eliminates first-event adoption entirely and becomes the preferred discriminator.
+All four were confirmed against a real interactive `agy` session via a hook probe (§9). Method: a logging hook registered in a scratch workspace `.agents/hooks.json` captured every lifecycle event's payload across an 8-turn conversation (incl. a turn that dispatched 3 subagents), then an integrated mount run exercised the real shim/listener path.
+
+1. **Interactive per-turn `Stop` — ✅ confirmed, exactly once per turn.** The 8-turn session produced **8** parent-`conversationId` `Stop`s with `fullyIdle:true`, a clean 1:1 with the 8 `USER_INPUT` records in agy's transcript. The subagent turn dispatched 3 subagents → still exactly **one** parent capture `Stop`, with the 3 subagent `Stop`s (distinct `conversationId`s) and 3 parent `fullyIdle:false` pauses correctly excluded. The gate (H1/H2) holds in interactive mode; the print-mode-only fallback is not needed.
+2. **Workspace hooks loading — ✅ confirmed.** Interactive `agy` launched in the workspace cwd loads `.agents/hooks.json` from that cwd (265 events fired from the scratch-workspace file). The workspace scope (preferred, race-free) is the default; the global fallback is not required for the supported configuration.
+3. **Hook command shell semantics — ✅ confirmed.** Commands run via a shell; the absolute shim path + args resolve; `timeout: 5` is honored; `Stop`/observational hooks need no specific stdout; the `{"decision":"allow"}` response keeps `PreToolUse` from blocking (75 `PreToolUse` fires, none blocked). **Caveat found & fixed:** tool-scoped events require the matcher form (§5.1).
+4. **Session discriminator strength — ✅ `workspacePaths` IS populated in interactive mode** with the exact launch cwd on every event (it was empty only in print mode — §3). So the global-fallback `workspacePaths` discriminator (§4.2 case 3) is viable in practice; it is nonetheless moot for the default config since workspace hooks load (case 2). Caller-supplied conversation-id pinning was not needed and not exercised.
+
+**Bug found by the smoke (fixed):** `PostToolUse` was registered in the shorthand form and never fired in interactive mode, leaving the tool-in-flight bracket open and the idle fallback latched off. Root cause and fix recorded in §5.1; unit tests now assert the matcher form for both tool-scoped events.
 
 ## 12. References
 
