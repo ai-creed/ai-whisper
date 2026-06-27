@@ -9,3 +9,5 @@ export {
 } from "./antigravity-prompt.js";
 export { parseAntigravityOutput } from "./parse-antigravity-output.js";
 export type { AntigravityCommandConfig } from "./antigravity-command.js";
+export { createAntigravityLiveSession } from "./create-antigravity-live-session.js";
+
