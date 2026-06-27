@@ -2,6 +2,7 @@
 
 **Date:** 2026-06-27
 **Status:** Approved design (empirically verified 2026-06-27), ready for planning
+**Revision (2026-06-27, review):** Hardened the hook transport/gating contract per review. (1) agy hook routing no longer depends on a payload `cwd` — agy payloads have none — so the shim routes by a `--workspace-id` baked into the hook command (§5.1–5.2). (2) Parent-`conversationId` adoption is now session-correlated so the global-hooks fallback cannot latch onto an unrelated concurrent agy session (§4.2, §5.3). Acceptance criteria 8–9 and tests added.
 **Context:** ai-whisper — turn-end detection for a mounted Antigravity (`agy`) session, enabling `agy` to run as an autonomous workflow implementer/reviewer with reliable turn capture.
 
 **Relationship to prior spec & to the merged implementation.** This is a standalone companion to `docs/superpowers/specs/2026-06-27-antigravity-adapter-design.md` (the base adapter design). It **supersedes** that spec's turn-events decisions — base §3 (D4/D5), §9 ("recognized-but-off, no hook"), §10 (`supportsLaunchHooks: false`), and the `turn-event.ts` row excluding `agy` from `TurnEventProvider`. Everything else in the base spec (package layout, relay parsing, dashboard, skill install, reconnect, build wiring) stands unchanged.
@@ -105,8 +106,13 @@ Crucially, "invocation" = a single LLM call, so `PreInvocation`/`PostInvocation`
 ### 4.1 Primary signal — the `Stop` hook
 On mount, ai-whisper registers an `agy` hooks group whose commands invoke the existing **turn-event shim**. When a `Stop` event arrives whose `conversationId` matches the mounted session's parent and whose `fullyIdle == true`, the relay treats the turn as finished and runs capture + handoff. This replaces "idle == turn-end" as the primary mechanism (mirroring how `claude`'s `Stop` hook drives capture).
 
-### 4.2 conversationId capture
-The mounted session does not know the parent `conversationId` until `agy` starts. The mount runtime captures it from the **first hook event of any type** received after launch (every payload carries `conversationId`). Subsequent `Stop` events are accepted only for that id; all others (subagents, or — if a global hooks file is used — unrelated `agy` sessions) are ignored.
+### 4.2 conversationId capture (session-correlated)
+The mounted session does not know the parent `conversationId` until `agy` starts, so the mount runtime adopts it from an early hook event — but adoption must be **correlated to the session ai-whisper launched**. A bare "first event of any type" is unsafe under the global-hooks fallback (§5.3): because the hook command bakes a fixed `--workspace-id` (§5.1) and agy payloads carry no `cwd`, *every* `agy` process on the machine forwards to this mount's socket, so an unrelated session could fire first and set the wrong parent id. Adoption therefore follows this priority:
+
+1. **Workspace-scoped hooks (preferred, race-free):** with `.agents/hooks.json` in the mount cwd (§5.3), only `agy` processes launched in this workspace load our group, so the first event received is necessarily our session's — adopt its `conversationId`.
+2. **Global hooks (fallback):** adopt the `conversationId` from the first event whose `workspacePaths` contains the mount's launch cwd, discriminating our session from unrelated `agy` sessions in other workspaces. If `workspacePaths` is unavailable (empty in print mode; interactive-mode population unconfirmed — §11), the global fallback assumes a **single active `agy` session**: if a second, distinct `conversationId` arrives before turn-end, the runtime logs a loud warning and keeps the first adopted id rather than silently switching parents (it surfaces the ambiguity instead of mis-capturing).
+
+Once adopted, the parent id is fixed for the session: `Stop` is accepted only for that id; subagent Stops (different id), mid-turn `fullyIdle == false` pauses, and any unrelated session's events are ignored.
 
 ### 4.3 Heartbeat & tool-in-flight bracket (defense-in-depth)
 Every hook event resets `lastActivityAt` (heartbeat), so the idle fallback never fires while `agy` is doing multi-step work. A `PreToolUse` opens a "tool in flight" state and the matching `PostToolUse` (same `stepIdx`) closes it; while a tool is in flight, the idle fallback is suppressed entirely (covers a single tool/command that blocks > 30 s). The `Stop` signal remains primary; this layer only guards against a missed/late `Stop`.
@@ -125,14 +131,14 @@ A new writer emits/updates a single named group — `"ai-whisper-turn-events"` �
 - `PreInvocation`, `PostInvocation`, `PostToolUse` → shim command (heartbeat).
 - `PreToolUse` → shim command (heartbeat + tool-in-flight open; always returns allow).
 
-The shim command mirrors claude's: `<shimPath> --provider agy --socket-dir <socketsDir> --log-dir <logsDir>` with a small `timeout` (e.g. `5`). Because the schema is a **map of named groups**, the writer adds/removes only the `ai-whisper-turn-events` group, leaving any user-authored groups intact (non-destructive merge).
+The shim command is `<shimPath> --provider agy --socket-dir <socketsDir> --log-dir <logsDir> --workspace-id <workspaceId>` with a small `timeout` (e.g. `5`). Unlike claude/codex — whose payloads carry `cwd`, from which the shim derives the socket's workspace id — **verified `agy` payloads contain no `cwd`** (§3). The writer therefore **bakes the mount's `workspaceId` into the command** as the routing source; it is the same id the listener uses to name the socket (`${workspaceId}-agy.sock`). Because the schema is a **map of named groups**, the writer adds/removes only the `ai-whisper-turn-events` group, leaving any user-authored groups intact (non-destructive merge).
 
 ### 5.2 Shim behavior for `agy`
-`turn-event-shim.ts` gains an `agy` arm that reads the payload from **stdin** (like `claude`; `codex` reads argv), forwards it to the mount socket tagged `provider: "agy"`, then prints `{"decision":"allow"}` to stdout so the hook never blocks `agy` (required for the `PreToolUse` decision hook, harmless for the rest). Must be fast and never error (a failing hook must not stall the agent).
+`turn-event-shim.ts` gains an `agy` arm that reads the payload from **stdin** (like `claude`; `codex` reads argv) and routes by the explicit `--workspace-id` argument rather than parsing `cwd` from the payload (agy has none — without this the shim's existing `cwd`-based router finds nothing and drops the event). It forwards the raw payload to `${socketDir}/${workspaceId}-agy.sock` tagged `provider: "agy"`, then prints `{"decision":"allow"}` to stdout so the hook never blocks `agy` (required for the `PreToolUse` decision hook, harmless for the rest). The `cwd`-from-payload routing for claude/codex is unchanged; `--workspace-id`, when present, takes precedence, and the agy arm never exits on a missing `cwd`. Must be fast and never error (a failing hook must not stall the agent).
 
 ### 5.3 File location & cleanup
 - **Preferred:** workspace `.agents/hooks.json` in the mount's launch cwd — scoped to this workspace, naturally cleaned up. (Requires confirming mounted interactive `agy` loads workspace `.agents/` from cwd — §11.)
-- **Fallback:** global `~/.gemini/config/hooks.json` — guaranteed to load, but process-wide; the `conversationId` gate (§4.2) prevents cross-session confusion, and the named-group merge keeps it non-destructive.
+- **Fallback:** global `~/.gemini/config/hooks.json` — guaranteed to load, but **process-wide**: because the hook command bakes a fixed `--workspace-id` (§5.1) and agy payloads carry no `cwd`, *every* `agy` process on the machine forwards its hook events to this mount's socket. The session-correlated capture in §4.2 (workspacePaths discriminator + single-active-session guard) keeps the wrong session from being adopted; even so, the global file is a **last resort, intended for one active `agy` session at a time**. The named-group merge keeps it non-destructive.
 - **Lifecycle:** install the group before launching `agy`; **remove the `ai-whisper-turn-events` group on teardown** (and restore any backup). Never leave our group behind in a global file.
 
 ## 6. What ships (integration with the turn-event stack)
@@ -140,11 +146,11 @@ The shim command mirrors claude's: `<shimPath> --provider agy --socket-dir <sock
 | File | Change |
 |---|---|
 | `packages/cli/src/runtime/turn-event.ts` | Change the merged `TurnEventProvider = Exclude<AgentType, "ezio" \| "agy">` to `Exclude<AgentType, "ezio">` (drop the `\| "agy"` so the hook stack handles `agy`). |
-| `packages/cli/src/runtime/turn-events-config.ts` | `TurnEventsEnablement.agy`, the `"agy"` token in `RECOGNIZED_TURN_EVENTS_TOKENS`, and the `agy=…` startup line are **already present** (no-op). **Delta:** in `resolveTurnEvents`, **remove the unconditional `agy:false` pin** so `agy` resolves like `claude`/`codex` (default on; allow-list when set; `off`/`none` disables). **Remove** `agyTurnEventsExplicitlyRequested(...)` and its "no hook" warning call in `mount.ts` (obsolete once the hook works). **Add** `writeAgyHooksFile(...)`. |
-| `packages/cli/src/bin/turn-event-shim.ts` | Add `agy` to the provider type and a stdin payload-read arm; always emit `{"decision":"allow"}` on stdout (§5.2). |
+| `packages/cli/src/runtime/turn-events-config.ts` | `TurnEventsEnablement.agy`, the `"agy"` token in `RECOGNIZED_TURN_EVENTS_TOKENS`, and the `agy=…` startup line are **already present** (no-op). **Delta:** in `resolveTurnEvents`, **remove the unconditional `agy:false` pin** so `agy` resolves like `claude`/`codex` (default on; allow-list when set; `off`/`none` disables). **Remove** `agyTurnEventsExplicitlyRequested(...)` and its "no hook" warning call in `mount.ts` (obsolete once the hook works). **Add** `writeAgyHooksFile(...)` — bakes `--workspace-id <workspaceId>` into the shim command so agy hooks route without a payload `cwd` (§5.1). |
+| `packages/cli/src/bin/turn-event-shim.ts` | Add `agy` to the provider type and a stdin payload-read arm that routes by an explicit `--workspace-id` argument (agy payloads carry no `cwd`, so the existing `cwd`-based router would drop every agy event); the agy arm must not exit on a missing `cwd`. Always emit `{"decision":"allow"}` on stdout (§5.2). claude/codex `cwd` routing unchanged. |
 | `packages/cli/src/runtime/event-receiver.ts` | New `AgyEventReceiver`: parse the agy payload; emit a turn-event only for `Stop` with `fullyIdle == true`; emit heartbeat/activity for the other events; expose `conversationId`, `transcriptPath`, `terminationReason`. |
 | `packages/cli/src/runtime/mount-turn-event-listener.ts` | Dispatch to `AgyEventReceiver` when `provider === "agy"`. |
-| `packages/cli/src/runtime/mount-session-main.ts` | Enable the event path for `agy` (`_eventEnabled`/`eventPathEnabled`/listener creation include `agy`). Capture the parent `conversationId` from the first agy hook event. On gated `Stop` → finish turn + capture; on other agy events → reset `lastActivityAt` and maintain tool-in-flight state. Install `writeAgyHooksFile` before launch; remove the group on teardown. |
+| `packages/cli/src/runtime/mount-session-main.ts` | Enable the event path for `agy` (`_eventEnabled`/`eventPathEnabled`/listener creation include `agy`). Adopt the parent `conversationId` via the session-correlated rule (§4.2: `workspacePaths` discriminator under global hooks, with a single-active-session guard against a second `conversationId`), not blindly from the first event. On gated `Stop` → finish turn + capture; on other agy events → reset `lastActivityAt` and maintain tool-in-flight state. Install `writeAgyHooksFile` before launch; remove the group on teardown. |
 | `packages/cli/src/runtime/providers.ts` | When mounting `agy` with turn-events on, invoke `writeAgyHooksFile` and ensure the shim is reachable (parallel to how claude’s `--settings <file>` is wired). No agy launch flag is needed — hooks come from the file, not argv. |
 
 (The base adapter spec already covers the non-turn-events surfaces: the `adapter-antigravity` package, `agentTypes`/`relayTargets`, submit strategy, relay parsing, dashboard, skill install, reconnect, build wiring.)
@@ -158,13 +164,15 @@ The shim command mirrors claude's: `<shimPath> --provider agy --socket-dir <sock
 | # | Decision | Rationale |
 |---|----------|-----------|
 | H1 | Turn-end = `Stop` hook gated by `conversationId == parent` && `fullyIdle == true`. | Verified to fire exactly once at true completion; ignores subagent Stops and mid-turn pauses (§3). |
-| H2 | Capture the parent `conversationId` from the first hook event at mount. | The shim forwards all events; the runtime needs the parent id to gate `Stop` and ignore subagents / other sessions. |
+| H2 | Adopt the parent `conversationId` from an early hook event, **correlated to the launched session** (workspace-scoped hooks ⇒ first event is ours; global hooks ⇒ first event whose `workspacePaths` matches cwd, else a single-active-session guard). | A bare "first event" is unsafe under the global hooks file, where unrelated agy sessions forward to the same socket (§4.2). |
 | H3 | Register all five events; `Stop` = finish, the rest = heartbeat + tool-in-flight bracket. | Dense heartbeat (≤7 s gaps) prevents false idle; bracket covers single long tools; belt-and-suspenders around `Stop`. |
 | H4 | Shim reads agy payload from **stdin** and always returns `{"decision":"allow"}`. | Matches agy's stdin contract; never gates agy's actions (required for the `PreToolUse` decision hook). |
 | H5 | `writeAgyHooksFile` merges/removes only an `ai-whisper-turn-events` named group. | The named-group schema allows non-destructive install/cleanup without clobbering user hooks. |
 | H6 | Prefer workspace `.agents/hooks.json`; fall back to global `~/.gemini/config/hooks.json` with the `conversationId` gate. | Workspace scoping is cleanest; global is the guaranteed-load fallback (§11 confirms which). |
 | H7 | v1 capture reuses the shared `/copy` path; `transcriptPath` structured capture deferred. | Minimizes divergence from the proven claude flow; transcript read is an enhancement. |
 | H8 | `agy` turn-events default **on** (like claude/codex). | It is now a genuine hook-capable provider; `--turn-events off` still disables. |
+| H9 | `writeAgyHooksFile` bakes `--workspace-id` into the shim command; the shim routes agy by it, not by payload `cwd`. | Verified agy payloads have no `cwd`; the existing cwd-based router would drop every agy event (§5.1/§5.2). |
+| H10 | Prefer workspace `.agents/hooks.json`; treat the global file as a single-active-session last resort with the §4.2 discriminator + guard. | The global file funnels all agy processes to one socket, so it needs explicit session correlation; the workspace file is structurally race-free. |
 
 ## 9. Testing strategy
 
@@ -172,12 +180,13 @@ The shim command mirrors claude's: `<shimPath> --provider agy --socket-dir <sock
 - `AgyEventReceiver`: a `Stop` payload with `fullyIdle:true` + matching `conversationId` → one turn-event; `fullyIdle:false` → none; mismatched `conversationId` (subagent) → none; `PreInvocation`/`PostInvocation`/`PreToolUse`/`PostToolUse` → heartbeat/activity, not turn-end; `toolCall.name` + `stepIdx` parsed for tool-in-flight.
 - `writeAgyHooksFile`: emits the `ai-whisper-turn-events` group with the correct shim command for all five events; merging into a file with a pre-existing user group leaves that group intact; the teardown remover deletes only our group.
 - `turn-events-config`: `agy` recognized; default `on`; `off`/`none` disables; startup line shows `agy=ON/off`.
-- `turn-event-shim` (agy arm): reads a stdin payload, forwards it provider-tagged, prints `{"decision":"allow"}`.
+- `turn-event-shim` (agy arm): reads a stdin payload **that contains no `cwd`**, routes it to `${socketDir}/${workspaceId}-agy.sock` using the explicit `--workspace-id` argument (regression: the cwd-based path would drop it), forwards it provider-tagged, and prints `{"decision":"allow"}`.
 
 **Integration**
 - Mount runtime with a faked agy hook stream: the parent `conversationId` is captured from the first event; a gated `Stop` triggers capture + handoff exactly once; a subagent `Stop` (different `conversationId`) does **not**; a long quiet gap *with* heartbeat events does not false-idle; a `PreToolUse` with no `PostToolUse` suppresses idle turn-end.
 - `mount-turn-event-listener` routes `provider:"agy"` to `AgyEventReceiver`.
 - Round-trip: `writeAgyHooksFile` output, parsed back, registers the expected events.
+- Global-fallback race: two interleaved agy event streams with **different** `conversationId`s arrive on the same socket; the runtime adopts only the session matching the cwd (or, absent `workspacePaths`, the first one and guards against the second), and an unrelated session's `Stop` neither sets the parent id nor triggers capture.
 
 **Manual smoke (against real `agy`)**
 - Mount `agy`; run a task that spawns a subagent; confirm the turn is captured **once**, at true completion (not when the subagent finishes, not mid-pause), and the heartbeat prevented any premature idle capture.
@@ -193,12 +202,15 @@ The shim command mirrors claude's: `<shimPath> --provider agy --socket-dir <sock
 5. The `ai-whisper-turn-events` hooks group is installed before launch and removed on teardown; user-authored hook groups are untouched.
 6. `getCapabilities().supportsLaunchHooks === true`; `agy ∈ TurnEventProvider`.
 7. `pnpm typecheck`, `pnpm build`, and `pnpm test` pass; existing `claude`/`codex`/`ezio` turn-events behavior is unchanged.
+8. An `agy` hook payload with no `cwd` is routed to the correct mount socket via the baked `--workspace-id` — no event is dropped for lack of `cwd`.
+9. With a global hooks file, an unrelated concurrent `agy` session does not cause this mount to adopt the wrong parent `conversationId` or capture the unrelated session's `Stop` (workspace-scoped hooks preferred; global fallback guarded per §4.2).
 
 ## 11. Open questions (confirm during implementation)
 
 1. **Interactive per-turn `Stop`.** Verified that `Stop`+`fullyIdle:true` fires at turn-end in **print** mode (which then exits). Confirm it also fires after **each turn** in a long-lived **interactive** session (the expected behavior, since `fullyIdle:true`/`terminationReason:NO_TOOL_CALL` denotes "finished responding"). If interactive only fires `Stop` on process exit, fall back to the heartbeat-absence design (idle, kept honest by the heartbeat) for turn-end.
 2. **Workspace hooks loading.** `agy -p` ignores cwd (uses `~/.gemini/antigravity-cli/scratch`). Confirm a mounted **interactive** `agy` launched in the workspace cwd loads `.agents/hooks.json` from that cwd. If not, use the global `~/.gemini/config/hooks.json` fallback (§5.3) with the `conversationId` gate.
 3. **Hook command shell semantics.** Confirm the `timeout` field's unit/behavior and that a `Stop`/observational hook needs no specific stdout (we return allow regardless). Confirm the `command` is run via a shell so the shim path + args resolve.
+4. **Session discriminator strength (global fallback).** Confirm whether interactive `agy` populates `workspacePaths` in hook payloads (empty in print mode — §3). If populated with the workspace path, it is the global-fallback discriminator (§4.2); if not, the global fallback relies on the single-active-session guard. Also confirm whether `agy` accepts a caller-supplied conversation id at launch (e.g. `--conversation <uuid>`); if so, pinning it eliminates first-event adoption entirely and becomes the preferred discriminator.
 
 ## 12. References
 
