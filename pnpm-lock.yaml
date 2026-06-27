@@ -102,6 +102,15 @@ importers:
         specifier: workspace:*
         version: link:../shared
 
+  packages/adapter-antigravity:
+    dependencies:
+      '@ai-whisper/shared':
+        specifier: workspace:*
+        version: link:../shared
+      node-pty:
+        specifier: ^1.1.0
+        version: 1.1.0
+
   packages/adapter-claude:
     dependencies:
       '@ai-whisper/shared':
@@ -193,6 +202,9 @@ importers:
       '@ai-whisper/adapter-ai-ezio':
         specifier: workspace:*
         version: link:../adapter-ai-ezio
+      '@ai-whisper/adapter-antigravity':
+        specifier: workspace:*
+        version: link:../adapter-antigravity
       '@ai-whisper/adapter-claude':
         specifier: workspace:*
         version: link:../adapter-claude
