@@ -10,6 +10,10 @@ import {
 	createAiEzioLiveSession,
 	createAiEzioProvider,
 } from "@ai-whisper/adapter-ai-ezio";
+import {
+	createAntigravityLiveSession,
+	createAntigravityProvider,
+} from "@ai-whisper/adapter-antigravity";
 import type { AgentType, InteractiveSessionController, OverlayRunner } from "@ai-whisper/shared";
 import { getLiveSessionBrokerTempRoot } from "./paths.js";
 
@@ -32,6 +36,12 @@ export function getInteractiveSessionExecArgsForTarget(
 		// with no approval prompts and no sandbox gating.
 		const base = ["--dangerously-bypass-approvals-and-sandbox", "--add-dir", tempRoot];
 		return turnEvents?.codexNotify ? [...base, ...turnEvents.codexNotify] : base;
+	}
+
+	if (target === "agy") {
+		// Full autonomy, identical to claude. agy has no turn-event hook, so the
+		// turnEvents settings/notify args never apply.
+		return ["--add-dir", tempRoot, "--dangerously-skip-permissions"];
 	}
 
 	// Full autonomy: bypass all permission checks so the relay can drive
@@ -58,6 +68,10 @@ export function getProviderExecArgsForTarget(target: MountTarget): string[] {
 		];
 	}
 
+	if (target === "agy") {
+		return ["-p", "--add-dir", tempRoot, "--dangerously-skip-permissions"];
+	}
+
 	return ["-p", "--add-dir", tempRoot, "--dangerously-skip-permissions"];
 }
 
@@ -69,6 +83,12 @@ export function createProviderForTarget(target: MountTarget) {
 		return createCodexProvider({
 			executable: process.env.AI_WHISPER_CODEX_CMD ?? "codex",
 			execArgs: getProviderExecArgsForTarget("codex"),
+		});
+	}
+	if (target === "agy") {
+		return createAntigravityProvider({
+			executable: process.env.AI_WHISPER_AGY_CMD ?? "agy",
+			execArgs: getProviderExecArgsForTarget("agy"),
 		});
 	}
 	return createClaudeProvider({
@@ -116,6 +136,19 @@ export function createInteractiveSessionForTarget(input: {
 		return createCodexLiveSession({
 			config: {
 				executable: process.env.AI_WHISPER_CODEX_CMD ?? "codex",
+				execArgs,
+			},
+			cwd: input.cwd,
+			stdout: input.stdout,
+			...(input.replyTimeoutMs !== undefined
+				? { replyTimeoutMs: input.replyTimeoutMs }
+				: {}),
+		});
+	}
+	if (input.target === "agy") {
+		return createAntigravityLiveSession({
+			config: {
+				executable: process.env.AI_WHISPER_AGY_CMD ?? "agy",
 				execArgs,
 			},
 			cwd: input.cwd,

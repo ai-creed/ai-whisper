@@ -157,7 +157,7 @@ export function createCli(): Command {
 	collab
 		.command("tell")
 		.description("Send an instruction to an agent")
-		.requiredOption("--target <agent>", "Target agent: codex, claude, or ezio")
+		.requiredOption("--target <agent>", "Target agent: codex, claude, ezio, or agy")
 		.option("--collab <id>", "Send to a specific collab id (defaults to the active collab for cwd)")
 		.option("--action <action>", "Explicit requested action")
 		.option(
@@ -229,7 +229,7 @@ export function createCli(): Command {
 	collab
 		.command("reconnect")
 		.description("Reconnect a remembered role after broker recovery (mount mode)")
-		.argument("<agent>", "Target agent: codex or claude")
+		.argument("<agent>", "Target agent: codex, claude, ezio, or agy")
 		.option("--workspace <path>", "Workspace root", process.cwd())
 		.option("--collab <id>", "Target a specific collab id (defaults to the active collab for cwd)")
 		.action(async (target: string, opts: WorkspaceOpts & { collab?: string }) => {
@@ -244,7 +244,7 @@ export function createCli(): Command {
 	collab
 		.command("mount")
 		.description("Mount the current terminal as the managed session surface for a role")
-		.argument("<agent>", "Target agent: codex, claude, or ezio")
+		.argument("<agent>", "Target agent: codex, claude, ezio, or agy")
 		.argument(
 			"[passthroughArgs...]",
 			"Args forwarded after `--` to the agent binary spawn (e.g. `mount codex -- --full-auto`)",
@@ -253,7 +253,7 @@ export function createCli(): Command {
 		.option("--collab <id>", "Target a specific collab id (defaults to the active collab for cwd)")
 		.option(
 			"--turn-events <providers>",
-			"Scope the push turn-completion event path to the given providers (comma-separated: claude,codex), or disable it with `off`/`none` to revert to pure clipboard capture. Overrides AI_WHISPER_TURN_EVENTS. Default: on (claude,codex).",
+			"Scope the push turn-completion event path to the given providers (comma-separated providers with turn-end hooks: claude,codex; agy is recognized but always off), or disable it with `off`/`none` to revert to pure clipboard capture. Overrides AI_WHISPER_TURN_EVENTS. Default: on (claude,codex).",
 		)
 		.action(
 			async (
@@ -412,8 +412,8 @@ export function createCli(): Command {
 		.description("Start a new workflow")
 		.requiredOption("--type <type>", "Workflow type (e.g. spec-driven-development)")
 		.requiredOption("--spec <path>", "Spec file path")
-		.option("--implementer <agent>", "Implementer agent: claude, codex, or ezio (defaults to the workflow type's defaultImplementer)")
-		.option("--reviewer <agent>", "Reviewer agent: claude, codex, or ezio (defaults to the workflow type's defaultReviewer)")
+		.option("--implementer <agent>", "Implementer agent: claude, codex, ezio, or agy (defaults to the workflow type's defaultImplementer)")
+		.option("--reviewer <agent>", "Reviewer agent: claude, codex, ezio, or agy (defaults to the workflow type's defaultReviewer)")
 		.option("--name <name>", "Optional workflow display name")
 		.option("--workspace <path>", "Workspace root", process.cwd())
 		.action(
@@ -554,7 +554,7 @@ export function createCli(): Command {
 		)
 		.addOption(
 			new Option("--target <target>", "Agent install target")
-				.choices(["claude", "codex", "ezio", "all"])
+				.choices(["claude", "codex", "ezio", "agy", "all"])
 				.default("all"),
 		)
 		.option("--force", "Overwrite existing skill destinations")

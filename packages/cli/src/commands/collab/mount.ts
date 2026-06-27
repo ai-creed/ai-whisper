@@ -26,6 +26,7 @@ import {
 	getStateLogsDir,
 } from "../../runtime/state-root.js";
 import {
+	agyTurnEventsExplicitlyRequested,
 	formatTurnEventsStartupLine,
 	resolveTurnEvents,
 	unrecognizedTurnEventsTokens,
@@ -34,6 +35,7 @@ import {
 import { waitForBrokerReady } from "../../runtime/wait-for-broker-ready.js";
 import { runCollabRecover } from "./recover.js";
 import { runCollabStart } from "./start.js";
+import { agentDisplayName } from "../../runtime/agent-display.js";
 
 function defaultIsPidAlive(pid: number): boolean {
 	try {
@@ -147,6 +149,11 @@ export async function runCollabMount(input: {
 	mkdirSync(getStateSocketsDir(), { recursive: true });
 	mkdirSync(getStateLogsDir(), { recursive: true });
 	console.error(formatTurnEventsStartupLine(enablement));
+	if (agyTurnEventsExplicitlyRequested(input.turnEventsFlag)) {
+		console.error(
+			"[ai-whisper] turn-events: agy has no turn-end hook; staying off (capture uses /copy).",
+		);
+	}
 	// Loud guard against the typo footgun: an unrecognized token (e.g. "clade")
 	// silently resolves a provider to OFF. Surface it next to the startup line
 	// so a misconfigured flag/env is visible rather than passing unnoticed.
@@ -155,7 +162,7 @@ export async function runCollabMount(input: {
 		console.error(
 			`[ai-whisper] turn-events: ignoring unrecognized token(s) ${unknownTurnEventsTokens
 				.map((t) => `"${t}"`)
-				.join(", ")} — expected claude, codex, off, or none`,
+				.join(", ")} — expected claude, codex, agy, off, or none`,
 		);
 	}
 
@@ -300,7 +307,7 @@ export async function runCollabMount(input: {
 	}
 	if (resolved.recovery.state === "recovered") {
 		throw new Error(
-			"Collab has been recovered and still needs reconnect. Run `whisper collab reconnect <codex|claude>`.",
+			"Collab has been recovered and still needs reconnect. Run `whisper collab reconnect <codex|claude|ezio|agy>`.",
 		);
 	}
 
@@ -348,7 +355,7 @@ export async function runCollabMount(input: {
 				);
 			if (liveOwner) {
 				throw new Error(
-					`${input.target === "codex" ? "Codex" : "Claude"} is already bound to a live session. Stop the existing mount tab and run \`whisper collab mount\` again.`,
+					`${agentDisplayName(input.target)} is already bound to a live session. Stop the existing mount tab and run \`whisper collab mount\` again.`,
 				);
 			}
 			// No live owner — the previous mount session is gone but left the

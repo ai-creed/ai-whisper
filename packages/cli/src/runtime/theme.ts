@@ -13,6 +13,7 @@ export const AGENT_COLOR = {
 	claude: "#D97757", // signature terracotta
 	codex: "#5FB3C9", // palette teal
 	ezio: "#A78BFA", // palette violet
+	agy: "#E8B339", // antigravity amber
 } as const;
 
 export type ThemeToken = keyof typeof THEME;
