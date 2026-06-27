@@ -52,12 +52,12 @@ It is **not** for:
 
 ## Prerequisites
 
-You pair any two of four agents — `claude`, `codex`, `ezio`, and `agy`. ai-whisper drives the *real* Claude and Codex CLIs, so install and authenticate whichever of those two you plan to mount first; `ezio` is protocol-native and ships with ai-whisper, and `agy` (Antigravity CLI) is also protocol-native (no separate install required).
+You pair any two of four agents — `claude`, `codex`, `ezio`, and `agy`. ai-whisper drives the *real* Claude, Codex, and Antigravity CLIs, so install and authenticate whichever of those you plan to mount first; `ezio` is protocol-native and ships with ai-whisper.
 
 - **[Claude Code CLI](https://claude.com/claude-code)** — the `claude` command, signed in.
 - **[Codex CLI](https://github.com/openai/codex)** — the `codex` command, signed in.
 - **ezio** *(optional)* — bundled with ai-whisper; mount it with `whisper collab mount ezio`, no separate install.
-- **agy** *(optional)* — bundled with ai-whisper; mount it with `whisper collab mount agy` (manual-mount parity; no auto-launch via `collab start`).
+- **agy** *(optional)* — the `agy` command (Antigravity CLI), signed in. Mount it with `whisper collab mount agy` (manual-mount parity; no auto-launch via `collab start`).
 - **Node.js 22+**.
 - **An LLM evaluator with credentials** — workflows are gated by it and refuse to start without it. See [Evaluator configuration](docs/evaluator-configuration.md).
 - **tmux** *(optional)* — only for `whisper collab start`, which auto-arranges both agents into panes. The mount flow below does not need it.
