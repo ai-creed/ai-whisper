@@ -4,7 +4,9 @@
 **Status:** Approved design (empirically verified 2026-06-27), ready for planning
 **Context:** ai-whisper — turn-end detection for a mounted Antigravity (`agy`) session, enabling `agy` to run as an autonomous workflow implementer/reviewer with reliable turn capture.
 
-**Relationship to prior spec.** This is a standalone companion to `docs/superpowers/specs/2026-06-27-antigravity-adapter-design.md` (the base adapter design). It **supersedes** that spec's turn-events decisions specifically — base §3 (D4/D5), §9 ("recognized-but-off, no hook"), §10 (`supportsLaunchHooks: false`), and the `turn-event.ts` row that excluded `agy` from `TurnEventProvider`. Everything else in the base spec (package layout, relay parsing, dashboard, skill install, reconnect, build wiring) stands unchanged. The base spec is not edited; where the two disagree on turn-events, **this spec wins.**
+**Relationship to prior spec & to the merged implementation.** This is a standalone companion to `docs/superpowers/specs/2026-06-27-antigravity-adapter-design.md` (the base adapter design). It **supersedes** that spec's turn-events decisions — base §3 (D4/D5), §9 ("recognized-but-off, no hook"), §10 (`supportsLaunchHooks: false`), and the `turn-event.ts` row excluding `agy` from `TurnEventProvider`. Everything else in the base spec (package layout, relay parsing, dashboard, skill install, reconnect, build wiring) stands unchanged.
+
+**Those base-spec turn-events decisions are already implemented and merged to `master`** via `feat/antigravity-adapter` (merge `3eff766`; turn-events commit `187f087 feat(agy): recognize agy turn-events token (pinned off, warn)`) — the **pin-off scaffolding** detailed in §1a. This spec therefore defines a *change to shipped code*, not greenfield work: it **removes** the pin-off scaffolding and **replaces** it with the hook integration. Where this spec disagrees with the merged pin-off behavior, **this spec wins.**
 
 > **Verification note.** The agy hook behavior below was verified empirically against `agy` v1.0.13 on 2026-06-27 by registering probe hooks and capturing real payloads (quoted verbatim in §3 and §5). The base spec's earlier claim "agy has no turn-end hook" was an under-probe (it checked `agy --help` only); this spec corrects it. Two behaviors remain **to confirm in interactive mode** and are listed in §11 — the design accommodates either outcome.
 
@@ -15,6 +17,17 @@ A mounted `agy` session is a long-lived `node-pty` TUI. ai-whisper's shared moun
 That heuristic relies on the agent emitting bytes continuously while working (an animated "thinking" spinner) — true for `claude`/`codex`, which *also* have turn-end hooks as the primary signal. `agy` has **no continuous spinner during quiet phases** (notably while a subagent runs), and the base spec assumed it had **no hook**. Result: during a quiet subagent wait > 30 s, ai-whisper would falsely declare turn-end, `/copy`-capture a half-finished screen, and hand off garbage. That makes `agy` unusable as an autonomous implementer/reviewer.
 
 This spec resolves that by using `agy`'s lifecycle hooks as the turn-end signal (primary) plus a heartbeat (defense-in-depth), demoting the idle timer to a far-back fallback.
+
+## 1a. Implemented baseline (pin-off scaffolding to remove)
+
+`feat/antigravity-adapter` (merged `3eff766`) already shipped `agy` turn-events as recognized-but-pinned-off. This spec's job is to **replace** that scaffolding. The exact merged state, verified on `master`:
+
+- `packages/cli/src/runtime/turn-events-config.ts` — `TurnEventsEnablement` already includes `agy: boolean`; `RECOGNIZED_TURN_EVENTS_TOKENS` already includes `"agy"`; `formatTurnEventsStartupLine` already prints `agy=…`. But `resolveTurnEvents` **pins `agy` to `false` in every branch** (default `{claude:true,codex:true,agy:false}`), and a helper `agyTurnEventsExplicitlyRequested(flag)` exists to emit a "no hook, staying off" warning (wired in `mount.ts`).
+- `packages/cli/src/runtime/turn-event.ts` — `TurnEventProvider = Exclude<AgentType, "ezio" | "agy">` (agy **excluded**).
+- `packages/adapter-antigravity/src/create-antigravity-provider.ts` — `getCapabilities().supportsLaunchHooks: false`.
+- **No** `writeAgyHooksFile`, **no** `AgyEventReceiver`, **no** `agy` arm in `turn-event-shim.ts`, **no** `agy` event-path wiring in `mount-session-main.ts`.
+
+So §6/§7 below are **deltas against this baseline**: remove the pin and the `agyTurnEventsExplicitlyRequested` warn, flip the default and capability, drop the `"ezio" | "agy"` exclusion, and add the hook-integration pieces that do not yet exist.
 
 ## 2. Goal & Non-goals
 
@@ -126,8 +139,8 @@ The shim command mirrors claude's: `<shimPath> --provider agy --socket-dir <sock
 
 | File | Change |
 |---|---|
-| `packages/cli/src/runtime/turn-event.ts` | Include `agy` in `TurnEventProvider` — `Exclude<AgentType, "ezio">` (remove the base-spec exclusion of `agy`). |
-| `packages/cli/src/runtime/turn-events-config.ts` | Add `writeAgyHooksFile(...)`. Extend `TurnEventsEnablement` to `{ claude; codex; agy }`, default `agy: true`. Add `"agy"` to `RECOGNIZED_TURN_EVENTS_TOKENS`. `resolveTurnEvents` honors `agy` like the others (on by default; `off`/`none` disables). `formatTurnEventsStartupLine` shows `agy=ON/off`. |
+| `packages/cli/src/runtime/turn-event.ts` | Change the merged `TurnEventProvider = Exclude<AgentType, "ezio" \| "agy">` to `Exclude<AgentType, "ezio">` (drop the `\| "agy"` so the hook stack handles `agy`). |
+| `packages/cli/src/runtime/turn-events-config.ts` | `TurnEventsEnablement.agy`, the `"agy"` token in `RECOGNIZED_TURN_EVENTS_TOKENS`, and the `agy=…` startup line are **already present** (no-op). **Delta:** in `resolveTurnEvents`, **remove the unconditional `agy:false` pin** so `agy` resolves like `claude`/`codex` (default on; allow-list when set; `off`/`none` disables). **Remove** `agyTurnEventsExplicitlyRequested(...)` and its "no hook" warning call in `mount.ts` (obsolete once the hook works). **Add** `writeAgyHooksFile(...)`. |
 | `packages/cli/src/bin/turn-event-shim.ts` | Add `agy` to the provider type and a stdin payload-read arm; always emit `{"decision":"allow"}` on stdout (§5.2). |
 | `packages/cli/src/runtime/event-receiver.ts` | New `AgyEventReceiver`: parse the agy payload; emit a turn-event only for `Stop` with `fullyIdle == true`; emit heartbeat/activity for the other events; expose `conversationId`, `transcriptPath`, `terminationReason`. |
 | `packages/cli/src/runtime/mount-turn-event-listener.ts` | Dispatch to `AgyEventReceiver` when `provider === "agy"`. |
@@ -138,7 +151,7 @@ The shim command mirrors claude's: `<shimPath> --provider agy --socket-dir <sock
 
 ## 7. Capabilities delta
 
-`createAntigravityProvider().getCapabilities()` sets **`supportsLaunchHooks: true`** (base spec had `false`). All other fields unchanged: `supportsDirectPackets: true`, `supportsNormalization: true`, `supportsRelayInterception: true`, `supportsLocalBuffering: false`, `extensions: {}`.
+`createAntigravityProvider().getCapabilities()` — flip **`supportsLaunchHooks`** from the merged `false` to **`true`**. All other fields unchanged: `supportsDirectPackets: true`, `supportsNormalization: true`, `supportsRelayInterception: true`, `supportsLocalBuffering: false`, `extensions: {}`.
 
 ## 8. Decisions
 
