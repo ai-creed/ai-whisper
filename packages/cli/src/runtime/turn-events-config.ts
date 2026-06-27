@@ -40,10 +40,10 @@ export function claudeSettingsArgs(settingsFile: string): string[] {
 	return ["--settings", settingsFile];
 }
 
-export type TurnEventsEnablement = { claude: boolean; codex: boolean };
+export type TurnEventsEnablement = { claude: boolean; codex: boolean; agy: boolean };
 
 /** Tokens `resolveTurnEvents` acts on: provider names + the disable controls. */
-const RECOGNIZED_TURN_EVENTS_TOKENS = new Set(["claude", "codex", "off", "none"]);
+const RECOGNIZED_TURN_EVENTS_TOKENS = new Set(["claude", "codex", "agy", "off", "none"]);
 
 function parseTurnEventsTokens(raw: string): string[] {
 	return raw.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
@@ -51,16 +51,22 @@ function parseTurnEventsTokens(raw: string): string[] {
 
 export function resolveTurnEvents(flag: string | undefined): TurnEventsEnablement {
 	const raw = flag ?? process.env["AI_WHISPER_TURN_EVENTS"];
-	// Unset (neither flag nor env present) → default ON for both PTY-scraped
-	// providers. The event path is the primary capture methodology; the
-	// clipboard `/copy` path remains as the automatic fallback.
-	if (raw === undefined) return { claude: true, codex: true };
-	// Explicitly set → allow-list. "off"/"none"/empty is the kill-switch that
-	// reverts every provider to pure clipboard; a provider subset (e.g.
-	// "claude") scopes the event path to exactly that set.
+	// agy has no turn-end hook, so it can never be enabled here regardless of the
+	// flag; it is recognized only so the token is not flagged as a typo.
+	if (raw === undefined) return { claude: true, codex: true, agy: false };
 	const set = new Set(parseTurnEventsTokens(raw));
-	if (set.has("off") || set.has("none")) return { claude: false, codex: false };
-	return { claude: set.has("claude"), codex: set.has("codex") };
+	if (set.has("off") || set.has("none")) return { claude: false, codex: false, agy: false };
+	return { claude: set.has("claude"), codex: set.has("codex"), agy: false };
+}
+
+/**
+ * True when the operator explicitly asked for `agy` turn-events. agy has no hook,
+ * so the caller surfaces this as a loud "unsupported, staying off" warning.
+ */
+export function agyTurnEventsExplicitlyRequested(flag: string | undefined): boolean {
+	const raw = flag ?? process.env["AI_WHISPER_TURN_EVENTS"];
+	if (raw === undefined) return false;
+	return new Set(parseTurnEventsTokens(raw)).has("agy");
 }
 
 /**
@@ -81,5 +87,5 @@ export function unrecognizedTurnEventsTokens(flag: string | undefined): string[]
 
 export function formatTurnEventsStartupLine(e: TurnEventsEnablement): string {
 	const on = (b: boolean) => (b ? "ON" : "off");
-	return `[ai-whisper] turn-events: claude=${on(e.claude)} codex=${on(e.codex)} (codex notify-chaining: off)`;
+	return `[ai-whisper] turn-events: claude=${on(e.claude)} codex=${on(e.codex)} agy=${on(e.agy)} (codex notify-chaining: off)`;
 }

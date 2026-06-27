@@ -14,42 +14,42 @@ describe("resolveTurnEvents (flag > env > default ON)", () => {
 
   it("defaults to ON for both providers when neither flag nor env set", () => {
     delete process.env.AI_WHISPER_TURN_EVENTS;
-    expect(resolveTurnEvents(undefined)).toEqual({ claude: true, codex: true });
+    expect(resolveTurnEvents(undefined)).toEqual({ claude: true, codex: true, agy: false });
   });
 
   it("treats an explicit 'off' env as the clipboard kill-switch (both off)", () => {
     process.env.AI_WHISPER_TURN_EVENTS = "off";
-    expect(resolveTurnEvents(undefined)).toEqual({ claude: false, codex: false });
+    expect(resolveTurnEvents(undefined)).toEqual({ claude: false, codex: false, agy: false });
   });
 
   it("treats an explicit 'none' env as the clipboard kill-switch (both off)", () => {
     process.env.AI_WHISPER_TURN_EVENTS = "none";
-    expect(resolveTurnEvents(undefined)).toEqual({ claude: false, codex: false });
+    expect(resolveTurnEvents(undefined)).toEqual({ claude: false, codex: false, agy: false });
   });
 
   it("treats an explicit empty env as the clipboard kill-switch (both off)", () => {
     process.env.AI_WHISPER_TURN_EVENTS = "";
-    expect(resolveTurnEvents(undefined)).toEqual({ claude: false, codex: false });
+    expect(resolveTurnEvents(undefined)).toEqual({ claude: false, codex: false, agy: false });
   });
 
   it("an explicit allow-list scopes enablement to exactly that set (per-provider kill-switch)", () => {
     process.env.AI_WHISPER_TURN_EVENTS = "claude";
-    expect(resolveTurnEvents(undefined)).toEqual({ claude: true, codex: false });
+    expect(resolveTurnEvents(undefined)).toEqual({ claude: true, codex: false, agy: false });
   });
 
   it("flag overrides env", () => {
     process.env.AI_WHISPER_TURN_EVENTS = "claude,codex";
-    expect(resolveTurnEvents("codex")).toEqual({ claude: false, codex: true });
+    expect(resolveTurnEvents("codex")).toEqual({ claude: false, codex: true, agy: false });
   });
 
   it("an 'off' flag overrides an enabling env", () => {
     process.env.AI_WHISPER_TURN_EVENTS = "claude,codex";
-    expect(resolveTurnEvents("off")).toEqual({ claude: false, codex: false });
+    expect(resolveTurnEvents("off")).toEqual({ claude: false, codex: false, agy: false });
   });
 
   it("is case- and whitespace-insensitive for tokens", () => {
     delete process.env.AI_WHISPER_TURN_EVENTS;
-    expect(resolveTurnEvents("  CLAUDE , Codex ")).toEqual({ claude: true, codex: true });
+    expect(resolveTurnEvents("  CLAUDE , Codex ")).toEqual({ claude: true, codex: true, agy: false });
   });
 });
 

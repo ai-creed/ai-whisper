@@ -26,6 +26,7 @@ import {
 	getStateLogsDir,
 } from "../../runtime/state-root.js";
 import {
+	agyTurnEventsExplicitlyRequested,
 	formatTurnEventsStartupLine,
 	resolveTurnEvents,
 	unrecognizedTurnEventsTokens,
@@ -147,6 +148,11 @@ export async function runCollabMount(input: {
 	mkdirSync(getStateSocketsDir(), { recursive: true });
 	mkdirSync(getStateLogsDir(), { recursive: true });
 	console.error(formatTurnEventsStartupLine(enablement));
+	if (agyTurnEventsExplicitlyRequested(input.turnEventsFlag)) {
+		console.error(
+			"[ai-whisper] turn-events: agy has no turn-end hook; staying off (capture uses /copy).",
+		);
+	}
 	// Loud guard against the typo footgun: an unrecognized token (e.g. "clade")
 	// silently resolves a provider to OFF. Surface it next to the startup line
 	// so a misconfigured flag/env is visible rather than passing unnoticed.
@@ -155,7 +161,7 @@ export async function runCollabMount(input: {
 		console.error(
 			`[ai-whisper] turn-events: ignoring unrecognized token(s) ${unknownTurnEventsTokens
 				.map((t) => `"${t}"`)
-				.join(", ")} — expected claude, codex, off, or none`,
+				.join(", ")} — expected claude, codex, agy, off, or none`,
 		);
 	}
 

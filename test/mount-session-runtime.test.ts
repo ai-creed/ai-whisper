@@ -345,7 +345,7 @@ describe("mount session runtime — turn-event production wiring", () => {
 				secret: "secret_evt",
 				// Rollout enablement ON for claude — this is what production resolves
 				// from the --turn-events flag / AI_WHISPER_TURN_EVENTS env.
-				turnEventsEnablement: { claude: true, codex: false },
+				turnEventsEnablement: { claude: true, codex: false, agy: false },
 				broker: {
 					control: {
 						completeAttachClaim: vi.fn(() => ({
