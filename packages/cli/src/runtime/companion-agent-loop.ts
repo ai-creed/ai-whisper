@@ -27,6 +27,7 @@ export function runCompanionAgentLoop(input: {
 		const family = input.provider.getIdentity().toolFamily;
 		if (family === "codex") return "codex";
 		if (family === "hax") return "ezio";
+		if (family === "antigravity") return "agy";
 		return "claude";
 	})();
 	const sessionRole =

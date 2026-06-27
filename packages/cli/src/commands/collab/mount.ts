@@ -35,6 +35,7 @@ import {
 import { waitForBrokerReady } from "../../runtime/wait-for-broker-ready.js";
 import { runCollabRecover } from "./recover.js";
 import { runCollabStart } from "./start.js";
+import { agentDisplayName } from "../../runtime/agent-display.js";
 
 function defaultIsPidAlive(pid: number): boolean {
 	try {
@@ -354,7 +355,7 @@ export async function runCollabMount(input: {
 				);
 			if (liveOwner) {
 				throw new Error(
-					`${input.target === "codex" ? "Codex" : "Claude"} is already bound to a live session. Stop the existing mount tab and run \`whisper collab mount\` again.`,
+					`${agentDisplayName(input.target)} is already bound to a live session. Stop the existing mount tab and run \`whisper collab mount\` again.`,
 				);
 			}
 			// No live owner — the previous mount session is gone but left the
