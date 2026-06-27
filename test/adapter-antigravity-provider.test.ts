@@ -16,7 +16,9 @@ const REQUEST: ProviderWorkRequest = {
 };
 
 describe("createAntigravityProvider", () => {
-	beforeEach(() => spawnMock.mockReset());
+	beforeEach(() => {
+		spawnMock.mockReset();
+	});
 
 	it("reports the antigravity identity and capabilities", async () => {
 		const { createAntigravityProvider } = await import(
@@ -71,6 +73,48 @@ describe("createAntigravityProvider", () => {
 		expect(parseAntigravityOutput("no json here")).toEqual({
 			kind: "failure",
 			content: "Provider output did not contain JSON",
+			transitionIntent: "failed",
+		});
+	});
+
+	it("handles synchronous spawn exceptions in handleWork", async () => {
+		const error = new Error("spawn ENOENT");
+		spawnMock.mockImplementation(() => {
+			throw error;
+		});
+
+		const { createAntigravityProvider } = await import(
+			"../packages/adapter-antigravity/src/create-antigravity-provider.ts",
+		);
+		const provider = createAntigravityProvider({ executable: "agy", execArgs: ["-p"] });
+		const replyPromise = provider.handleWork(REQUEST);
+
+		await expect(replyPromise).resolves.toEqual({
+			kind: "failure",
+			content: "Failed to spawn agy: spawn ENOENT",
+			transitionIntent: "failed",
+		});
+	});
+
+	it("handles process termination by signal in the close handler", async () => {
+		const stdout = new PassThrough();
+		const stderr = new PassThrough();
+		const child = new EventEmitter() as MockChildProcess;
+		child.stdout = stdout;
+		child.stderr = stderr;
+		spawnMock.mockReturnValue(child);
+
+		const { createAntigravityProvider } = await import(
+			"../packages/adapter-antigravity/src/create-antigravity-provider.ts",
+		);
+		const provider = createAntigravityProvider({ executable: "agy", execArgs: ["-p"] });
+		const replyPromise = provider.handleWork(REQUEST);
+
+		child.emit("close", null, "SIGTERM");
+
+		await expect(replyPromise).resolves.toEqual({
+			kind: "failure",
+			content: "Antigravity exited due to signal: SIGTERM",
 			transitionIntent: "failed",
 		});
 	});

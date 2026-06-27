@@ -47,9 +47,20 @@ export function createAntigravityProvider(
 				: buildAntigravityPrompt(request);
 
 			return new Promise((resolve) => {
-				const child = spawn(config.executable, [...config.execArgs, prompt], {
-					stdio: ["ignore", "pipe", "pipe"],
-				});
+				let child;
+				try {
+					child = spawn(config.executable, [...config.execArgs, prompt], {
+						stdio: ["ignore", "pipe", "pipe"],
+					});
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					resolve({
+						kind: "failure",
+						content: `Failed to spawn ${config.executable}: ${message}`,
+						transitionIntent: "failed",
+					});
+					return;
+				}
 
 				let stdout = "";
 				let stderr = "";
@@ -70,9 +81,17 @@ export function createAntigravityProvider(
 						transitionIntent: "failed",
 					});
 				});
-				child.on("close", (code) => {
+				child.on("close", (code, signal) => {
 					if (settled) return;
 					settled = true;
+					if (code === null) {
+						resolve({
+							kind: "failure",
+							content: `Antigravity exited due to signal: ${signal}`,
+							transitionIntent: "failed",
+						});
+						return;
+					}
 					if (code !== 0) {
 						resolve({
 							kind: "failure",
