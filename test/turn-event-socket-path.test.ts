@@ -31,4 +31,8 @@ describe("turnEventSocketPath", () => {
 		// ...and the same path always derives the same id (stable, idempotent).
 		expect(workspaceIdFromPath(wtA)).toBe(idA);
 	});
+
+	it("builds the agy socket path", () => {
+		expect(turnEventSocketPath("/sockets", "ws1", "agy")).toBe("/sockets/ws1-agy.sock");
+	});
 });
