@@ -74,6 +74,42 @@ describe("mount-turn-event-listener", () => {
 		expect(existsSync(listener.socketPath)).toBe(false);
 	});
 
+	it("dispatches agy envelopes through AgyEventReceiver (turn-end → onEvent, heartbeat → onActivity)", async () => {
+		const socketsDir = mkdtempSync(join(tmpdir(), "aiw-listen-agy-"));
+		const events: TurnEvent[] = [];
+		const activity: Array<{ toolInFlight: boolean }> = [];
+		const listener = await createTurnEventListener({
+			socketsDir,
+			workspaceId: "wsAgy",
+			provider: "agy",
+			onEvent: (e) => events.push(e),
+			onActivity: (a) => activity.push(a),
+			// workspace = the runtime's wired default; the first event adopts c-1.
+			agy: { mode: "workspace", mountCwd: "/ws" },
+		});
+		close = listener.close;
+
+		const send = (raw: string, event: string) =>
+			sendEnvelope(listener.socketPath, {
+				provider: "agy",
+				raw,
+				receivedAt: "2026-06-27T00:00:00.000Z",
+				event,
+			});
+
+		// First event adopts c-1 (heartbeat), then a gated turn-end (parent Stop).
+		await send(JSON.stringify({ conversationId: "c-1", invocationNum: 1 }), "PreInvocation");
+		await send(JSON.stringify({ conversationId: "c-1", fullyIdle: true }), "Stop");
+		// A foreign Stop must be dropped entirely.
+		await send(JSON.stringify({ conversationId: "other", fullyIdle: true }), "Stop");
+		await new Promise((r) => setTimeout(r, 60));
+
+		expect(events).toHaveLength(1);
+		expect(events[0]!.provider).toBe("agy");
+		expect(events[0]!.sessionOrThreadId).toBe("c-1");
+		expect(activity.length).toBeGreaterThanOrEqual(1);
+	});
+
 	it("sweepOrphanSockets removes a stale socket file with no live listener", () => {
 		const socketsDir = mkdtempSync(join(tmpdir(), "aiw-orphan-"));
 		const orphan = join(socketsDir, "deadws-claude.sock");

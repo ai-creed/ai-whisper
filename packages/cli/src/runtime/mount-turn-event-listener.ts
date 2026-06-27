@@ -3,6 +3,7 @@ import { mkdirSync, existsSync, unlinkSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { turnEventSocketPath } from "./turn-event-socket-path.js";
 import { ClaudeEventReceiver, CodexEventReceiver } from "./event-receiver.js";
+import { AgyEventReceiver, type AgyAdoptionMode } from "./agy-event-receiver.js";
 import type { TurnEvent, TurnEventProvider } from "./turn-event.js";
 
 export type TurnEventListener = {
@@ -15,6 +16,10 @@ export async function createTurnEventListener(input: {
 	workspaceId: string;
 	provider: TurnEventProvider;
 	onEvent: (event: TurnEvent) => void;
+	/** agy heartbeat / tool-in-flight signal (no-op for claude/codex). */
+	onActivity?: (info: { toolInFlight: boolean }) => void;
+	/** agy adoption config; required when provider === "agy". */
+	agy?: { mode: AgyAdoptionMode; mountCwd: string; pinnedConversationId?: string };
 }): Promise<TurnEventListener> {
 	mkdirSync(input.socketsDir, { recursive: true });
 	const socketPath = turnEventSocketPath(
@@ -22,15 +27,24 @@ export async function createTurnEventListener(input: {
 		input.workspaceId,
 		input.provider,
 	);
-	// The EventReceiver is the SINGLE normalization path (shared with the unit
-	// tests in Tasks 6–7). The shim forwards the raw payload; the listener runs
-	// the receiver here, mount-side, so claude's transcript_path read happens
-	// where fs + JSONL parsing live.
-	const receiver =
+	// One receiver per listener; the agy receiver is stateful (adopted id + tools
+	// in flight) and must persist across hook connections.
+	const stdReceiver =
 		input.provider === "codex"
 			? new CodexEventReceiver()
-			: new ClaudeEventReceiver();
-	// Clear a stale socket file left by a crashed prior mount before binding.
+			: input.provider === "claude"
+				? new ClaudeEventReceiver()
+				: null;
+	const agyReceiver =
+		input.provider === "agy"
+			? new AgyEventReceiver({
+					mode: input.agy?.mode ?? "global",
+					mountCwd: input.agy?.mountCwd ?? ".",
+					...(input.agy?.pinnedConversationId !== undefined
+						? { pinnedConversationId: input.agy.pinnedConversationId }
+						: {}),
+				})
+			: null;
 	if (existsSync(socketPath)) {
 		try {
 			unlinkSync(socketPath);
@@ -47,13 +61,25 @@ export async function createTurnEventListener(input: {
 					provider?: string;
 					raw?: string;
 					receivedAt?: string;
+					event?: string;
 				};
 				if (
 					typeof envelope.raw !== "string" ||
 					typeof envelope.receivedAt !== "string"
 				)
 					return;
-				const event = receiver.parse(envelope.raw, envelope.receivedAt);
+				if (agyReceiver) {
+					const obs = agyReceiver.observe(
+						envelope.raw,
+						envelope.receivedAt,
+						typeof envelope.event === "string" ? envelope.event : "",
+					);
+					if (obs.kind === "turn-end") input.onEvent(obs.event);
+					else if (obs.kind === "heartbeat")
+						input.onActivity?.({ toolInFlight: obs.toolInFlight });
+					return;
+				}
+				const event = stdReceiver?.parse(envelope.raw, envelope.receivedAt) ?? null;
 				if (event) input.onEvent(event);
 			} catch {
 				// malformed envelope — drop silently; arrival log already recorded it.
