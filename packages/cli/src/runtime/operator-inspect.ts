@@ -1,5 +1,5 @@
 import type { BrokerRuntime } from "@ai-whisper/broker";
-import type { AgentType } from "@ai-whisper/shared";
+import { agentTypes, type AgentType } from "@ai-whisper/shared";
 
 export type InspectSnapshotState = {
 	collabId: string;
@@ -26,7 +26,14 @@ export function buildInspectSnapshot(input: {
 	);
 	const lastCaptureStatus = lastHandedBack?.captureStatus ?? null;
 
-	const roles = (["codex", "claude"] as const).map((agentType) => {
+	// Always show the codex/claude baseline pair; additionally surface any other
+	// agent (ezio, agy) that has a binding in this collab.
+	const defaultPair: AgentType[] = ["codex", "claude"];
+	const boundExtras = (agentTypes as readonly AgentType[]).filter(
+		(at) => !defaultPair.includes(at) && bindings.some((b) => b.agentType === at),
+	);
+	const roleAgentTypes: AgentType[] = [...defaultPair, ...boundExtras];
+	const roles = roleAgentTypes.map((agentType) => {
 		const binding = bindings.find((candidate) => candidate.agentType === agentType);
 		const session = binding?.activeSessionId
 			? sessions.find((candidate) => candidate.sessionId === binding.activeSessionId)

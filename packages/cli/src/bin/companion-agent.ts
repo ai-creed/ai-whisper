@@ -28,7 +28,7 @@ async function main(): Promise<void> {
 	const agentArg = process.argv[2];
 	if (agentArg === undefined || !(agentTypes as readonly string[]).includes(agentArg)) {
 		throw new Error(
-			"companion-agent requires a target argument: codex, claude, or ezio",
+			"companion-agent requires a target argument: codex, claude, ezio, or agy",
 		);
 	}
 	const target: MountTarget = agentArg as MountTarget;

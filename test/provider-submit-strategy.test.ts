@@ -138,4 +138,19 @@ describe("provider submit strategy", () => {
 			expect(writes).toEqual(["\x1b[200~hi\x1b[201~", "\r"]);
 		});
 	});
+
+	it("writes agy input in one chunk before submitting (claude-style)", async () => {
+		const writes: string[] = [];
+		const sleep = vi.fn(() => Promise.resolve());
+		await submitInjectedProviderInput({
+			target: "agy",
+			text: "do the thing",
+			writeUserInput: (text) => { writes.push(text); },
+			sleep,
+		});
+		expect(writes).toEqual(["do the thing", "\r"]);
+		expect(sleep).toHaveBeenCalledTimes(1);
+		expect(sleep).toHaveBeenCalledWith(75);
+	});
 });
+

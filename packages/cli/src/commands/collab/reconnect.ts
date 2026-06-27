@@ -4,6 +4,7 @@ import { resolveCurrentTty as defaultResolveCurrentTty } from "../../runtime/cur
 import { createMountSessionRuntime } from "../../runtime/mount-session-main.js";
 import { resolveCollab } from "../../runtime/collab-resolver.js";
 import { getSharedSqlitePath } from "../../runtime/state-root.js";
+import { agentDisplayName } from "../../runtime/agent-display.js";
 
 export interface ReattachableSession {
 	agentType: AgentType;
@@ -95,7 +96,7 @@ export async function runCollabReconnect(input: {
 	if (!current?.activeSessionId) {
 		void broker.stop();
 		throw new Error(
-			`${input.target === "codex" ? "Codex" : "Claude"} has no remembered binding to reconnect.`,
+			`${agentDisplayName(input.target)} has no remembered binding to reconnect.`,
 		);
 	}
 
@@ -105,7 +106,7 @@ export async function runCollabReconnect(input: {
 	if (boundSession?.healthState === "healthy") {
 		void broker.stop();
 		throw new Error(
-			`${input.target === "codex" ? "Codex" : "Claude"} is already healthy. Reconnect is not needed.`,
+			`${agentDisplayName(input.target)} is already healthy. Reconnect is not needed.`,
 		);
 	}
 

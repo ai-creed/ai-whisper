@@ -26,7 +26,7 @@ export async function submitInjectedProviderInput(input: {
 		return;
 	}
 
-	if (input.target === "claude") {
+	if (input.target === "claude" || input.target === "agy") {
 		input.writeUserInput(input.text);
 		await sleep(75);
 		input.writeUserInput("\r");
