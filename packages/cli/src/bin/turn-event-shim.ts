@@ -77,17 +77,34 @@ function main(): void {
 	const provider = (arg("--provider") as Provider) ?? "claude";
 	const socketDir = arg("--socket-dir") ?? "";
 	const logDir = arg("--log-dir") ?? socketDir.replace(/sockets$/, "logs");
+	const explicitWorkspaceId = arg("--workspace-id");
+	const event = arg("--event"); // agy tags the lifecycle event; undefined for claude/codex
 	const receivedAt = new Date().toISOString();
 	const raw = readPayload(provider);
-	const cwd = extractCwd(raw);
-	if (!cwd) {
-		logArrival(logDir, provider, "", "", "error", raw.length, receivedAt);
-		process.exit(0);
+	// agy's PreToolUse is a DECISION hook: it must receive {"decision":"allow"} on
+	// stdout or it blocks the tool call. Emit it now — after reading the payload,
+	// before the best-effort forward — so the decision lands on EVERY exit path
+	// (forwarded, refused/error, the missing-wid early exit below, and the watchdog).
+	// Other agy events ignore stdout; claude/codex never read it, so emit only for agy.
+	if (provider === "agy") {
+		try {
+			process.stdout.write('{"decision":"allow"}');
+		} catch {
+			/* stdout must never crash the shim */
+		}
 	}
-	const socketPath = join(socketDir, `${workspaceId(cwd)}-${provider}.sock`);
-	// Thin envelope: provider tag + raw payload + arrival timestamp. The mount
-	// listener runs the EventReceiver on `raw` to produce the normalized TurnEvent.
-	const out = JSON.stringify({ provider, raw, receivedAt });
+	const cwd = extractCwd(raw); // "" for agy (payload has no cwd)
+	// Routing source: explicit --workspace-id (agy) takes precedence; otherwise
+	// derive it from the payload cwd (claude/codex). Never exit on a missing cwd
+	// when an explicit id is present.
+	const wid = explicitWorkspaceId ?? (cwd ? workspaceId(cwd) : "");
+	if (!wid) {
+		logArrival(logDir, provider, cwd, "", "error", raw.length, receivedAt);
+		process.exit(0); // allow decision (for agy) already printed above
+	}
+	const socketPath = join(socketDir, `${wid}-${provider}.sock`);
+	// Thin envelope: provider tag + raw payload + arrival timestamp (+ event for agy).
+	const out = JSON.stringify({ provider, raw, receivedAt, ...(event ? { event } : {}) });
 	const sock = connect(socketPath);
 	let settled = false;
 	const done = (result: "ok" | "refused" | "error") => {
