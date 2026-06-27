@@ -51,22 +51,11 @@ function parseTurnEventsTokens(raw: string): string[] {
 
 export function resolveTurnEvents(flag: string | undefined): TurnEventsEnablement {
 	const raw = flag ?? process.env["AI_WHISPER_TURN_EVENTS"];
-	// agy has no turn-end hook, so it can never be enabled here regardless of the
-	// flag; it is recognized only so the token is not flagged as a typo.
-	if (raw === undefined) return { claude: true, codex: true, agy: false };
+	if (raw === undefined) return { claude: true, codex: true, agy: true };
 	const set = new Set(parseTurnEventsTokens(raw));
-	if (set.has("off") || set.has("none")) return { claude: false, codex: false, agy: false };
-	return { claude: set.has("claude"), codex: set.has("codex"), agy: false };
-}
-
-/**
- * True when the operator explicitly asked for `agy` turn-events. agy has no hook,
- * so the caller surfaces this as a loud "unsupported, staying off" warning.
- */
-export function agyTurnEventsExplicitlyRequested(flag: string | undefined): boolean {
-	const raw = flag ?? process.env["AI_WHISPER_TURN_EVENTS"];
-	if (raw === undefined) return false;
-	return new Set(parseTurnEventsTokens(raw)).has("agy");
+	if (set.has("off") || set.has("none"))
+		return { claude: false, codex: false, agy: false };
+	return { claude: set.has("claude"), codex: set.has("codex"), agy: set.has("agy") };
 }
 
 /**

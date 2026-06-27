@@ -14,7 +14,7 @@ describe("resolveTurnEvents (flag > env > default ON)", () => {
 
   it("defaults to ON for both providers when neither flag nor env set", () => {
     delete process.env.AI_WHISPER_TURN_EVENTS;
-    expect(resolveTurnEvents(undefined)).toEqual({ claude: true, codex: true, agy: false });
+    expect(resolveTurnEvents(undefined)).toEqual({ claude: true, codex: true, agy: true });
   });
 
   it("treats an explicit 'off' env as the clipboard kill-switch (both off)", () => {
@@ -50,6 +50,12 @@ describe("resolveTurnEvents (flag > env > default ON)", () => {
   it("is case- and whitespace-insensitive for tokens", () => {
     delete process.env.AI_WHISPER_TURN_EVENTS;
     expect(resolveTurnEvents("  CLAUDE , Codex ")).toEqual({ claude: true, codex: true, agy: false });
+  });
+
+  it("includes agy in the default-on set and honors an explicit agy allow-list", () => {
+    delete process.env.AI_WHISPER_TURN_EVENTS;
+    expect(resolveTurnEvents(undefined)).toEqual({ claude: true, codex: true, agy: true });
+    expect(resolveTurnEvents("agy")).toEqual({ claude: false, codex: false, agy: true });
   });
 });
 
