@@ -39,8 +39,9 @@ export function getInteractiveSessionExecArgsForTarget(
 	}
 
 	if (target === "agy") {
-		// Full autonomy, identical to claude. agy has no turn-event hook, so the
-		// turnEvents settings/notify args never apply.
+		// Full autonomy, identical to claude. agy's turn-event hooks are registered
+		// via a hooks.json file (writeAgyHooksFile), not argv, so no turn-event flag
+		// is appended here.
 		return ["--add-dir", tempRoot, "--dangerously-skip-permissions"];
 	}
 

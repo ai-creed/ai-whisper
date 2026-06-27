@@ -31,7 +31,7 @@ export function createAntigravityProvider(
 				supportsNormalization: true,
 				supportsRelayInterception: true,
 				supportsLocalBuffering: false,
-				supportsLaunchHooks: false,
+				supportsLaunchHooks: true,
 				extensions: {},
 			};
 		},

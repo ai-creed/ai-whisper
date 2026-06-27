@@ -15,6 +15,11 @@ import { workspaceIdFromPath } from "./workspace-id.js";
 import {
 	writeClaudeSettingsFile,
 	codexNotifyArgs,
+	writeAgyHooksFile,
+	removeAgyHooksGroup,
+	buildAgyHooksGroup,
+	agyHooksFilePath,
+	type AgyHooksScope,
 	type TurnEventsEnablement,
 } from "./turn-events-config.js";
 import {
@@ -204,10 +209,13 @@ export function createMountSessionRuntime(input: {
 			// hook config before spawning the interactive session so flags land in argv.
 			const _eventEnabled =
 				(input.target === "claude" && (input.turnEventsEnablement?.claude ?? false)) ||
-				(input.target === "codex" && (input.turnEventsEnablement?.codex ?? false));
+				(input.target === "codex" && (input.turnEventsEnablement?.codex ?? false)) ||
+				(input.target === "agy" && (input.turnEventsEnablement?.agy ?? false));
 			let _turnEventsInjection:
 				| { claudeSettingsFile?: string; codexNotify?: string[] }
 				| undefined;
+			let _agyHooksFilePath: string | null = null;
+			let _agyAdoptionMode: AgyHooksScope = "workspace";
 			if (_eventEnabled) {
 				const shimPath = fileURLToPath(new URL("../bin/turn-event-shim.js", import.meta.url));
 				const socketsDir = getStateSocketsDir();
@@ -225,6 +233,25 @@ export function createMountSessionRuntime(input: {
 					_turnEventsInjection = {
 						codexNotify: codexNotifyArgs({ shimPath, socketsDir, logsDir }),
 					};
+				} else if (input.target === "agy") {
+					const scope: AgyHooksScope =
+						process.env.AI_WHISPER_AGY_HOOKS_SCOPE === "global" ? "global" : "workspace";
+					const filePath = agyHooksFilePath({
+						scope,
+						workspaceRoot: input.workspaceRoot,
+					});
+					writeAgyHooksFile({
+						filePath,
+						group: buildAgyHooksGroup({
+							shimPath,
+							socketsDir,
+							logsDir,
+							workspaceId: workspaceIdFromPath(input.workspaceRoot),
+						}),
+					});
+					_agyHooksFilePath = filePath;
+					_agyAdoptionMode = scope;
+					// No argv injection for agy — hooks come from the file, not flags.
 				}
 			}
 
@@ -324,6 +351,14 @@ export function createMountSessionRuntime(input: {
 					}
 					turnEventListener = null;
 				}
+				if (_agyHooksFilePath) {
+					try {
+						removeAgyHooksGroup({ filePath: _agyHooksFilePath });
+					} catch {
+						// Best-effort; never blocks teardown.
+					}
+					_agyHooksFilePath = null;
+				}
 				await input.broker.stop();
 			};
 
@@ -338,6 +373,7 @@ export function createMountSessionRuntime(input: {
 				Number(process.env.AI_WHISPER_IDLE_THRESHOLD_MS ?? "") || 30_000,
 			);
 			let lastActivityAt = Date.now();
+			let agyToolInFlight = false;
 
 			try {
 				const turnCapture = createAssistantTurnCapture();
@@ -493,10 +529,12 @@ export function createMountSessionRuntime(input: {
 				});
 
 				// The turn-event path is enabled for THIS mount only when the rollout
-				// flag/env enabled it AND the target is a PTY provider (claude/codex).
+				// flag/env enabled it AND the target is a PTY provider (claude/codex/agy).
 				const eventPathEnabled =
 					_eventEnabled &&
-					(input.target === "claude" || input.target === "codex");
+					(input.target === "claude" ||
+						input.target === "codex" ||
+						input.target === "agy");
 				turnRelay = (input.createTurnRelay ?? createMountedTurnOwnedRelay)({
 					broker: input.broker,
 					collabId: resolvedClaim.collabId,
@@ -615,7 +653,7 @@ export function createMountSessionRuntime(input: {
 				});
 				const mountedTurnRelay = turnRelay;
 
-				// Turn-event listener: only for claude/codex when event path is enabled.
+				// Turn-event listener: only for claude/codex/agy when event path is enabled.
 				// Starts the unix-socket server that receives shim-forwarded payloads and
 				// routes them to the relay's handleTurnEvent. No-op when eventEnabled is false.
 				if (
@@ -629,6 +667,23 @@ export function createMountSessionRuntime(input: {
 						workspaceId: workspaceIdFromPath(input.workspaceRoot),
 						provider: input.target,
 						onEvent: (e) => void capturedRelay.handleTurnEvent(e),
+					});
+				} else if (eventPathEnabled && input.target === "agy") {
+					const capturedRelay = mountedTurnRelay;
+					turnEventListener = await (input.createTurnEventListener ??
+						createTurnEventListener)({
+						socketsDir: getStateSocketsDir(),
+						workspaceId: workspaceIdFromPath(input.workspaceRoot),
+						provider: "agy",
+						onEvent: (e) => void capturedRelay.handleTurnEvent(e),
+						onActivity: ({ toolInFlight }) => {
+							lastActivityAt = Date.now();
+							agyToolInFlight = toolInFlight;
+						},
+						agy: {
+							mode: _agyAdoptionMode,
+							mountCwd: input.workspaceRoot,
+						},
 					});
 				}
 
@@ -667,7 +722,7 @@ export function createMountSessionRuntime(input: {
 							// the suppressed /copy path would never run and a dropped event
 							// would halt the workflow.
 							const idleElapsedMs = Date.now() - lastActivityAt;
-							if (idleElapsedMs >= idleThresholdMs) {
+							if (idleElapsedMs >= idleThresholdMs && !agyToolInFlight) {
 								await mountedTurnRelay.checkIdleActions(idleElapsedMs);
 							}
 						})();
@@ -741,6 +796,14 @@ export function createMountSessionRuntime(input: {
 				await stopLoop();
 				if (liveSessionStarted && liveSession) {
 					await liveSession.stop();
+				}
+				if (_agyHooksFilePath) {
+					try {
+						removeAgyHooksGroup({ filePath: _agyHooksFilePath });
+					} catch {
+						// Best-effort; never mask the original startup error.
+					}
+					_agyHooksFilePath = null;
 				}
 				await input.broker.stop();
 				throw err;

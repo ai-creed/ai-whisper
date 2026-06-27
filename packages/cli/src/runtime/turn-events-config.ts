@@ -1,5 +1,6 @@
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { homedir } from "node:os";
 
 export function writeClaudeSettingsFile(input: {
 	stateRoot: string;
@@ -51,22 +52,11 @@ function parseTurnEventsTokens(raw: string): string[] {
 
 export function resolveTurnEvents(flag: string | undefined): TurnEventsEnablement {
 	const raw = flag ?? process.env["AI_WHISPER_TURN_EVENTS"];
-	// agy has no turn-end hook, so it can never be enabled here regardless of the
-	// flag; it is recognized only so the token is not flagged as a typo.
-	if (raw === undefined) return { claude: true, codex: true, agy: false };
+	if (raw === undefined) return { claude: true, codex: true, agy: true };
 	const set = new Set(parseTurnEventsTokens(raw));
-	if (set.has("off") || set.has("none")) return { claude: false, codex: false, agy: false };
-	return { claude: set.has("claude"), codex: set.has("codex"), agy: false };
-}
-
-/**
- * True when the operator explicitly asked for `agy` turn-events. agy has no hook,
- * so the caller surfaces this as a loud "unsupported, staying off" warning.
- */
-export function agyTurnEventsExplicitlyRequested(flag: string | undefined): boolean {
-	const raw = flag ?? process.env["AI_WHISPER_TURN_EVENTS"];
-	if (raw === undefined) return false;
-	return new Set(parseTurnEventsTokens(raw)).has("agy");
+	if (set.has("off") || set.has("none"))
+		return { claude: false, codex: false, agy: false };
+	return { claude: set.has("claude"), codex: set.has("codex"), agy: set.has("agy") };
 }
 
 /**
@@ -88,4 +78,77 @@ export function unrecognizedTurnEventsTokens(flag: string | undefined): string[]
 export function formatTurnEventsStartupLine(e: TurnEventsEnablement): string {
 	const on = (b: boolean) => (b ? "ON" : "off");
 	return `[ai-whisper] turn-events: claude=${on(e.claude)} codex=${on(e.codex)} agy=${on(e.agy)} (codex notify-chaining: off)`;
+}
+
+export const AGY_HOOKS_GROUP = "ai-whisper-turn-events";
+
+export type AgyHooksScope = "workspace" | "global";
+
+export function agyHooksFilePath(input: {
+	scope: AgyHooksScope;
+	workspaceRoot: string;
+	home?: string;
+}): string {
+	return input.scope === "workspace"
+		? join(input.workspaceRoot, ".agents", "hooks.json")
+		: join(input.home ?? homedir(), ".gemini", "config", "hooks.json");
+}
+
+/**
+ * Builds the `ai-whisper-turn-events` named group. The same shim is wired for all
+ * five lifecycle events; each command carries `--workspace-id` (routing source —
+ * agy payloads have no cwd) and `--event <Name>` (so the mount-side receiver can
+ * distinguish Stop from the heartbeat events). PreToolUse uses the matcher form.
+ */
+export function buildAgyHooksGroup(input: {
+	shimPath: string;
+	socketsDir: string;
+	logsDir: string;
+	workspaceId: string;
+	timeoutSeconds?: number;
+}): Record<string, unknown> {
+	const timeout = input.timeoutSeconds ?? 5;
+	const cmd = (event: string) => ({
+		type: "command",
+		command: `${input.shimPath} --provider agy --socket-dir ${input.socketsDir} --log-dir ${input.logsDir} --workspace-id ${input.workspaceId} --event ${event}`,
+		timeout,
+	});
+	return {
+		Stop: [cmd("Stop")],
+		PreInvocation: [cmd("PreInvocation")],
+		PostInvocation: [cmd("PostInvocation")],
+		PostToolUse: [cmd("PostToolUse")],
+		PreToolUse: [{ matcher: "*", hooks: [cmd("PreToolUse")] }],
+	};
+}
+
+function readHooksMap(filePath: string): Record<string, unknown> {
+	try {
+		const parsed = JSON.parse(readFileSync(filePath, "utf8")) as unknown;
+		return parsed && typeof parsed === "object"
+			? (parsed as Record<string, unknown>)
+			: {};
+	} catch {
+		return {};
+	}
+}
+
+/** Non-destructive: merge/replace only the ai-whisper-turn-events group. */
+export function writeAgyHooksFile(input: {
+	filePath: string;
+	group: Record<string, unknown>;
+}): void {
+	const map = readHooksMap(input.filePath);
+	map[AGY_HOOKS_GROUP] = input.group;
+	mkdirSync(dirname(input.filePath), { recursive: true });
+	writeFileSync(input.filePath, JSON.stringify(map, null, 2));
+}
+
+/** Teardown: drop only our group; leave user-authored groups and the file intact. */
+export function removeAgyHooksGroup(input: { filePath: string }): void {
+	if (!existsSync(input.filePath)) return;
+	const map = readHooksMap(input.filePath);
+	if (!(AGY_HOOKS_GROUP in map)) return;
+	delete map[AGY_HOOKS_GROUP];
+	writeFileSync(input.filePath, JSON.stringify(map, null, 2));
 }

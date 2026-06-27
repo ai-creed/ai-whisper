@@ -35,7 +35,7 @@ describe("createAntigravityProvider", () => {
 			supportsNormalization: true,
 			supportsRelayInterception: true,
 			supportsLocalBuffering: false,
-			supportsLaunchHooks: false,
+			supportsLaunchHooks: true,
 			extensions: {},
 		});
 		expect(provider.getHealthState()).toBe("healthy");

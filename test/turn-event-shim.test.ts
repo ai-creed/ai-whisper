@@ -106,4 +106,115 @@ describe("turn-event-shim", () => {
 		expect(logLine.provider).toBe("claude");
 		expect(logLine.connect).toBe("ok");
 	});
+
+	it("routes an agy payload (no cwd) via --workspace-id, tags the event, and prints the allow decision", async () => {
+		const stateRoot = mkdtempSync(join(tmpdir(), "aiw-shim-agy-"));
+		const socketsDir = join(stateRoot, "sockets");
+		const logsDir = join(stateRoot, "logs");
+		const wid = "abc123def4567890";
+		const sockPath = join(socketsDir, `${wid}-agy.sock`);
+
+		const received: string[] = [];
+		await new Promise<void>((resolve) => {
+			mkdirSync(socketsDir, { recursive: true });
+			server = createServer((conn) => {
+				let buf = "";
+				conn.on("data", (d) => (buf += d.toString("utf8")));
+				conn.on("end", () => received.push(buf));
+			});
+			server.listen(sockPath, resolve);
+		});
+
+		// Verified agy Stop payload shape: conversationId + fullyIdle, NO cwd.
+		const payload = JSON.stringify({
+			conversationId: "c-1",
+			fullyIdle: true,
+			terminationReason: "NO_TOOL_CALL",
+			transcriptPath: "/t.jsonl",
+			workspacePaths: [],
+		});
+
+		let stdoutBuf = "";
+		await new Promise<void>((resolve, reject) => {
+			const child = spawn(
+				process.execPath,
+				[
+					"--experimental-strip-types",
+					shimPath,
+					"--provider",
+					"agy",
+					"--socket-dir",
+					socketsDir,
+					"--log-dir",
+					logsDir,
+					"--workspace-id",
+					wid,
+					"--event",
+					"Stop",
+				],
+				// Capture stdout to assert the decision-hook allow response.
+				{ stdio: ["pipe", "pipe", "inherit"] },
+			);
+			child.stdout.on("data", (d: Buffer) => (stdoutBuf += d.toString("utf8")));
+			child.stdin.write(payload);
+			child.stdin.end();
+			child.on("exit", () => resolve());
+			child.on("error", reject);
+		});
+		await new Promise((r) => setTimeout(r, 100));
+
+		expect(received).toHaveLength(1);
+		const envelope = JSON.parse(received[0]!) as {
+			provider: string;
+			raw: string;
+			event: string;
+		};
+		expect(envelope.provider).toBe("agy");
+		expect(envelope.event).toBe("Stop");
+		expect((JSON.parse(envelope.raw) as { conversationId: string }).conversationId).toBe("c-1");
+		// Decision-hook contract: agy must receive {"decision":"allow"} on stdout.
+		expect(stdoutBuf).toContain('{"decision":"allow"}');
+	});
+
+	it("prints the allow decision even when an agy event cannot be routed (no --workspace-id, no cwd)", async () => {
+		const stateRoot = mkdtempSync(join(tmpdir(), "aiw-shim-agy-noroute-"));
+		const socketsDir = join(stateRoot, "sockets");
+		const logsDir = join(stateRoot, "logs");
+
+		// A PreToolUse payload with no cwd AND no --workspace-id arg → unroutable.
+		const payload = JSON.stringify({
+			conversationId: "c-1",
+			stepIdx: 3,
+			toolCall: { name: "run_command", args: {} },
+		});
+
+		let stdoutBuf = "";
+		await new Promise<void>((resolve, reject) => {
+			const child = spawn(
+				process.execPath,
+				[
+					"--experimental-strip-types",
+					shimPath,
+					"--provider",
+					"agy",
+					"--socket-dir",
+					socketsDir,
+					"--log-dir",
+					logsDir,
+					"--event",
+					"PreToolUse",
+				],
+				{ stdio: ["pipe", "pipe", "inherit"] },
+			);
+			child.stdout.on("data", (d: Buffer) => (stdoutBuf += d.toString("utf8")));
+			child.stdin.write(payload);
+			child.stdin.end();
+			child.on("exit", () => resolve());
+			child.on("error", reject);
+		});
+
+		// The event is dropped (nothing to route to), but the decision hook must
+		// STILL emit allow on the early-exit path — else PreToolUse blocks agy.
+		expect(stdoutBuf).toContain('{"decision":"allow"}');
+	});
 });
