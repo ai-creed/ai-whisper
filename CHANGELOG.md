@@ -5,6 +5,17 @@ All notable changes to the `ai-whisper` package are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-06-28
+
+### Added
+
+- **Antigravity (`agy`) as a fourth agent — full manual-mount parity**: mount Google's Antigravity CLI alongside claude/codex/ezio with `whisper collab mount agy`. Adds the `@ai-whisper/adapter-antigravity` package (provider factory, PTY-backed live session, prompt builders, output parser, claude-style PTY submit strategy), `@@agy` relay directives with preview prefix, agy in every CLI agent choice/help string and the companion-agent messaging, bound agy/ezio roles surfaced in the operator `inspect` dashboard, an agent display-name helper that generalizes the reconnect/mount/broker text, and skill install to `~/.gemini/config/skills`. agy can now serve as a workflow implementer or reviewer.
+- **agy turn-events via lifecycle hooks**: `agy` is now a first-class hook-capable turn-event provider, default-on like claude/codex. On mount, ai-whisper installs a non-destructive `ai-whisper-turn-events` group in the workspace `.agents/hooks.json` and removes it on teardown (user-authored hook groups are left intact). The `Stop` hook — gated on the mounted parent's `conversationId` with `fullyIdle: true` — drives turn-end capture exactly once per turn, ignoring subagent `Stop`s and mid-turn pauses, while the invocation/tool hooks act as a heartbeat plus a tool-in-flight bracket so long subagent runs never trip a false idle. Hook events route to the mount via a baked `--workspace-id` (agy payloads carry no cwd). `--turn-events` now lists agy among the hook-capable providers and defaults it on; `--turn-events off`/`none` reverts to pure clipboard capture. Verified against live interactive `agy` v1.0.13.
+
+### Changed
+
+- **Mounted ai-ezio adapter migrated to `loadSessionHosts` + `DelegatedToolRegistry`**: the mounted ai-ezio adapter resolves session hosts through the registry seam, keeping the inlined `@ai-ezio/*` layer aligned with the current harness.
+
 ## [0.8.1] - 2026-06-25
 
 ### Added
@@ -691,6 +702,7 @@ Requires `@ai-creed/ai-ezio` ≥ 0.2.0-beta.4 (the `@ai-ezio/surface` slash seam
   (Claude + Codex) driven by structured workflows, with npm metadata
   (description, repository, homepage).
 
+[0.9.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.9.0
 [0.8.1]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.8.1
 [0.8.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.8.0
 [0.7.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.7.0
