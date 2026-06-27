@@ -8,6 +8,8 @@ overrides:
   '@ai-ezio/protocol': file:../ai-ezio/packages/protocol
   '@ai-ezio/harness': file:../ai-ezio/packages/harness
   '@ai-ezio/mcp-host': file:../ai-ezio/packages/mcp-host
+  '@ai-ezio/subagent': file:../ai-ezio/packages/subagent
+  '@ai-ezio/session-hosts': file:../ai-ezio/packages/session-hosts
   fast-uri: ^3.1.2
   vite: ^7.3.2
   esbuild: ^0.28.1
@@ -90,6 +92,9 @@ importers:
       '@ai-ezio/protocol':
         specifier: file:../../../ai-ezio/packages/protocol
         version: file:../ai-ezio/packages/protocol
+      '@ai-ezio/session-hosts':
+        specifier: file:../../../ai-ezio/packages/session-hosts
+        version: file:../ai-ezio/packages/session-hosts(zod@3.25.76)
       '@ai-ezio/surface':
         specifier: file:../../../ai-ezio/packages/surface
         version: file:../ai-ezio/packages/surface
@@ -238,6 +243,12 @@ packages:
 
   '@ai-ezio/protocol@file:../ai-ezio/packages/protocol':
     resolution: {directory: ../ai-ezio/packages/protocol, type: directory}
+
+  '@ai-ezio/session-hosts@file:../ai-ezio/packages/session-hosts':
+    resolution: {directory: ../ai-ezio/packages/session-hosts, type: directory}
+
+  '@ai-ezio/subagent@file:../ai-ezio/packages/subagent':
+    resolution: {directory: ../ai-ezio/packages/subagent, type: directory}
 
   '@ai-ezio/surface@file:../ai-ezio/packages/surface':
     resolution: {directory: ../ai-ezio/packages/surface, type: directory}
@@ -2189,6 +2200,27 @@ snapshots:
       - zod
 
   '@ai-ezio/protocol@file:../ai-ezio/packages/protocol': {}
+
+  '@ai-ezio/session-hosts@file:../ai-ezio/packages/session-hosts(zod@3.25.76)':
+    dependencies:
+      '@ai-ezio/harness': file:../ai-ezio/packages/harness
+      '@ai-ezio/mcp-host': file:../ai-ezio/packages/mcp-host(zod@3.25.76)
+      '@ai-ezio/protocol': file:../ai-ezio/packages/protocol
+      '@ai-ezio/subagent': file:../ai-ezio/packages/subagent(zod@3.25.76)
+    transitivePeerDependencies:
+      - '@cfworker/json-schema'
+      - supports-color
+      - zod
+
+  '@ai-ezio/subagent@file:../ai-ezio/packages/subagent(zod@3.25.76)':
+    dependencies:
+      '@ai-ezio/harness': file:../ai-ezio/packages/harness
+      '@ai-ezio/mcp-host': file:../ai-ezio/packages/mcp-host(zod@3.25.76)
+      '@ai-ezio/protocol': file:../ai-ezio/packages/protocol
+    transitivePeerDependencies:
+      - '@cfworker/json-schema'
+      - supports-color
+      - zod
 
   '@ai-ezio/surface@file:../ai-ezio/packages/surface':
     dependencies:
