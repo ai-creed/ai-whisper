@@ -143,7 +143,7 @@ export async function runCollabMount(input: {
 		}
 	}
 
-	// Turn-events: resolve enablement (flag > env > default OFF); ensure dirs; startup log.
+	// Turn-events: resolve enablement (flag > env > default ON for claude/codex/agy); ensure dirs; startup log.
 	const enablement: TurnEventsEnablement = resolveTurnEvents(input.turnEventsFlag);
 	mkdirSync(getStateSocketsDir(), { recursive: true });
 	mkdirSync(getStateLogsDir(), { recursive: true });
