@@ -9,19 +9,20 @@ import type {
 } from "@ai-ezio/protocol";
 import {
 	callHostRehydration,
-	loadMcpHost,
 	type McpHost,
 } from "@ai-ezio/mcp-host";
 import {
 	createAutoCompactDriver,
 	createRenameController,
 	createSessionTitleStore,
+	DelegatedToolRegistry,
 	loadConfig,
 	resolveHaxBinary,
 	type AutoCompactDriver,
 	type CompactorSession,
 	type SessionTitleStore,
 } from "@ai-ezio/harness";
+import { loadSessionHosts } from "@ai-ezio/session-hosts";
 import {
 	defaultCreateEngineSession,
 	type AiEzioEngineSession,
@@ -113,8 +114,17 @@ export function createAiEzioLiveSession(input: {
 	const buildCompact = input.buildAutoCompact ?? defaultBuildAutoCompact;
 	// Mounted posture: confirm degrades to deny (no human to prompt in a pane).
 	// cwd = the mounted process's workspace, from which cortex derives the repo.
-	const host =
-		input.mcpHost ?? loadMcpHost({ mode: "mounted", cwd: process.cwd() });
+	// PR2: one DelegatedToolRegistry owns the MCP host + the subagent host, so the
+	// mounted model gets both the mcp.json ecosystem AND the `subagent` tool. The
+	// `mcpHost` is kept for the host-private rehydration API (callHostRehydration).
+	// An injected mcpHost (tests) is wrapped in a registry of just that host.
+	const { registry, mcpHost } = input.mcpHost
+		? { registry: new DelegatedToolRegistry([input.mcpHost]), mcpHost: input.mcpHost }
+		: loadSessionHosts({
+				mode: "mounted",
+				cwd: process.cwd(),
+				report: (line: string) => input.stdout.write(`${line}\n`),
+			});
 
 	// §1C title store + rename controller — built before start() so the seam is
 	// available to tests that construct but do not start the adapter.
@@ -250,9 +260,9 @@ export function createAiEzioLiveSession(input: {
 				default:
 					break;
 			}
-		// 2) MCP host — services delegated tool calls (tool_call_requested →
-		//    sendToolResult). No-op for non-delegated events.
-		void host.handleEvent(event);
+		// 2) Delegated-tool registry — routes tool_call_requested to the owning
+		//    provider (MCP host or subagent host) and broadcasts lifecycle events.
+		registry.handleEvent(event);
 		// 3) Display — the renderer owns all pane output; suppressed for the
 		//    summarize turn so the cycle never bleeds into the transcript.
 		if (!compacting) renderer.handle(event);
@@ -270,7 +280,7 @@ export function createAiEzioLiveSession(input: {
 			// (ready/status) are ignored by the driver until a turn finishes.
 			driver = buildCompact({
 				session,
-				host,
+				host: mcpHost,
 				write: (s) => input.stdout.write(s),
 			});
 			session.onExit(() => {
@@ -284,9 +294,10 @@ export function createAiEzioLiveSession(input: {
 				`ezio-mounted-${randomUUID()}.txt`,
 			);
 			await session.start({ transcriptPath });
-			// Register delegated (MCP) tools BEFORE any submit, so the first turn
-			// sees them. Same loadMcpHost factory + host.start sequence as standalone.
-			await host.start(session);
+			// Register delegated tools (MCP + subagent) BEFORE any submit, so the
+			// first turn sees them. Same loadSessionHosts + registry.start sequence as
+			// the standalone CLI.
+			await registry.start(session);
 			// Build the mounted SlashController now that the session + driver exist.
 			// /quit is excluded (which also drops its /exit alias) — mounted mode owns
 			// the lifecycle, so quitting the pane is not a slash concern. Output is
@@ -321,7 +332,7 @@ export function createAiEzioLiveSession(input: {
 						} else {
 							await session!.resume(id);
 						}
-						await host.start(session!); // re-register MCP delegated tools
+						await registry.start(session!); // re-register delegated tools (MCP + subagent)
 						// Re-render the mounted banner on the post-respawn ready event
 						// (renderer.handle receives the new ready from onEvent).
 					},
@@ -379,7 +390,7 @@ export function createAiEzioLiveSession(input: {
 			slash = new SlashController(slashCtx, { excludeCommands: ["quit"] });
 		},
 		async stop() {
-			await host.stop();
+			await registry.stop();
 			session?.close();
 			session = null;
 		},
