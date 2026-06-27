@@ -1,0 +1,196 @@
+# Antigravity Turn-Events via Lifecycle Hooks — Design
+
+**Date:** 2026-06-27
+**Status:** Approved design (empirically verified 2026-06-27), ready for planning
+**Context:** ai-whisper — turn-end detection for a mounted Antigravity (`agy`) session, enabling `agy` to run as an autonomous workflow implementer/reviewer with reliable turn capture.
+
+**Relationship to prior spec.** This is a standalone companion to `docs/superpowers/specs/2026-06-27-antigravity-adapter-design.md` (the base adapter design). It **supersedes** that spec's turn-events decisions specifically — base §3 (D4/D5), §9 ("recognized-but-off, no hook"), §10 (`supportsLaunchHooks: false`), and the `turn-event.ts` row that excluded `agy` from `TurnEventProvider`. Everything else in the base spec (package layout, relay parsing, dashboard, skill install, reconnect, build wiring) stands unchanged. The base spec is not edited; where the two disagree on turn-events, **this spec wins.**
+
+> **Verification note.** The agy hook behavior below was verified empirically against `agy` v1.0.13 on 2026-06-27 by registering probe hooks and capturing real payloads (quoted verbatim in §3 and §5). The base spec's earlier claim "agy has no turn-end hook" was an under-probe (it checked `agy --help` only); this spec corrects it. Two behaviors remain **to confirm in interactive mode** and are listed in §11 — the design accommodates either outcome.
+
+## 1. Problem
+
+A mounted `agy` session is a long-lived `node-pty` TUI. ai-whisper's shared mount runtime infers turn-end from an **idle timer** (`AI_WHISPER_IDLE_THRESHOLD_MS`, default 30 000 ms): when no PTY bytes arrive for the threshold, it declares the turn over, runs `/copy` capture, and hands off.
+
+That heuristic relies on the agent emitting bytes continuously while working (an animated "thinking" spinner) — true for `claude`/`codex`, which *also* have turn-end hooks as the primary signal. `agy` has **no continuous spinner during quiet phases** (notably while a subagent runs), and the base spec assumed it had **no hook**. Result: during a quiet subagent wait > 30 s, ai-whisper would falsely declare turn-end, `/copy`-capture a half-finished screen, and hand off garbage. That makes `agy` unusable as an autonomous implementer/reviewer.
+
+This spec resolves that by using `agy`'s lifecycle hooks as the turn-end signal (primary) plus a heartbeat (defense-in-depth), demoting the idle timer to a far-back fallback.
+
+## 2. Goal & Non-goals
+
+**Goal**
+- Detect `agy` turn-end reliably in a mounted session via its `Stop` lifecycle hook, gated correctly so subagent completions and mid-turn pauses do not trigger capture.
+- Keep the session "alive" (no false idle) during long work — including multi-minute subagent runs — via a hook-driven heartbeat.
+- Integrate `agy` into ai-whisper's existing turn-event architecture (shim → socket → listener → relay) as a first-class hook-capable provider, alongside `claude`/`codex`.
+
+**Non-goals**
+- High-fidelity structured capture by reading `agy`'s `transcriptPath` JSONL (a noted enhancement, §4.5 — v1 reuses the shared `/copy` capture).
+- Turn-events for any non-mounted path (companion `handleWork` is exit-driven and needs none).
+- Auto-launch, attached sessions, and other base-spec scope items (unchanged there).
+
+## 3. Verified agy hook behavior
+
+`agy`'s `/hooks` exposes five lifecycle events:
+
+| Event | Fires | Decision hook? |
+|---|---|---|
+| `PreToolUse` | before a tool call | yes (expects allow/deny) |
+| `PostToolUse` | after a tool call | no |
+| `PreInvocation` | before each **LLM invocation** (one model call) | no |
+| `PostInvocation` | after each LLM invocation | no |
+| `Stop` | when the agent **stops / goes idle** | no |
+
+Crucially, "invocation" = a single LLM call, so `PreInvocation`/`PostInvocation`/`PreToolUse`/`PostToolUse` fire **many times per turn** (once per step of the agentic loop) — they are *not* turn boundaries, but they make an excellent **heartbeat**.
+
+**`Stop` is the turn-end signal — but only when correctly gated.** Its payload carries `conversationId` and a `fullyIdle` boolean. In a run where the parent agent dispatched a subagent (`sleep 8 && echo`), three `Stop` events fired:
+
+| `conversationId` | `fullyIdle` | `terminationReason` | meaning |
+|---|---|---|---|
+| `c84f932a…` (parent) | `false` | `NO_TOOL_CALL` | parent paused to dispatch the subagent — **not** done |
+| `4452fbde…` (subagent) | `true` | `NO_TOOL_CALL` | subagent finished (different conversation) |
+| `c84f932a…` (parent) | `true` | `NO_TOOL_CALL` | **true turn-end** |
+
+→ **Turn-end ≙ `Stop` where `conversationId == <mounted parent conversationId>` AND `fullyIdle == true`.** It fires exactly once, at true completion; it is not fooled by the subagent's `Stop` (different `conversationId`) nor the parent's mid-turn pause (`fullyIdle == false`).
+
+**Heartbeat density.** Across that same subagent run, the largest gap between consecutive hook fires was **~7 s** (the `PostToolUse` bracketing the 8 s `sleep`); during normal multi-step work, gaps are sub-second to ~3 s. The only way to exceed 30 s of hook silence is a *single* tool/command that itself blocks > 30 s — covered by the tool-in-flight bracket (§4.3).
+
+**Verified payloads** (fields used by the receiver in bold):
+
+```jsonc
+// Stop
+{ "artifactDirectoryPath": "...", "conversationId": "c84f932a-...",   // ← gate
+  "error": "", "executionNum": 0, "fullyIdle": true,                  // ← gate
+  "modelName": "gemini-3-flash-agent", "terminationReason": "NO_TOOL_CALL",
+  "transcriptPath": ".../transcript_full.jsonl", "workspacePaths": [] }
+
+// PreInvocation / PostInvocation (heartbeat)
+{ "artifactDirectoryPath": "...", "conversationId": "...", "initialNumSteps": 5,
+  "invocationNum": 1, "modelName": "...", "transcriptPath": "...", "workspacePaths": [] }
+
+// PreToolUse (heartbeat + tool-in-flight open) / PostToolUse (close)
+{ "artifactDirectoryPath": "...", "conversationId": "...", "modelName": "...",
+  "stepIdx": 6, "toolCall": { "name": "run_command", "args": { "CommandLine": "...", "Cwd": "..." } },
+  "error": "", "transcriptPath": "...", "workspacePaths": [] }
+```
+
+**Registration (verified).** Hooks live in `hooks.json` under a customization directory — workspace `.agents/hooks.json` or global `~/.gemini/config/hooks.json`. The schema is a **map of named groups** (not a top-level `hooks` key — the base-spec-era guess of `{"hooks":{...}}` is silently ignored):
+
+```jsonc
+{
+  "<group-name>": {                       // a named group; optional "enabled": false to disable
+    "PreToolUse":  [ { "matcher": "run_command", "hooks": [ { "type": "command", "command": "…", "timeout": 10 } ] } ],
+    "PreInvocation":  [ { "type": "command", "command": "…" } ],   // shorthand form (no matcher/nested hooks)
+    "Stop":           [ { "type": "command", "command": "…" } ]
+  }
+}
+```
+
+**Hook contract (verified).** `agy` passes the event payload as **JSON on the hook command's stdin**; the command returns a JSON object on **stdout** (e.g. `{"decision":"allow"}`). Decision hooks (`PreToolUse`) gate the action on that decision; observational hooks ignore it. Our integration always returns `{"decision":"allow"}` so hooks never gate `agy`'s behavior (§5.2).
+
+## 4. Turn-end & capture design
+
+### 4.1 Primary signal — the `Stop` hook
+On mount, ai-whisper registers an `agy` hooks group whose commands invoke the existing **turn-event shim**. When a `Stop` event arrives whose `conversationId` matches the mounted session's parent and whose `fullyIdle == true`, the relay treats the turn as finished and runs capture + handoff. This replaces "idle == turn-end" as the primary mechanism (mirroring how `claude`'s `Stop` hook drives capture).
+
+### 4.2 conversationId capture
+The mounted session does not know the parent `conversationId` until `agy` starts. The mount runtime captures it from the **first hook event of any type** received after launch (every payload carries `conversationId`). Subsequent `Stop` events are accepted only for that id; all others (subagents, or — if a global hooks file is used — unrelated `agy` sessions) are ignored.
+
+### 4.3 Heartbeat & tool-in-flight bracket (defense-in-depth)
+Every hook event resets `lastActivityAt` (heartbeat), so the idle fallback never fires while `agy` is doing multi-step work. A `PreToolUse` opens a "tool in flight" state and the matching `PostToolUse` (same `stepIdx`) closes it; while a tool is in flight, the idle fallback is suppressed entirely (covers a single tool/command that blocks > 30 s). The `Stop` signal remains primary; this layer only guards against a missed/late `Stop`.
+
+### 4.4 Idle fallback
+The existing idle timer is retained as a last resort: if no `Stop` is observed and hooks have gone quiet (no heartbeat) beyond the threshold and no tool is in flight, the runtime falls back to the shared `/copy` capture. For `agy` this should be rare-to-never; it exists so a hook-delivery failure degrades to today's behavior rather than hanging.
+
+### 4.5 Capture content
+v1 reuses the shared capture unchanged: a confirmed turn-end triggers the existing `/copy` + PTY-text fallback + `classifyCapture` path (exactly the claude flow, where the `Stop` event triggers `/copy`). **Enhancement (non-goal for v1):** the `Stop` payload's `transcriptPath` points at a full JSONL transcript; reading the last assistant turn from it yields structured, scrape-free capture that could be more reliable than `/copy`. Deferred pending confirmation of the transcript format.
+
+## 5. Hook registration & lifecycle
+
+### 5.1 `writeAgyHooksFile` (analogue of `writeClaudeSettingsFile`)
+A new writer emits/updates a single named group — `"ai-whisper-turn-events"` — inside the target `hooks.json`, registering:
+- `Stop` → shim command (turn-end signal).
+- `PreInvocation`, `PostInvocation`, `PostToolUse` → shim command (heartbeat).
+- `PreToolUse` → shim command (heartbeat + tool-in-flight open; always returns allow).
+
+The shim command mirrors claude's: `<shimPath> --provider agy --socket-dir <socketsDir> --log-dir <logsDir>` with a small `timeout` (e.g. `5`). Because the schema is a **map of named groups**, the writer adds/removes only the `ai-whisper-turn-events` group, leaving any user-authored groups intact (non-destructive merge).
+
+### 5.2 Shim behavior for `agy`
+`turn-event-shim.ts` gains an `agy` arm that reads the payload from **stdin** (like `claude`; `codex` reads argv), forwards it to the mount socket tagged `provider: "agy"`, then prints `{"decision":"allow"}` to stdout so the hook never blocks `agy` (required for the `PreToolUse` decision hook, harmless for the rest). Must be fast and never error (a failing hook must not stall the agent).
+
+### 5.3 File location & cleanup
+- **Preferred:** workspace `.agents/hooks.json` in the mount's launch cwd — scoped to this workspace, naturally cleaned up. (Requires confirming mounted interactive `agy` loads workspace `.agents/` from cwd — §11.)
+- **Fallback:** global `~/.gemini/config/hooks.json` — guaranteed to load, but process-wide; the `conversationId` gate (§4.2) prevents cross-session confusion, and the named-group merge keeps it non-destructive.
+- **Lifecycle:** install the group before launching `agy`; **remove the `ai-whisper-turn-events` group on teardown** (and restore any backup). Never leave our group behind in a global file.
+
+## 6. What ships (integration with the turn-event stack)
+
+| File | Change |
+|---|---|
+| `packages/cli/src/runtime/turn-event.ts` | Include `agy` in `TurnEventProvider` — `Exclude<AgentType, "ezio">` (remove the base-spec exclusion of `agy`). |
+| `packages/cli/src/runtime/turn-events-config.ts` | Add `writeAgyHooksFile(...)`. Extend `TurnEventsEnablement` to `{ claude; codex; agy }`, default `agy: true`. Add `"agy"` to `RECOGNIZED_TURN_EVENTS_TOKENS`. `resolveTurnEvents` honors `agy` like the others (on by default; `off`/`none` disables). `formatTurnEventsStartupLine` shows `agy=ON/off`. |
+| `packages/cli/src/bin/turn-event-shim.ts` | Add `agy` to the provider type and a stdin payload-read arm; always emit `{"decision":"allow"}` on stdout (§5.2). |
+| `packages/cli/src/runtime/event-receiver.ts` | New `AgyEventReceiver`: parse the agy payload; emit a turn-event only for `Stop` with `fullyIdle == true`; emit heartbeat/activity for the other events; expose `conversationId`, `transcriptPath`, `terminationReason`. |
+| `packages/cli/src/runtime/mount-turn-event-listener.ts` | Dispatch to `AgyEventReceiver` when `provider === "agy"`. |
+| `packages/cli/src/runtime/mount-session-main.ts` | Enable the event path for `agy` (`_eventEnabled`/`eventPathEnabled`/listener creation include `agy`). Capture the parent `conversationId` from the first agy hook event. On gated `Stop` → finish turn + capture; on other agy events → reset `lastActivityAt` and maintain tool-in-flight state. Install `writeAgyHooksFile` before launch; remove the group on teardown. |
+| `packages/cli/src/runtime/providers.ts` | When mounting `agy` with turn-events on, invoke `writeAgyHooksFile` and ensure the shim is reachable (parallel to how claude’s `--settings <file>` is wired). No agy launch flag is needed — hooks come from the file, not argv. |
+
+(The base adapter spec already covers the non-turn-events surfaces: the `adapter-antigravity` package, `agentTypes`/`relayTargets`, submit strategy, relay parsing, dashboard, skill install, reconnect, build wiring.)
+
+## 7. Capabilities delta
+
+`createAntigravityProvider().getCapabilities()` sets **`supportsLaunchHooks: true`** (base spec had `false`). All other fields unchanged: `supportsDirectPackets: true`, `supportsNormalization: true`, `supportsRelayInterception: true`, `supportsLocalBuffering: false`, `extensions: {}`.
+
+## 8. Decisions
+
+| # | Decision | Rationale |
+|---|----------|-----------|
+| H1 | Turn-end = `Stop` hook gated by `conversationId == parent` && `fullyIdle == true`. | Verified to fire exactly once at true completion; ignores subagent Stops and mid-turn pauses (§3). |
+| H2 | Capture the parent `conversationId` from the first hook event at mount. | The shim forwards all events; the runtime needs the parent id to gate `Stop` and ignore subagents / other sessions. |
+| H3 | Register all five events; `Stop` = finish, the rest = heartbeat + tool-in-flight bracket. | Dense heartbeat (≤7 s gaps) prevents false idle; bracket covers single long tools; belt-and-suspenders around `Stop`. |
+| H4 | Shim reads agy payload from **stdin** and always returns `{"decision":"allow"}`. | Matches agy's stdin contract; never gates agy's actions (required for the `PreToolUse` decision hook). |
+| H5 | `writeAgyHooksFile` merges/removes only an `ai-whisper-turn-events` named group. | The named-group schema allows non-destructive install/cleanup without clobbering user hooks. |
+| H6 | Prefer workspace `.agents/hooks.json`; fall back to global `~/.gemini/config/hooks.json` with the `conversationId` gate. | Workspace scoping is cleanest; global is the guaranteed-load fallback (§11 confirms which). |
+| H7 | v1 capture reuses the shared `/copy` path; `transcriptPath` structured capture deferred. | Minimizes divergence from the proven claude flow; transcript read is an enhancement. |
+| H8 | `agy` turn-events default **on** (like claude/codex). | It is now a genuine hook-capable provider; `--turn-events off` still disables. |
+
+## 9. Testing strategy
+
+**Unit**
+- `AgyEventReceiver`: a `Stop` payload with `fullyIdle:true` + matching `conversationId` → one turn-event; `fullyIdle:false` → none; mismatched `conversationId` (subagent) → none; `PreInvocation`/`PostInvocation`/`PreToolUse`/`PostToolUse` → heartbeat/activity, not turn-end; `toolCall.name` + `stepIdx` parsed for tool-in-flight.
+- `writeAgyHooksFile`: emits the `ai-whisper-turn-events` group with the correct shim command for all five events; merging into a file with a pre-existing user group leaves that group intact; the teardown remover deletes only our group.
+- `turn-events-config`: `agy` recognized; default `on`; `off`/`none` disables; startup line shows `agy=ON/off`.
+- `turn-event-shim` (agy arm): reads a stdin payload, forwards it provider-tagged, prints `{"decision":"allow"}`.
+
+**Integration**
+- Mount runtime with a faked agy hook stream: the parent `conversationId` is captured from the first event; a gated `Stop` triggers capture + handoff exactly once; a subagent `Stop` (different `conversationId`) does **not**; a long quiet gap *with* heartbeat events does not false-idle; a `PreToolUse` with no `PostToolUse` suppresses idle turn-end.
+- `mount-turn-event-listener` routes `provider:"agy"` to `AgyEventReceiver`.
+- Round-trip: `writeAgyHooksFile` output, parsed back, registers the expected events.
+
+**Manual smoke (against real `agy`)**
+- Mount `agy`; run a task that spawns a subagent; confirm the turn is captured **once**, at true completion (not when the subagent finishes, not mid-pause), and the heartbeat prevented any premature idle capture.
+- `--turn-events off` disables the hooks group; capture falls back to idle/`/copy`.
+- Confirm the `ai-whisper-turn-events` group is removed from `hooks.json` after the session ends.
+
+## 10. Acceptance criteria
+
+1. A mounted `agy` turn that includes a multi-minute subagent run is captured **exactly once**, on the parent's `Stop`+`fullyIdle:true`, with no premature capture during the subagent.
+2. The mounted runtime ignores subagent `Stop` events and the parent's `fullyIdle:false` pause `Stop`.
+3. The hook heartbeat prevents the idle timer from firing while `agy` is actively working (including a single tool/command blocking > 30 s, via the tool-in-flight bracket).
+4. `--turn-events` defaults `agy` on, shows `agy=ON`, and `off`/`none` disables it (falling back to idle/`/copy`).
+5. The `ai-whisper-turn-events` hooks group is installed before launch and removed on teardown; user-authored hook groups are untouched.
+6. `getCapabilities().supportsLaunchHooks === true`; `agy ∈ TurnEventProvider`.
+7. `pnpm typecheck`, `pnpm build`, and `pnpm test` pass; existing `claude`/`codex`/`ezio` turn-events behavior is unchanged.
+
+## 11. Open questions (confirm during implementation)
+
+1. **Interactive per-turn `Stop`.** Verified that `Stop`+`fullyIdle:true` fires at turn-end in **print** mode (which then exits). Confirm it also fires after **each turn** in a long-lived **interactive** session (the expected behavior, since `fullyIdle:true`/`terminationReason:NO_TOOL_CALL` denotes "finished responding"). If interactive only fires `Stop` on process exit, fall back to the heartbeat-absence design (idle, kept honest by the heartbeat) for turn-end.
+2. **Workspace hooks loading.** `agy -p` ignores cwd (uses `~/.gemini/antigravity-cli/scratch`). Confirm a mounted **interactive** `agy` launched in the workspace cwd loads `.agents/hooks.json` from that cwd. If not, use the global `~/.gemini/config/hooks.json` fallback (§5.3) with the `conversationId` gate.
+3. **Hook command shell semantics.** Confirm the `timeout` field's unit/behavior and that a `Stop`/observational hook needs no specific stdout (we return allow regardless). Confirm the `command` is run via a shell so the shim path + args resolve.
+
+## 12. References
+
+- Base adapter design (superseded turn-events sections): `docs/superpowers/specs/2026-06-27-antigravity-adapter-design.md`.
+- Existing turn-event stack (templates): `packages/cli/src/runtime/turn-events-config.ts` (`writeClaudeSettingsFile`, `codexNotifyArgs`, `resolveTurnEvents`, `formatTurnEventsStartupLine`), `packages/cli/src/bin/turn-event-shim.ts`, `packages/cli/src/runtime/event-receiver.ts` (`ClaudeEventReceiver`/`CodexEventReceiver`), `packages/cli/src/runtime/mount-turn-event-listener.ts`, `packages/cli/src/runtime/mount-session-main.ts`, `packages/cli/src/runtime/turn-event.ts`.
+- Shared capture (reused): `packages/cli/src/runtime/{clipboard-handback-capture,assistant-turn-capture,capture-handback-text,mounted-turn-owned-relay,relay-orchestrator}.ts`.
+- agy hook docs: `antigravity.google/docs/hooks`; local guide `~/.gemini/antigravity-cli/builtin/skills/antigravity_guide/references/cli.md`.
+- Empirical probe payloads captured 2026-06-27 (quoted in §3).
