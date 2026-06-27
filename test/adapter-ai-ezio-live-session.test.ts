@@ -51,6 +51,20 @@ function fakeEngine() {
 	};
 }
 
+/** A DelegatedToolProvider stub for the adapter's injected `mcpHost`. The adapter
+ * wraps it in a DelegatedToolRegistry whose start() calls init()/tools(), so a
+ * stub needs tools() — the pre-registry {start,handleEvent} shape no longer
+ * satisfies the seam. No tools are advertised: these tests don't route calls. */
+function fakeMcpHost() {
+	return {
+		id: "mcp",
+		init: vi.fn(async () => {}),
+		tools: () => [],
+		handleToolCall: vi.fn(),
+		stop: vi.fn(async () => {}),
+	} as never;
+}
+
 describe("createAiEzioLiveSession", () => {
 	it("writeUserInput submits over the protocol (single submit, no keystrokes)", async () => {
 		const f = fakeEngine();
@@ -183,11 +197,7 @@ describe("createAiEzioLiveSession — mounted slash commands", () => {
 				onEvent = opts.onEvent;
 				return session;
 			},
-			mcpHost: {
-				start: vi.fn(async () => {}),
-				stop: vi.fn(async () => {}),
-				handleEvent: vi.fn(),
-			} as never,
+			mcpHost: fakeMcpHost(),
 			buildAutoCompact: () => null,
 			clipboard: async (text: string) => {
 				copied.push(text);
@@ -294,7 +304,7 @@ describe("createAiEzioLiveSession — /rename + /resume wiring", () => {
 		const writes: string[] = [];
 		const controller = createAiEzioLiveSession({
 			createEngineSession: eng.create,
-			mcpHost: { start: vi.fn(async () => {}), stop: vi.fn(async () => {}), handleEvent: vi.fn() } as never,
+			mcpHost: fakeMcpHost(),
 			buildAutoCompact: () => null,
 			titleStore: store,
 			stdout: { write: (s: string) => (writes.push(s), true) } as never,
@@ -314,7 +324,7 @@ describe("createAiEzioLiveSession — /rename + /resume wiring", () => {
 		const writes: string[] = [];
 		const controller = createAiEzioLiveSession({
 			createEngineSession: eng.create,
-			mcpHost: { start: vi.fn(async () => {}), stop: vi.fn(async () => {}), handleEvent: vi.fn() } as never,
+			mcpHost: fakeMcpHost(),
 			buildAutoCompact: () => null,
 			titleStore: store,
 			now: () => 0,
@@ -352,7 +362,7 @@ describe("createAiEzioLiveSession — /rename + /resume wiring", () => {
 		const exits: number[] = [];
 		const controller = createAiEzioLiveSession({
 			createEngineSession: eng.create,
-			mcpHost: { start: vi.fn(async () => {}), stop: vi.fn(async () => {}), handleEvent: vi.fn() } as never,
+			mcpHost: fakeMcpHost(),
 			buildAutoCompact: () => null,
 			titleStore: store,
 			now: () => 0,
@@ -414,11 +424,7 @@ describe.runIf(haxBuilt)(
 					const out: string[] = [];
 					const controller = createAiEzioLiveSession({
 						// Real default engine (no createEngineSession override).
-						mcpHost: {
-							start: vi.fn(async () => {}),
-							stop: vi.fn(async () => {}),
-							handleEvent: vi.fn(),
-						} as never,
+						mcpHost: fakeMcpHost(),
 						buildAutoCompact: () => null,
 						titleStore: store,
 						listSessions: async () =>
