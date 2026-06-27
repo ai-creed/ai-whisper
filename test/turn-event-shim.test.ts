@@ -174,6 +174,16 @@ describe("turn-event-shim", () => {
 		expect((JSON.parse(envelope.raw) as { conversationId: string }).conversationId).toBe("c-1");
 		// Decision-hook contract: agy must receive {"decision":"allow"} on stdout.
 		expect(stdoutBuf).toContain('{"decision":"allow"}');
+
+		// The arrival log records the agy event tag (Stop vs heartbeat) for debugging.
+		const logFile = readdirSync(logsDir).find((f) => f.startsWith("turn-events-"));
+		expect(logFile).toBeDefined();
+		const logLine = JSON.parse(
+			readFileSync(join(logsDir, logFile!), "utf8").trim(),
+		) as { provider: string; event: string; connect: string };
+		expect(logLine.provider).toBe("agy");
+		expect(logLine.event).toBe("Stop");
+		expect(logLine.connect).toBe("ok");
 	});
 
 	it("prints the allow decision even when an agy event cannot be routed (no --workspace-id, no cwd)", async () => {

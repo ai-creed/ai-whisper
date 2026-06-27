@@ -55,6 +55,7 @@ function logArrival(
 	connectResult: "ok" | "refused" | "error",
 	bytes: number,
 	receivedAt: string,
+	event: string | undefined,
 ): void {
 	try {
 		mkdirSync(logDir, { recursive: true });
@@ -62,6 +63,9 @@ function logArrival(
 		const line = JSON.stringify({
 			ts: receivedAt,
 			provider,
+			// agy tags its lifecycle event (Stop vs heartbeat); claude/codex have none.
+			// Recording it makes the arrival log debuggable (which event hit the socket).
+			...(event ? { event } : {}),
 			cwd,
 			socket: socketPath,
 			connect: connectResult,
@@ -99,7 +103,7 @@ function main(): void {
 	// when an explicit id is present.
 	const wid = explicitWorkspaceId ?? (cwd ? workspaceId(cwd) : "");
 	if (!wid) {
-		logArrival(logDir, provider, cwd, "", "error", raw.length, receivedAt);
+		logArrival(logDir, provider, cwd, "", "error", raw.length, receivedAt, event);
 		process.exit(0); // allow decision (for agy) already printed above
 	}
 	const socketPath = join(socketDir, `${wid}-${provider}.sock`);
@@ -110,7 +114,7 @@ function main(): void {
 	const done = (result: "ok" | "refused" | "error") => {
 		if (settled) return;
 		settled = true;
-		logArrival(logDir, provider, cwd, socketPath, result, out.length, receivedAt);
+		logArrival(logDir, provider, cwd, socketPath, result, out.length, receivedAt, event);
 		try {
 			sock.end();
 		} catch {

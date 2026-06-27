@@ -253,7 +253,7 @@ export function createCli(): Command {
 		.option("--collab <id>", "Target a specific collab id (defaults to the active collab for cwd)")
 		.option(
 			"--turn-events <providers>",
-			"Scope the push turn-completion event path to the given providers (comma-separated providers with turn-end hooks: claude,codex; agy is recognized but always off), or disable it with `off`/`none` to revert to pure clipboard capture. Overrides AI_WHISPER_TURN_EVENTS. Default: on (claude,codex).",
+			"Scope the push turn-completion event path to the given providers (comma-separated providers with turn-end hooks: claude,codex,agy), or disable it with `off`/`none` to revert to pure clipboard capture. Overrides AI_WHISPER_TURN_EVENTS. Default: on (claude,codex,agy).",
 		)
 		.action(
 			async (
