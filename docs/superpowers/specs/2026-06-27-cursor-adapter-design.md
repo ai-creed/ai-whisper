@@ -124,6 +124,13 @@ today. This is intentionally left as a clean seam; see "Open question" below.
 - `packages/shared/src/relay-host.ts`: add `"cursor"` to `relayTargets` →
   `["codex", "claude", "cursor", "ezio", "pull"]` so `@cursor` relay directives
   and `InteractiveSessionTarget` recognize it.
+- **Lift `extractJsonObjectCandidates`** out of
+  `packages/adapter-codex/src/parse-codex-output.ts` (currently a private helper)
+  into `@ai-whisper/shared` and re-export it. Both `parse-codex-output` and the
+  new `parse-cursor-output` import the single shared copy — avoids
+  `adapter-cursor` depending on `adapter-codex` and removes the duplication.
+  `parse-codex-output.ts` is refactored to import it (behavior unchanged; its
+  existing tests stay green as the regression guard).
 
 ### 2. New package `packages/adapter-cursor`
 
@@ -140,7 +147,10 @@ Mirrors `adapter-claude` structure exactly. Files:
   prompt text Claude uses (instruct the model to return
   `{ kind, content, transitionIntent }`).
 - `src/parse-cursor-output.ts` — `parseCursorOutput(stdout): ProviderReply`.
-  Two-layer parse (see Data flow below).
+  Two-layer parse (see Data flow below). The **inner** `result` parse reuses
+  Codex's brace-extraction helper (`extractJsonObjectCandidates`) so a
+  fenced/prose-wrapped structured reply still parses; the **outer** envelope uses
+  strict `JSON.parse`.
 - `src/create-cursor-provider.ts` — `createCursorProvider(config): CompanionProvider`.
   Identity `{ providerId: "cursor-agent-cli", toolFamily: "cursor", providerVersion: "1.0.0" }`.
   Capabilities identical to Claude/Codex (all true except
@@ -215,9 +225,12 @@ branch is added — the existing fallthrough already produces that behavior.
 
 ### 7. Skill install (`packages/cli/src/commands/skill/install.ts`)
 
+- **Fix the `homeForTarget` ternary at :46.** It currently reads
+  `target === "claude" ? ".claude" : ".codex"`, so *any* non-claude target
+  (including cursor) silently routes into `~/.codex/skills`. Add an explicit
+  `cursor` branch → `~/.cursor/skills` (parallels `~/.claude`, `~/.codex`). This
+  is a real branch addition, not just a list edit.
 - Add `"cursor"` to `VALID_TARGETS`.
-- Add the cursor skills home: `~/.cursor/skills` (parallels `~/.claude`,
-  `~/.codex`). Extend the `homeForTarget` mapping accordingly.
 - Update the invalid-target error message and the `"all"` expansion to include
   `cursor`.
 
@@ -246,10 +259,11 @@ branch is added — the existing fallthrough already produces that behavior.
 4. On zero exit → `parseCursorOutput(stdout)`:
    1. `JSON.parse(stdout)` → envelope. Parse failure → `failure` reply.
    2. If `is_error === true` or `subtype !== "success"` → `failure` reply.
-   3. Take `envelope.result` (string). Try
-      `mockProviderReplySchema.parse(JSON.parse(result))` → return it (the model
-      followed the JSON-reply instruction).
-   4. If that inner parse fails, wrap raw text:
+   3. Take `envelope.result` (string). Run `extractJsonObjectCandidates(result)`
+      (shared helper) and try `mockProviderReplySchema.parse(JSON.parse(c))` for
+      each candidate; return the first that validates (the model followed the
+      JSON-reply instruction, even if it fenced or prefaced it with prose).
+   4. If no candidate validates, wrap raw text:
       `{ kind: "answer", content: result, transitionIntent: null }`.
 
 ### Mounted interactive session
@@ -278,9 +292,13 @@ hook involved.
 Follow TDD; add focused unit tests mirroring the Claude/Codex suites.
 
 - `parse-cursor-output`: success envelope w/ inner JSON reply; success envelope
-  w/ plain-text `result` (answer-wrap fallback); `is_error: true`;
-  `subtype !== "success"`; malformed envelope; empty stdout; envelope with extra
-  `usage` field (must not break parsing).
+  w/ **fenced/prose-wrapped** structured `result` (brace-extraction recovers it);
+  success envelope w/ plain-text `result` (answer-wrap fallback); `is_error:
+  true`; `subtype !== "success"`; malformed envelope; empty stdout; envelope with
+  extra `usage` field (must not break parsing).
+- `extractJsonObjectCandidates` shared move: the existing
+  `parse-codex-output` suite is the regression guard that the lift-and-refactor
+  preserved behavior; no new bespoke copy of those cases needed.
 - `cursor-prompt`: `buildCursorPrompt` and `buildCursorFileBackedBrokerPrompt`
   produce the expected JSON-schema instruction text.
 - `create-cursor-provider`: injected fake-spawn — verify argv
@@ -315,19 +333,45 @@ the push-based turn-event path (adding a `CursorEventReceiver` reading the
 transcript JSONL) or keep clipboard capture. Tracked as the future extension
 point in Background; no action this phase.
 
+## Sequencing (3 PRs)
+
+- **PR1 — shared + adapter (self-contained, nothing routes to it yet):**
+  `packages/shared/src/literals.ts`, `packages/shared/src/relay-host.ts`, lift
+  `extractJsonObjectCandidates` into `@ai-whisper/shared` (+ refactor
+  `parse-codex-output.ts` to import it), new `packages/adapter-cursor/**` (9
+  files) with unit tests for `parse-cursor-output` and `cursor-prompt`. TDD:
+  tests first.
+- **PR2 — CLI routing + turn-event exclusion + surface:**
+  `packages/cli/src/runtime/providers.ts` (4 branches),
+  `packages/cli/src/runtime/turn-event.ts` (exclude cursor),
+  `packages/cli/src/runtime/turn-events-config.ts` (recognized token only),
+  `packages/cli/src/create-cli.ts` (help text + choices),
+  `packages/cli/package.json` (adapter-cursor dep), root `tsconfig.json` (project
+  reference). Extends `runtime-provider-launch-config` and `turn-events-config`
+  tests.
+- **PR3 — skill install + workflow + docs:**
+  `packages/cli/src/commands/skill/install.ts` (homeForTarget ternary fix +
+  target/error/all edits), `packages/cli/src/commands/workflow/start.ts`
+  (partner-inference verification), `README.md`.
+
 ## Touch list (file-by-file)
 
-1. `packages/shared/src/literals.ts` — `agentTypes` += `"cursor"`.
-2. `packages/shared/src/relay-host.ts` — `relayTargets` += `"cursor"`.
-3. `packages/adapter-cursor/**` — new package (9 files).
-4. `packages/cli/src/runtime/providers.ts` — import + 4 `cursor` branches.
-5. `packages/cli/src/runtime/turn-event.ts` — exclude `"cursor"` from
-   `TurnEventProvider`.
-6. `packages/cli/src/runtime/turn-events-config.ts` — recognized-token only.
-7. `packages/cli/src/create-cli.ts` — help text + skill-install choices.
-8. `packages/cli/src/commands/workflow/start.ts` — partner inference (no flip
-   branch; verify error path).
-9. `packages/cli/src/commands/skill/install.ts` — target + `~/.cursor/skills`.
-10. `packages/cli/package.json` — adapter-cursor devDependency.
-11. Root `tsconfig.json` — project reference.
-12. `README.md` — supported agents, prerequisites, mount example.
+1. `packages/shared/src/literals.ts` — `agentTypes` += `"cursor"`. *(PR1)*
+2. `packages/shared/src/relay-host.ts` — `relayTargets` += `"cursor"`. *(PR1)*
+3. `packages/shared/**` — lift `extractJsonObjectCandidates` into shared +
+   re-export; refactor `adapter-codex/src/parse-codex-output.ts` to import it.
+   *(PR1)*
+4. `packages/adapter-cursor/**` — new package (9 files). *(PR1)*
+5. `packages/cli/src/runtime/providers.ts` — import + 4 `cursor` branches. *(PR2)*
+6. `packages/cli/src/runtime/turn-event.ts` — exclude `"cursor"` from
+   `TurnEventProvider`. *(PR2)*
+7. `packages/cli/src/runtime/turn-events-config.ts` — recognized-token only.
+   *(PR2)*
+8. `packages/cli/src/create-cli.ts` — help text + skill-install choices. *(PR2)*
+9. `packages/cli/package.json` — adapter-cursor devDependency. *(PR2)*
+10. Root `tsconfig.json` — project reference. *(PR2)*
+11. `packages/cli/src/commands/skill/install.ts` — homeForTarget ternary fix
+    (:46) + target + `~/.cursor/skills` + error/all edits. *(PR3)*
+12. `packages/cli/src/commands/workflow/start.ts` — partner inference (no flip
+    branch; verify error path). *(PR3)*
+13. `README.md` — supported agents, prerequisites, mount example. *(PR3)*
