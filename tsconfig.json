@@ -13,6 +13,7 @@
 			"@ai-whisper/adapter-codex": ["./packages/adapter-codex/src/index.ts"],
 			"@ai-whisper/adapter-claude": ["./packages/adapter-claude/src/index.ts"],
 			"@ai-whisper/adapter-antigravity": ["./packages/adapter-antigravity/src/index.ts"],
+			"@ai-whisper/adapter-cursor": ["./packages/adapter-cursor/src/index.ts"],
 			"@ai-whisper/adapter-ai-ezio": ["./packages/adapter-ai-ezio/src/index.ts"],
 			"@ai-ezio/harness": ["../ai-ezio/packages/harness/dist/index.d.ts"],
 			"@ai-ezio/protocol": ["../ai-ezio/packages/protocol/dist/index.d.ts"],

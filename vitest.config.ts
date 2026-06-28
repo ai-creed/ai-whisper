@@ -24,6 +24,10 @@ export default defineConfig({
 				__dirname,
 				"packages/adapter-claude/src/index.ts",
 			),
+			"@ai-whisper/adapter-cursor": resolve(
+				__dirname,
+				"packages/adapter-cursor/src/index.ts",
+			),
 			"@ai-ezio/harness": resolve(
 				__dirname,
 				"../ai-ezio/packages/harness/dist/index.js",

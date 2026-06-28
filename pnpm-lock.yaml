@@ -223,6 +223,9 @@ importers:
       '@ai-whisper/adapter-codex':
         specifier: workspace:*
         version: link:../adapter-codex
+      '@ai-whisper/adapter-cursor':
+        specifier: workspace:*
+        version: link:../adapter-cursor
       '@ai-whisper/broker':
         specifier: workspace:*
         version: link:../broker

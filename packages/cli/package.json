@@ -53,6 +53,7 @@
 		"@ai-whisper/adapter-antigravity": "workspace:*",
 		"@ai-whisper/adapter-claude": "workspace:*",
 		"@ai-whisper/adapter-codex": "workspace:*",
+		"@ai-whisper/adapter-cursor": "workspace:*",
 		"@ai-whisper/broker": "workspace:*",
 		"@ai-whisper/companion-core": "workspace:*",
 		"@ai-whisper/shared": "workspace:*",
