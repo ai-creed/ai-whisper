@@ -124,13 +124,14 @@ today. This is intentionally left as a clean seam; see "Open question" below.
 - `packages/shared/src/relay-host.ts`: add `"cursor"` to `relayTargets` →
   `["codex", "claude", "cursor", "ezio", "pull"]` so `@cursor` relay directives
   and `InteractiveSessionTarget` recognize it.
-- **Lift `extractJsonObjectCandidates`** out of
-  `packages/adapter-codex/src/parse-codex-output.ts` (currently a private helper)
-  into `@ai-whisper/shared` and re-export it. Both `parse-codex-output` and the
-  new `parse-cursor-output` import the single shared copy — avoids
-  `adapter-cursor` depending on `adapter-codex` and removes the duplication.
-  `parse-codex-output.ts` is refactored to import it (behavior unchanged; its
-  existing tests stay green as the regression guard).
+- **Clone `extractJsonObjectCandidates` into `@ai-whisper/shared`** as a new
+  exported helper, copying the logic verbatim from
+  `packages/adapter-codex/src/parse-codex-output.ts`. **`parse-cursor-output`
+  uses the shared copy; Codex's existing private copy is left untouched this
+  phase.** This intentionally accepts temporary duplication to keep PR1 from
+  touching Codex at all. Deduplicating Codex (refactoring it to import the shared
+  helper) is deferred to a later, separate change — see "Open question". The
+  shared helper gets its own focused unit test.
 
 ### 2. New package `packages/adapter-cursor`
 
@@ -333,6 +334,12 @@ the push-based turn-event path (adding a `CursorEventReceiver` reading the
 transcript JSONL) or keep clipboard capture. Tracked as the future extension
 point in Background; no action this phase.
 
+**Deferred Codex dedup.** PR1 clones `extractJsonObjectCandidates` into shared
+and leaves Codex's private copy in place (per the agreed scope: don't touch
+Codex). A later change should refactor `parse-codex-output.ts` to import the
+shared helper and delete its local copy, with Codex's existing suite as the
+regression guard. Until then, two identical copies coexist by design.
+
 ## Sequencing (3 PRs)
 
 - **PR1 — shared + adapter (self-contained, nothing routes to it yet):**
@@ -358,8 +365,8 @@ point in Background; no action this phase.
 
 1. `packages/shared/src/literals.ts` — `agentTypes` += `"cursor"`. *(PR1)*
 2. `packages/shared/src/relay-host.ts` — `relayTargets` += `"cursor"`. *(PR1)*
-3. `packages/shared/**` — lift `extractJsonObjectCandidates` into shared +
-   re-export; refactor `adapter-codex/src/parse-codex-output.ts` to import it.
+3. `packages/shared/**` — clone `extractJsonObjectCandidates` into shared +
+   export (+ unit test). Codex's private copy stays as-is; its dedup is deferred.
    *(PR1)*
 4. `packages/adapter-cursor/**` — new package (9 files). *(PR1)*
 5. `packages/cli/src/runtime/providers.ts` — import + 4 `cursor` branches. *(PR2)*
