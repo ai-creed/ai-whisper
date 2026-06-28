@@ -1,6 +1,6 @@
 # ai-whisper
 
-ai-whisper pairs two coding agents — mount any two of Claude, Codex, ezio, and agy — into a terminal-native pair that hand work back and forth under a single baton, so one agent implements while the other reviews, and a structured workflow drives the loop to a finished, reviewed deliverable without a human babysitting every round.
+ai-whisper pairs two coding agents — mount any two of Claude, Codex, ezio, agy, and Cursor — into a terminal-native pair that hand work back and forth under a single baton, so one agent implements while the other reviews, and a structured workflow drives the loop to a finished, reviewed deliverable without a human babysitting every round.
 
 ## Magic moment
 
@@ -12,6 +12,8 @@ whisper collab mount claude
 # terminal 2
 whisper collab mount codex
 ```
+
+Swap in any of the four agents — `whisper collab mount cursor` drives Cursor's `agent` CLI the same way, so e.g. `claude` + `cursor` is a valid pair.
 
 Then, from inside either agent's session, kick off a structured workflow against a spec — just ask in plain language:
 
@@ -52,10 +54,11 @@ It is **not** for:
 
 ## Prerequisites
 
-You pair any two of four agents — `claude`, `codex`, `ezio`, and `agy`. ai-whisper drives the *real* Claude, Codex, and Antigravity CLIs, so install and authenticate whichever of those you plan to mount first; `ezio` is protocol-native and ships with ai-whisper.
+You pair any two of five agents — `claude`, `codex`, `ezio`, `agy`, and `cursor`. ai-whisper drives the *real* Claude, Codex, Antigravity, and Cursor CLIs, so install and authenticate whichever of those you plan to mount first; `ezio` is protocol-native and ships with ai-whisper, so it needs no separate CLI.
 
 - **[Claude Code CLI](https://claude.com/claude-code)** — the `claude` command, signed in.
 - **[Codex CLI](https://github.com/openai/codex)** — the `codex` command, signed in.
+- **[Cursor CLI](https://cursor.com/cli)** — the `agent` command, signed in. (Override the binary with `AI_WHISPER_CURSOR_CMD` if it is on your PATH under a different name.)
 - **ezio** *(optional)* — bundled with ai-whisper; mount it with `whisper collab mount ezio`, no separate install.
 - **agy** *(optional)* — the `agy` command (Antigravity CLI), signed in. Mount it with `whisper collab mount agy` (manual-mount parity; no auto-launch via `collab start`).
 - **Node.js 22+**.
@@ -66,7 +69,7 @@ You pair any two of four agents — `claude`, `codex`, `ezio`, and `agy`. ai-whi
 
 ## Safety & permissions
 
-ai-whisper launches each agent in **full-autonomy mode** so the relay can drive it unattended — `claude --dangerously-skip-permissions` and `codex --dangerously-bypass-approvals-and-sandbox`. Inside the mounted workspace the agents read, write, and run commands without prompting. Point it at code you're willing to let two agents change autonomously, watch the run on the dashboard, and remember you are the final gatekeeper — review the result before you ship it. The deeper rationale is in [Concepts](docs/concepts.md).
+ai-whisper launches each agent in **full-autonomy mode** so the relay can drive it unattended — `claude --dangerously-skip-permissions`, `codex --dangerously-bypass-approvals-and-sandbox`, and `agent --force` (Cursor). Inside the mounted workspace the agents read, write, and run commands without prompting. Point it at code you're willing to let two agents change autonomously, watch the run on the dashboard, and remember you are the final gatekeeper — review the result before you ship it. The deeper rationale is in [Concepts](docs/concepts.md).
 
 ## Quickstart
 
@@ -123,7 +126,7 @@ A run that stops short usually **escalates** — it does not crash. When the eva
 
 ai-whisper is **not a swarm**. The agents never type at once — work moves by a single baton, one owner at a time. Mounted sessions are *real* agent sessions in your terminal — Claude or Codex CLIs, ezio, or agy — and those sessions are the source of truth. Autonomy is supervised: every handoff, verdict, and round is inspectable, and runs are resumable rather than fire-and-forget. Work is organized as structured workflows — explicit loops and state transitions, not a free-form chat.
 
-Claude, Codex, ezio, and agy are supported today — you mount any two of them; the architecture is provider-agnostic by design, so other coding-agent CLIs can be added behind the same relay.
+Claude, Codex, ezio, agy, and Cursor are supported today — you mount any two of them; the architecture is provider-agnostic by design, so other coding-agent CLIs can be added behind the same relay.
 
 For the full mental model, read [Concepts](docs/concepts.md).
 

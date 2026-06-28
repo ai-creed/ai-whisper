@@ -697,7 +697,7 @@ export function createCli(): Command {
 		)
 		.addOption(
 			new Option("--target <target>", "Agent install target")
-				.choices(["claude", "codex", "ezio", "agy", "all"])
+				.choices(["claude", "codex", "cursor", "ezio", "agy", "all"])
 				.default("all"),
 		)
 		.option("--force", "Overwrite existing skill destinations")

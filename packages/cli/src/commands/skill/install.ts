@@ -47,10 +47,21 @@ function homeForTarget(target: AgentType, fakeHome?: string): string {
 		// agy is Gemini-CLI-based; it reads skills from ~/.gemini/config/skills.
 		return path.join(home, ".gemini", "config", "skills");
 	}
-	return path.join(home, target === "claude" ? ".claude" : ".codex", "skills");
+	// Explicit per-agent dir. NB: the prior `claude ? .claude : .codex` ternary
+	// silently routed every non-claude target (including cursor) into ~/.codex;
+	// cursor needs its own ~/.cursor branch. VALID_TARGETS guards anything else.
+	const dir = target === "claude" ? ".claude" : target === "cursor" ? ".cursor" : ".codex";
+	return path.join(home, dir, "skills");
 }
 
-const VALID_TARGETS: ReadonlySet<SkillInstallTarget> = new Set(["claude", "codex", "ezio", "agy", "all"]);
+const VALID_TARGETS: ReadonlySet<SkillInstallTarget> = new Set([
+	"claude",
+	"codex",
+	"cursor",
+	"ezio",
+	"agy",
+	"all",
+]);
 
 export async function runSkillInstall(
 	input: SkillInstallInput,
@@ -61,7 +72,7 @@ export async function runSkillInstall(
 		// homeForTarget ternary would otherwise silently route any non-"claude"
 		// string into ~/.codex/skills.
 		throw new Error(
-			`Invalid --target value "${String(input.target)}". Expected one of: claude, codex, ezio, agy, all.`,
+			`Invalid --target value "${String(input.target)}". Expected one of: claude, codex, cursor, ezio, agy, all.`,
 		);
 	}
 	const bundledDir = input.bundledSkillsDir ?? defaultBundledSkillsDir();
@@ -81,7 +92,9 @@ export async function runSkillInstall(
 	}
 
 	const targets: AgentType[] =
-		input.target === "all" ? ["claude", "codex", "ezio", "agy"] : [input.target];
+		input.target === "all"
+			? ["claude", "codex", "cursor", "ezio", "agy"]
+			: [input.target];
 
 	const installedAt: string[] = [];
 
