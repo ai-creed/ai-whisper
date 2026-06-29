@@ -17,6 +17,13 @@ import type { CaptureHandbackResult } from "./capture-handback-text.js";
 // and return the turn's last assistant text as the handback. Selection is by
 // newest-mtime + turnText content-match — the project dir name is NOT a reversible
 // transform of cwd (long paths are truncated+hashed), so we never derive it.
+//
+// The relay can call this BEFORE Cursor has finished (its quiescence may fire
+// during the model's first-token latency). So the capture is gated on turn
+// COMPLETION: it waits for a `{"type":"turn_ended"}` marker after the last user
+// entry (or a stable assistant response) before extracting, and returns
+// `timed_out` while the turn is still in flight so the relay's retry ladder gives
+// Cursor more time rather than handing back an empty deliverable.
 // ---------------------------------------------------------------------------
 
 export interface TranscriptRef {
@@ -26,6 +33,7 @@ export interface TranscriptRef {
 
 type TranscriptEntry = {
 	role?: unknown;
+	type?: unknown;
 	message?: { content?: unknown };
 };
 
@@ -56,13 +64,22 @@ function textPartsOf(entry: TranscriptEntry): string[] {
 	return out;
 }
 
+export interface TurnAnalysis {
+	/** An assistant entry exists after the last user entry (the turn has begun). */
+	hasAssistant: boolean;
+	/** A `turn_ended` marker follows the last user entry (the turn is complete). */
+	turnEnded: boolean;
+	/** Joined assistant text after the last user entry (the turn's deliverable). */
+	text: string;
+}
+
 /**
- * The turn's deliverable: every `role:"assistant"` text block that appears AFTER
- * the last `role:"user"` entry, joined with newlines. Tool-call entries
- * contribute nothing; a tool-call-only turn yields "". Malformed lines are
- * skipped. (User pick: join all assistant text blocks, not just the last.)
+ * Classify the latest turn in a transcript: whether the agent has started
+ * responding, whether the turn has ended, and the assistant text it produced
+ * (every assistant text block after the last `user` entry, joined; tool-call
+ * entries contribute nothing). Malformed lines are skipped.
  */
-export function extractLastAssistantText(jsonl: string): string {
+export function analyzeTurn(jsonl: string): TurnAnalysis {
 	const entries: TranscriptEntry[] = [];
 	for (const line of jsonl.split("\n")) {
 		const trimmed = line.trim();
@@ -79,13 +96,30 @@ export function extractLastAssistantText(jsonl: string): string {
 		}
 	}
 
+	let hasAssistant = false;
+	let turnEnded = false;
 	const texts: string[] = [];
 	for (let i = lastUser + 1; i < entries.length; i += 1) {
 		const entry = entries[i];
-		if (!entry || entry.role !== "assistant") continue;
-		texts.push(...textPartsOf(entry));
+		if (!entry) continue;
+		if (entry.type === "turn_ended") {
+			turnEnded = true;
+			continue;
+		}
+		if (entry.role === "assistant") {
+			hasAssistant = true;
+			texts.push(...textPartsOf(entry));
+		}
 	}
-	return texts.join("\n").trim();
+	return { hasAssistant, turnEnded, text: texts.join("\n").trim() };
+}
+
+/**
+ * The turn's deliverable: the assistant text after the last user entry. Thin
+ * wrapper over analyzeTurn, retained for callers/tests that only want the text.
+ */
+export function extractLastAssistantText(jsonl: string): string {
+	return analyzeTurn(jsonl).text;
 }
 
 export interface ListCursorTranscriptsSeams {
@@ -150,6 +184,13 @@ export function listCursorTranscripts(
 	return refs;
 }
 
+function turnTextMatches(text: string, turn: string): boolean {
+	return computeContainment(text, turn) >= 0.8 || computeOrderedJaccard(text, turn) >= 0.6;
+}
+function turnTextScore(text: string, turn: string): number {
+	return Math.max(computeContainment(text, turn), computeOrderedJaccard(text, turn));
+}
+
 export interface SelectTranscriptInput {
 	refs: TranscriptRef[];
 	turnText: string;
@@ -159,10 +200,10 @@ export interface SelectTranscriptInput {
 
 /**
  * Among the newest `limit` transcripts, pick the one whose assistant text best
- * matches `turnText` (containment ≥ 0.8 or ordered-Jaccard ≥ 0.6, reusing the
- * relay's similarity helpers). With no turnText or no match above threshold,
- * fall back to the newest-mtime transcript that has assistant text. Returns null
- * when none of the candidates have assistant text.
+ * matches `turnText`; with no turnText or no match, fall back to the newest-mtime
+ * transcript that has assistant text. Returns null when none have assistant text.
+ * (Retained for direct use/tests; the live capture uses pickActiveTranscript so
+ * it can also see in-flight turns.)
  */
 export function selectTranscript(
 	input: SelectTranscriptInput,
@@ -179,20 +220,52 @@ export function selectTranscript(
 		let best: { path: string; text: string } | null = null;
 		let bestScore = -1;
 		for (const candidate of candidates) {
-			const containment = computeContainment(candidate.text, turn);
-			const jaccard = computeOrderedJaccard(candidate.text, turn);
-			const matches = containment >= 0.8 || jaccard >= 0.6;
-			const score = Math.max(containment, jaccard);
-			if (matches && score > bestScore) {
+			if (!turnTextMatches(candidate.text, turn)) continue;
+			const score = turnTextScore(candidate.text, turn);
+			if (score > bestScore) {
 				bestScore = score;
 				best = candidate;
 			}
 		}
 		if (best) return best;
 	}
-
-	// Newest-mtime fallback (candidates preserve refs' newest-first order).
 	return candidates[0] ?? null;
+}
+
+/**
+ * Pick the transcript representing the active turn — like selectTranscript, but
+ * returns the full analysis (including in-flight/empty turns) so the caller can
+ * wait for completion. Prefers a turnText-matching candidate with assistant text;
+ * otherwise the newest-mtime transcript (which is the one being written during a
+ * live turn).
+ */
+function pickActiveTranscript(
+	refs: TranscriptRef[],
+	turnText: string,
+	readFile: (path: string) => string,
+	limit: number,
+): { path: string; analysis: TurnAnalysis } | null {
+	const top = refs
+		.slice(0, limit)
+		.map((ref) => ({ path: ref.path, analysis: analyzeTurn(readFile(ref.path)) }));
+	if (top.length === 0) return null;
+
+	const turn = turnText.trim();
+	if (turn.length > 0) {
+		let best: { path: string; analysis: TurnAnalysis } | null = null;
+		let bestScore = -1;
+		for (const candidate of top) {
+			if (candidate.analysis.text.length === 0) continue;
+			if (!turnTextMatches(candidate.analysis.text, turn)) continue;
+			const score = turnTextScore(candidate.analysis.text, turn);
+			if (score > bestScore) {
+				bestScore = score;
+				best = candidate;
+			}
+		}
+		if (best) return best;
+	}
+	return top[0] ?? null;
 }
 
 function sha256(text: string): string {
@@ -208,21 +281,29 @@ export interface CaptureCursorHandbackInput {
 	listTranscripts?: () => TranscriptRef[];
 	readFile?: (path: string) => string;
 	sleep?: (ms: number) => Promise<void>;
-	settleAttempts?: number;
-	settleBackoffMs?: number;
+	/** Total poll budget; keep under the relay's capture watchdog (20s). */
+	budgetMs?: number;
+	pollIntervalMs?: number;
+	/** Identical reads (no turn_ended) to treat a turn as complete. */
+	stabilityPolls?: number;
 	selectLimit?: number;
 }
 
 /**
  * Quiescence-handback capture for a mounted Cursor session. Returns the same
- * CaptureHandbackResult shape the relay consumes for every provider, so nothing
- * in the relay/idle/retry logic changes.
+ * CaptureHandbackResult shape the relay consumes for every provider.
  *
- *  - new assistant text   → { captured, text }              (marker advanced)
- *  - duplicate / no prose → { captured, text: null }        (relay no-response)
- *  - no transcript at all → { degraded_pty_only, text: null } (relay PTY fallback)
+ * Polls the active transcript until the turn is COMPLETE — a `turn_ended` marker
+ * after the last user entry, or an assistant response that has been byte-stable
+ * across `stabilityPolls` reads (covers turns that don't emit the marker):
  *
- * A bounded settle poll covers a transcript that flushes a beat after quiescence.
+ *  - completed, new text   → { captured, text }              (marker advanced)
+ *  - completed, dup/empty  → { captured, text: null }        (relay no-response)
+ *  - still in flight        → { timed_out }                   (relay retry ladder)
+ *  - no transcript at all   → { degraded_pty_only }           (relay PTY fallback)
+ *
+ * Returning timed_out (rather than an empty handback) is the fix for Cursor's
+ * model latency: the relay retries instead of escalating on an empty deliverable.
  * Never throws into the relay.
  */
 export async function captureCursorHandback(
@@ -231,14 +312,18 @@ export async function captureCursorHandback(
 	const listTranscripts = input.listTranscripts ?? (() => listCursorTranscripts());
 	const readFile = input.readFile ?? ((path: string) => readFileSync(path, "utf8"));
 	const sleep = input.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
-	const attempts = input.settleAttempts ?? 3;
-	const backoffMs = input.settleBackoffMs ?? 300;
+	const budgetMs = input.budgetMs ?? 15_000;
+	const pollIntervalMs = input.pollIntervalMs ?? 500;
+	const stabilityPolls = input.stabilityPolls ?? 4;
 	const limit = input.selectLimit ?? 5;
+	const maxPolls = Math.max(1, Math.ceil(budgetMs / pollIntervalMs));
 
 	let sawTranscript = false;
+	let prevText: string | null = null;
+	let stableCount = 0;
 
-	for (let attempt = 0; attempt < attempts; attempt += 1) {
-		if (attempt > 0) await sleep(backoffMs);
+	for (let attempt = 0; attempt < maxPolls; attempt += 1) {
+		if (attempt > 0) await sleep(pollIntervalMs);
 
 		let refs: TranscriptRef[];
 		try {
@@ -246,33 +331,55 @@ export async function captureCursorHandback(
 		} catch {
 			refs = [];
 		}
-		if (refs.length === 0) continue;
-		sawTranscript = true;
-
-		let selected: { path: string; text: string } | null;
-		try {
-			selected = selectTranscript({ refs, turnText: input.turnText, readFile, limit });
-		} catch {
-			selected = null;
-		}
-		if (!selected || selected.text.length === 0) continue;
-
-		const hash = sha256(selected.text);
-		if (hash === input.lastDelivered.hash) {
-			// Same text as the last handback — the turn added no new prose (e.g. a
-			// re-poll, or tool-only work). Don't re-deliver; let the budget expire and
-			// report no-response.
+		if (refs.length === 0) {
+			prevText = null;
+			stableCount = 0;
 			continue;
 		}
-		input.lastDelivered.hash = hash;
-		return { status: "captured", text: selected.text, interferenceDetected: false };
+		sawTranscript = true;
+
+		let pick: { path: string; analysis: TurnAnalysis } | null;
+		try {
+			pick = pickActiveTranscript(refs, input.turnText, readFile, limit);
+		} catch {
+			pick = null;
+		}
+		if (!pick || !pick.analysis.hasAssistant) {
+			// Turn hasn't started yet — reset stability tracking and wait.
+			prevText = null;
+			stableCount = 0;
+			continue;
+		}
+
+		const { turnEnded, text } = pick.analysis;
+		if (text === prevText && text.length > 0) {
+			stableCount += 1;
+		} else {
+			prevText = text;
+			stableCount = 0;
+		}
+		const stableComplete = text.length > 0 && stableCount >= stabilityPolls;
+
+		if (turnEnded || stableComplete) {
+			if (text.length === 0) {
+				// Turn ended with no prose (e.g. tool-only) → no-response.
+				return { status: "captured", text: null, interferenceDetected: false };
+			}
+			const hash = sha256(text);
+			if (hash === input.lastDelivered.hash) {
+				// Same as the last handback (re-poll / repeated turn) → no-response.
+				return { status: "captured", text: null, interferenceDetected: false };
+			}
+			input.lastDelivered.hash = hash;
+			return { status: "captured", text, interferenceDetected: false };
+		}
+		// Assistant is mid-response — keep polling.
 	}
 
 	if (sawTranscript) {
-		// A transcript exists but produced no NEW assistant prose this turn →
-		// no-response. The relay applies its no_response_captured handling rather
-		// than re-delivering a stale turn.
-		return { status: "captured", text: null, interferenceDetected: false };
+		// The turn never completed within the budget — let the relay's retry ladder
+		// give Cursor more time rather than handing back an empty/partial deliverable.
+		return { status: "timed_out", text: null, interferenceDetected: false };
 	}
 	// Never found a transcript (not flushed / unreadable). Degrade to the PTY
 	// scrape so a transcript hiccup never stalls the run.
