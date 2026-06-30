@@ -203,3 +203,91 @@ export function findNonTerminalWorkflow(
 		? { workflowId: row.workflow_id, status: row.status as WorkflowStatus }
 		: null;
 }
+
+/**
+ * The statuses whose runs count toward accumulated "hands-off time saved".
+ * Single source of truth: both the SQL `IN (…)` filter and the `byStatus`
+ * buckets derive from this allowlist, so a future status is excluded by
+ * default until deliberately added here AND given a bucket below.
+ */
+export const COUNTED_STATUSES = ["done", "halted"] as const;
+
+export interface HandsOffStatusBucket {
+	count: number;
+	totalMs: number;
+}
+
+export interface HandsOffStats {
+	/** Σ hands-off elapsed across all counted runs, in ms. */
+	totalMs: number;
+	/** Number of counted runs (done + halted). */
+	count: number;
+	byStatus: {
+		done: HandsOffStatusBucket;
+		halted: HandsOffStatusBucket;
+	};
+	/** Earliest created_at among counted runs (ISO), or null when none. */
+	earliestKickoffAt: string | null;
+	/** Rows excluded because a timestamp could not be parsed. */
+	skipped: number;
+}
+
+/**
+ * Accumulated hands-off time saved: the summed wall-clock elapsed
+ * (`max(0, updated_at − created_at)`) of every counted (done/halted) workflow,
+ * across all collabs and all history. Computed on read — no persisted counter.
+ *
+ * `updated_at` is the run's end time: setWorkflowStatus stamps it at the
+ * transition into a terminal status. Caveat (accepted, YAGNI): a post-terminal
+ * updateWorkflowContext write would bump updated_at and slightly inflate that
+ * run's elapsed; in practice terminal runs are not context-written.
+ *
+ * Deterministic — only terminal runs are counted, so no "now" clock is needed.
+ */
+export function getHandsOffStats(db: Database.Database): HandsOffStats {
+	const placeholders = COUNTED_STATUSES.map(() => "?").join(",");
+	const rows = db
+		.prepare(
+			`SELECT status, created_at, updated_at
+			   FROM workflows
+			  WHERE status IN (${placeholders})`,
+		)
+		.all(...COUNTED_STATUSES) as Array<{
+		status: "done" | "halted";
+		created_at: string;
+		updated_at: string;
+	}>;
+
+	const stats: HandsOffStats = {
+		totalMs: 0,
+		count: 0,
+		byStatus: {
+			done: { count: 0, totalMs: 0 },
+			halted: { count: 0, totalMs: 0 },
+		},
+		earliestKickoffAt: null,
+		skipped: 0,
+	};
+
+	for (const row of rows) {
+		const start = Date.parse(row.created_at);
+		const end = Date.parse(row.updated_at);
+		if (Number.isNaN(start) || Number.isNaN(end)) {
+			stats.skipped += 1;
+			continue;
+		}
+		const elapsed = Math.max(0, end - start);
+		stats.totalMs += elapsed;
+		stats.count += 1;
+		stats.byStatus[row.status].count += 1;
+		stats.byStatus[row.status].totalMs += elapsed;
+		if (
+			stats.earliestKickoffAt === null ||
+			row.created_at < stats.earliestKickoffAt
+		) {
+			stats.earliestKickoffAt = row.created_at;
+		}
+	}
+
+	return stats;
+}
