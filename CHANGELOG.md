@@ -5,6 +5,13 @@ All notable changes to the `ai-whisper` package are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-06-30
+
+### Added
+
+- **OpenAI (and OpenAI-compatible) evaluator provider**: point the LLM evaluator that gates every workflow at OpenAI — or any OpenAI-compatible backend (Azure OpenAI, OpenRouter, vLLM, LM Studio, …) via an optional `baseURL`. Set `provider`/`fallback` to `"openai"`; it needs an `OPENAI_API_KEY` (in `~/.ai-whisper/auth.json` or the environment) and an explicit `model` — there is no default, because with `baseURL` in play the correct model id depends entirely on the backend, so a missing model is reported at kickoff as `invalid_config` and a missing key as `missing_openai_key`. The provider requests JSON via the SDK's structured output (a non-strict `json_schema`) while the existing regex-extraction + zod validation remains the authoritative validator, so a backend that ignores `response_format` still degrades gracefully. New env knobs: `AI_WHISPER_EVALUATOR_OPENAI_MODEL`, `AI_WHISPER_EVALUATOR_OPENAI_BASE_URL`.
+- **Agent-CLI evaluator provider — reuse an already-mounted CLI as the evaluator**: set `provider`/`fallback` to `"agent-cli"` to run one of your mounted agent CLIs (`claude`/`codex`/`agy`) in non-interactive mode as the evaluator, with **no separate API key** — it reuses that CLI's own auth and whatever model it is configured to use. `agent` is required (no default); each agent ships a validated `-p`/print preset (probed against the installed CLIs — `agy` v1.0.13 confirmed) plus field-by-field `executable`/`execArgs`/`promptVia` overrides. A spawn failure or non-zero exit classifies as provider-unavailable and engages the configured fallback; a missing executable on `PATH` is reported at kickoff as `agent_cli_unavailable`, and a missing agent as `invalid_config`. New env knob: `AI_WHISPER_EVALUATOR_AGENT_CLI_AGENT`. `whisper env --json` reports the new statuses, and there is no database migration. See [Evaluator configuration](docs/evaluator-configuration.md).
+
 ## [0.9.0] - 2026-06-28
 
 ### Added
@@ -702,6 +709,7 @@ Requires `@ai-creed/ai-ezio` ≥ 0.2.0-beta.4 (the `@ai-ezio/surface` slash seam
   (Claude + Codex) driven by structured workflows, with npm metadata
   (description, repository, homepage).
 
+[0.10.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.10.0
 [0.9.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.9.0
 [0.8.1]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.8.1
 [0.8.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.8.0
