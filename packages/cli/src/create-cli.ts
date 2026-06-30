@@ -14,6 +14,7 @@ import {
 } from "./commands/collab/start.js";
 import { runCollabStatus } from "./commands/collab/status.js";
 import { runCollabStop } from "./commands/collab/stop.js";
+import { runCollabPurge } from "./commands/collab/purge.js";
 import { runCollabTell } from "./commands/collab/tell.js";
 import { spawnBrokerDaemon } from "./runtime/broker-daemon.js";
 import {
@@ -23,7 +24,10 @@ import {
 } from "./runtime/launcher.js";
 import { isPortFree } from "./runtime/port-utils.js";
 import { getSharedSqlitePath } from "./runtime/state-root.js";
-import { parseCallerAgent, runWorkflowStart } from "./commands/workflow/start.js";
+import {
+	parseCallerAgent,
+	runWorkflowStart,
+} from "./commands/workflow/start.js";
 import { runWorkflowList } from "./commands/workflow/list.js";
 import { runWorkflowInspect } from "./commands/workflow/inspect.js";
 import { runWorkflowResume } from "./commands/workflow/resume.js";
@@ -75,8 +79,10 @@ export function createCli(): Command {
 		.option("--workspace <path>", "Workspace root", process.cwd())
 		.option("--no-tmux", "Disable tmux even if available")
 		.option("--no-launch", "Start broker only, do not launch agent terminals")
-		.option("--port <port>", "Explicit port to bind for the broker daemon", (v) =>
-			Number.parseInt(v, 10),
+		.option(
+			"--port <port>",
+			"Explicit port to bind for the broker daemon",
+			(v) => Number.parseInt(v, 10),
 		)
 		.action(async (opts: StartOpts) => {
 			const launchMode = chooseLaunchMode({
@@ -126,9 +132,7 @@ export function createCli(): Command {
 				});
 			}
 
-			console.log(
-				`Collab started: ${r.collabId} (launch: ${launchMode})`,
-			);
+			console.log(`Collab started: ${r.collabId} (launch: ${launchMode})`);
 			if (launchMode === "none") {
 				console.log("Collab started (no-launch mode).");
 			}
@@ -143,7 +147,10 @@ export function createCli(): Command {
 	collab
 		.command("status")
 		.description("Show current collaboration status")
-		.option("--collab <id>", "Inspect a specific collab id (defaults to the active collab for cwd)")
+		.option(
+			"--collab <id>",
+			"Inspect a specific collab id (defaults to the active collab for cwd)",
+		)
 		.option("--json", "Emit machine-readable JSON instead of text")
 		.action((opts: { collab?: string; json?: boolean }) => {
 			const output = runCollabStatus({
@@ -157,8 +164,14 @@ export function createCli(): Command {
 	collab
 		.command("tell")
 		.description("Send an instruction to an agent")
-		.requiredOption("--target <agent>", "Target agent: codex, claude, ezio, or agy")
-		.option("--collab <id>", "Send to a specific collab id (defaults to the active collab for cwd)")
+		.requiredOption(
+			"--target <agent>",
+			"Target agent: codex, claude, ezio, or agy",
+		)
+		.option(
+			"--collab <id>",
+			"Send to a specific collab id (defaults to the active collab for cwd)",
+		)
 		.option("--action <action>", "Explicit requested action")
 		.option(
 			"--artifact <path>",
@@ -198,9 +211,14 @@ export function createCli(): Command {
 	collab
 		.command("recover")
 		.description("Recover the current workspace collab after broker loss")
-		.option("--collab <id>", "Recover a specific collab id (defaults to the active collab for cwd)")
-		.option("--port <port>", "Explicit port to bind for the recovered daemon", (v) =>
-			Number.parseInt(v, 10),
+		.option(
+			"--collab <id>",
+			"Recover a specific collab id (defaults to the active collab for cwd)",
+		)
+		.option(
+			"--port <port>",
+			"Explicit port to bind for the recovered daemon",
+			(v) => Number.parseInt(v, 10),
 		)
 		.action(async (opts: { collab?: string; port?: number }) => {
 			const result = await runCollabRecover({
@@ -228,29 +246,41 @@ export function createCli(): Command {
 
 	collab
 		.command("reconnect")
-		.description("Reconnect a remembered role after broker recovery (mount mode)")
+		.description(
+			"Reconnect a remembered role after broker recovery (mount mode)",
+		)
 		.argument("<agent>", "Target agent: codex, claude, ezio, or agy")
 		.option("--workspace <path>", "Workspace root", process.cwd())
-		.option("--collab <id>", "Target a specific collab id (defaults to the active collab for cwd)")
-		.action(async (target: string, opts: WorkspaceOpts & { collab?: string }) => {
-			await runCollabReconnect({
-				workspaceRoot: opts.workspace,
-				...(opts.collab ? { collabIdOverride: opts.collab } : {}),
-				target: target as AgentType,
-				now: new Date().toISOString(),
-			});
-		});
+		.option(
+			"--collab <id>",
+			"Target a specific collab id (defaults to the active collab for cwd)",
+		)
+		.action(
+			async (target: string, opts: WorkspaceOpts & { collab?: string }) => {
+				await runCollabReconnect({
+					workspaceRoot: opts.workspace,
+					...(opts.collab ? { collabIdOverride: opts.collab } : {}),
+					target: target as AgentType,
+					now: new Date().toISOString(),
+				});
+			},
+		);
 
 	collab
 		.command("mount")
-		.description("Mount the current terminal as the managed session surface for a role")
+		.description(
+			"Mount the current terminal as the managed session surface for a role",
+		)
 		.argument("<agent>", "Target agent: codex, claude, ezio, or agy")
 		.argument(
 			"[passthroughArgs...]",
 			"Args forwarded after `--` to the agent binary spawn (e.g. `mount codex -- --full-auto`)",
 		)
 		.option("--workspace <path>", "Workspace root", process.cwd())
-		.option("--collab <id>", "Target a specific collab id (defaults to the active collab for cwd)")
+		.option(
+			"--collab <id>",
+			"Target a specific collab id (defaults to the active collab for cwd)",
+		)
 		.option(
 			"--turn-events <providers>",
 			"Scope the push turn-completion event path to the given providers (comma-separated providers with turn-end hooks: claude,codex,agy), or disable it with `off`/`none` to revert to pure clipboard capture. Overrides AI_WHISPER_TURN_EVENTS. Default: on (claude,codex,agy).",
@@ -264,7 +294,9 @@ export function createCli(): Command {
 				await runCollabMount({
 					workspaceRoot: opts.workspace,
 					...(opts.collab ? { collabIdOverride: opts.collab } : {}),
-					...(opts.turnEvents !== undefined ? { turnEventsFlag: opts.turnEvents } : {}),
+					...(opts.turnEvents !== undefined
+						? { turnEventsFlag: opts.turnEvents }
+						: {}),
 					target,
 					passthroughArgs,
 					now: new Date().toISOString(),
@@ -275,7 +307,10 @@ export function createCli(): Command {
 	collab
 		.command("inspect")
 		.description("Inspect the active collab thread")
-		.option("--collab <id>", "Inspect a specific collab id (defaults to the active collab for cwd)")
+		.option(
+			"--collab <id>",
+			"Inspect a specific collab id (defaults to the active collab for cwd)",
+		)
 		.option("--watch", "Continuously redraw the active-thread operator view")
 		.option(
 			"--captures [chainId]",
@@ -286,14 +321,12 @@ export function createCli(): Command {
 			"Show recent evaluator-diagnostics rows. Pass a chain id to filter, or 'all' for the full history. Mutually exclusive with --captures.",
 		)
 		.action(
-			async (
-				opts: {
-					collab?: string;
-					watch?: boolean;
-					captures?: boolean | string;
-					verdicts?: boolean | string;
-				},
-			) => {
+			async (opts: {
+				collab?: string;
+				watch?: boolean;
+				captures?: boolean | string;
+				verdicts?: boolean | string;
+			}) => {
 				const capturesArg: true | string | undefined =
 					opts.captures === undefined || opts.captures === false
 						? undefined
@@ -323,8 +356,13 @@ export function createCli(): Command {
 
 	collab
 		.command("relay-monitor")
-		.description("Run the relay monitor in the current terminal (renders the relay conversation stream)")
-		.option("--collab <id>", "Monitor a specific collab id (defaults to the active collab for cwd)")
+		.description(
+			"Run the relay monitor in the current terminal (renders the relay conversation stream)",
+		)
+		.option(
+			"--collab <id>",
+			"Monitor a specific collab id (defaults to the active collab for cwd)",
+		)
 		.action(async (opts: { collab?: string }) => {
 			await runCollabRelayMonitor({
 				cwd: process.cwd(),
@@ -334,7 +372,9 @@ export function createCli(): Command {
 
 	collab
 		.command("dashboard")
-		.description("Full-screen dashboard: live wall of recently-active runs + per-run inspector")
+		.description(
+			"Full-screen dashboard: live wall of recently-active runs + per-run inspector",
+		)
 		.option(
 			"--window <duration>",
 			"Eligible-collab activity window. Accepts ms or Ns/Nm/Nh/Nd (e.g. 45s, 30m, 2h, 1d), or 'all' for no limit. Default: 30m.",
@@ -403,6 +443,45 @@ export function createCli(): Command {
 			}
 		});
 
+	collab
+		.command("purge")
+		.description("Remove stale collabs (no live process) across all workspaces")
+		.option("--dry-run", "Classify and print only; never prompt or delete")
+		.option("-y, --yes", "Skip the confirmation prompt and delete")
+		.option(
+			"--force",
+			"Also purge collabs with a non-terminal (resumable) workflow",
+		)
+		.option("--collab <id>", "Limit the sweep to a single collab id")
+		.option("--workspace <path>", "Limit the sweep to a single workspace root")
+		.option("--json", "Emit machine-readable JSON instead of the table")
+		.action(
+			async (opts: {
+				dryRun?: boolean;
+				yes?: boolean;
+				force?: boolean;
+				collab?: string;
+				workspace?: string;
+				json?: boolean;
+			}) => {
+				if (opts.collab && opts.workspace) {
+					console.error("--collab and --workspace are mutually exclusive.");
+					process.exitCode = 1;
+					return;
+				}
+				const result = await runCollabPurge({
+					cwd: process.cwd(),
+					...(opts.dryRun ? { dryRun: opts.dryRun } : {}),
+					...(opts.yes ? { yes: opts.yes } : {}),
+					...(opts.force ? { force: opts.force } : {}),
+					...(opts.json ? { json: opts.json } : {}),
+					...(opts.collab ? { collabId: opts.collab } : {}),
+					...(opts.workspace ? { workspace: opts.workspace } : {}),
+				});
+				process.exitCode = result.exitCode;
+			},
+		);
+
 	const workflow = cli
 		.command("workflow")
 		.description("Manage AI agent workflows");
@@ -410,21 +489,34 @@ export function createCli(): Command {
 	workflow
 		.command("start")
 		.description("Start a new workflow")
-		.requiredOption("--type <type>", "Workflow type (e.g. spec-driven-development)")
+		.requiredOption(
+			"--type <type>",
+			"Workflow type (e.g. spec-driven-development)",
+		)
 		.requiredOption("--spec <path>", "Spec file path")
-		.option("--implementer <agent>", "Implementer agent: claude, codex, ezio, or agy (defaults to the workflow type's defaultImplementer)")
-		.option("--reviewer <agent>", "Reviewer agent: claude, codex, ezio, or agy (defaults to the workflow type's defaultReviewer)")
+		.option(
+			"--implementer <agent>",
+			"Implementer agent: claude, codex, ezio, or agy (defaults to the workflow type's defaultImplementer)",
+		)
+		.option(
+			"--reviewer <agent>",
+			"Reviewer agent: claude, codex, ezio, or agy (defaults to the workflow type's defaultReviewer)",
+		)
 		.option("--name <name>", "Optional workflow display name")
 		.option("--workspace <path>", "Workspace root", process.cwd())
 		.action(
-			async (opts: WorkspaceOpts & {
-				type: string;
-				spec: string;
-				implementer?: AgentType;
-				reviewer?: AgentType;
-				name?: string;
-			}) => {
-				const { broker, collabId } = await connectToWorkspaceBroker({ cwd: opts.workspace });
+			async (
+				opts: WorkspaceOpts & {
+					type: string;
+					spec: string;
+					implementer?: AgentType;
+					reviewer?: AgentType;
+					name?: string;
+				},
+			) => {
+				const { broker, collabId } = await connectToWorkspaceBroker({
+					cwd: opts.workspace,
+				});
 				try {
 					const result = await runWorkflowStart({
 						broker,
@@ -452,7 +544,9 @@ export function createCli(): Command {
 		.description("List workflows for the active collab")
 		.option("--workspace <path>", "Workspace root", process.cwd())
 		.action(async (opts: WorkspaceOpts) => {
-			const { broker, collabId } = await connectToWorkspaceBroker({ cwd: opts.workspace });
+			const { broker, collabId } = await connectToWorkspaceBroker({
+				cwd: opts.workspace,
+			});
 			try {
 				const list = runWorkflowList({ broker, collabId });
 				if (list.length === 0) {
@@ -473,7 +567,9 @@ export function createCli(): Command {
 		.argument("<workflowId>", "Workflow ID")
 		.option("--workspace <path>", "Workspace root", process.cwd())
 		.action(async (workflowId: string, opts: WorkspaceOpts) => {
-			const { broker } = await connectToWorkspaceBroker({ cwd: opts.workspace });
+			const { broker } = await connectToWorkspaceBroker({
+				cwd: opts.workspace,
+			});
 			try {
 				const result = await runWorkflowInspect({ broker, workflowId });
 				console.log(JSON.stringify(result, null, 2));
@@ -488,9 +584,15 @@ export function createCli(): Command {
 		.argument("<workflowId>", "Workflow ID")
 		.option("--workspace <path>", "Workspace root", process.cwd())
 		.action(async (workflowId: string, opts: WorkspaceOpts) => {
-			const { broker } = await connectToWorkspaceBroker({ cwd: opts.workspace });
+			const { broker } = await connectToWorkspaceBroker({
+				cwd: opts.workspace,
+			});
 			try {
-				await runWorkflowPause({ broker, workflowId, now: new Date().toISOString() });
+				await runWorkflowPause({
+					broker,
+					workflowId,
+					now: new Date().toISOString(),
+				});
 				console.log(`Workflow paused: ${workflowId}`);
 			} finally {
 				await broker.stop();
@@ -502,10 +604,18 @@ export function createCli(): Command {
 		.description("Resume a paused or halted workflow")
 		.argument("<workflowId>", "Workflow ID")
 		.option("--workspace <path>", "Workspace root", process.cwd())
-		.option("--message <note>", "Operator note delivered to the agents on resume")
+		.option(
+			"--message <note>",
+			"Operator note delivered to the agents on resume",
+		)
 		.action(
-			async (workflowId: string, opts: WorkspaceOpts & { message?: string }) => {
-				const { broker } = await connectToWorkspaceBroker({ cwd: opts.workspace });
+			async (
+				workflowId: string,
+				opts: WorkspaceOpts & { message?: string },
+			) => {
+				const { broker } = await connectToWorkspaceBroker({
+					cwd: opts.workspace,
+				});
 				try {
 					await runWorkflowResume({
 						broker,
@@ -526,9 +636,15 @@ export function createCli(): Command {
 		.argument("<workflowId>", "Workflow ID")
 		.option("--workspace <path>", "Workspace root", process.cwd())
 		.action(async (workflowId: string, opts: WorkspaceOpts) => {
-			const { broker } = await connectToWorkspaceBroker({ cwd: opts.workspace });
+			const { broker } = await connectToWorkspaceBroker({
+				cwd: opts.workspace,
+			});
 			try {
-				await runWorkflowCancel({ broker, workflowId, now: new Date().toISOString() });
+				await runWorkflowCancel({
+					broker,
+					workflowId,
+					now: new Date().toISOString(),
+				});
 				console.log(`Workflow canceled: ${workflowId}`);
 			} finally {
 				await broker.stop();
@@ -558,20 +674,15 @@ export function createCli(): Command {
 				.default("all"),
 		)
 		.option("--force", "Overwrite existing skill destinations")
-		.action(
-			async (opts: {
-				target: AgentType | "all";
-				force?: boolean;
-			}) => {
-				const result = await runSkillInstall({
-					target: opts.target,
-					...(opts.force ? { force: true } : {}),
-				});
-				for (const p of result.installedAt) {
-					console.log(`Installed: ${p}`);
-				}
-			},
-		);
+		.action(async (opts: { target: AgentType | "all"; force?: boolean }) => {
+			const result = await runSkillInstall({
+				target: opts.target,
+				...(opts.force ? { force: true } : {}),
+			});
+			for (const p of result.installedAt) {
+				console.log(`Installed: ${p}`);
+			}
+		});
 
 	cli
 		.command("env")
