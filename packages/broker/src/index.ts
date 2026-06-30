@@ -140,7 +140,10 @@ export {
 } from "./storage/repositories/collab-repository.js";
 export {
 	findNonTerminalWorkflow,
+	getHandsOffStats,
 	type WorkflowStatus,
+	type HandsOffStats,
+	type HandsOffStatusBucket,
 } from "./storage/repositories/workflow-repository.js";
 export type {
 	RelayHandoffLogRow,

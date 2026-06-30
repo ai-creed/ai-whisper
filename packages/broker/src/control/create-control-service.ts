@@ -39,7 +39,11 @@ import {
 	insertCollab,
 	getCollab,
 } from "../storage/repositories/collab-repository.js";
-import { getWorkflowById } from "../storage/repositories/workflow-repository.js";
+import {
+	getWorkflowById,
+	getHandsOffStats as getHandsOffStatsRepo,
+	type HandsOffStats,
+} from "../storage/repositories/workflow-repository.js";
 import {
 	captureWorkspaceSnapshotSync,
 	diffChangedFilesSince,
@@ -1134,6 +1138,9 @@ export function createControlService(db: Database.Database, events: BrokerEventB
 				sinceMs,
 				...(now !== undefined ? { now } : {}),
 			});
+		},
+		getHandsOffStats(): HandsOffStats {
+			return getHandsOffStatsRepo(db);
 		},
 		listRunCostRows(collabId: string, workflowId: string | null): RunCostRow[] {
 			return listRunCostRowsRepo(db, { collabId, workflowId });
