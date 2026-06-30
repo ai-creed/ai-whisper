@@ -89,6 +89,81 @@ export function listCollabIdTables(db: Database.Database): string[] {
 	);
 }
 
+/**
+ * Total rows a collab owns across every scoped table: the introspected
+ * collab_id tables, the two child-via-parent tables, the special lease column,
+ * and the collab row itself. Display/JSON only.
+ */
+export function countCollabRows(
+	db: Database.Database,
+	collabId: string,
+): number {
+	let total = 0;
+	for (const table of listCollabIdTables(db)) {
+		total += (
+			db
+				.prepare(`SELECT COUNT(*) AS n FROM "${table}" WHERE collab_id = ?`)
+				.get(collabId) as { n: number }
+		).n;
+	}
+	total += (
+		db
+			.prepare(
+				"SELECT COUNT(*) AS n FROM workflow_phases WHERE workflow_id IN (SELECT workflow_id FROM workflows WHERE collab_id = ?)",
+			)
+			.get(collabId) as { n: number }
+	).n;
+	total += (
+		db
+			.prepare(
+				"SELECT COUNT(*) AS n FROM work_item_cancellation WHERE work_item_id IN (SELECT work_item_id FROM work_item WHERE collab_id = ?)",
+			)
+			.get(collabId) as { n: number }
+	).n;
+	total += (
+		db
+			.prepare(
+				"SELECT COUNT(*) AS n FROM clipboard_capture_lease WHERE holder_collab_id = ?",
+			)
+			.get(collabId) as { n: number }
+	).n;
+	total += (
+		db
+			.prepare("SELECT COUNT(*) AS n FROM collab WHERE collab_id = ?")
+			.get(collabId) as { n: number }
+	).n;
+	return total;
+}
+
+/**
+ * Remove a collab and EVERY row it owns. Runtime FK cascade is OFF (spec §2.1),
+ * so this is an explicit multi-table delete. The CALLER owns the transaction;
+ * this function does not BEGIN/COMMIT. Order matters only so the child-via-parent
+ * subqueries still see their parent rows before the loop removes the parents.
+ */
+export function deleteCollabCascade(
+	db: Database.Database,
+	collabId: string,
+): void {
+	// (2) child-via-parent first, while parents (workflows / work_item) still exist.
+	db.prepare(
+		"DELETE FROM workflow_phases WHERE workflow_id IN (SELECT workflow_id FROM workflows WHERE collab_id = ?)",
+	).run(collabId);
+	db.prepare(
+		"DELETE FROM work_item_cancellation WHERE work_item_id IN (SELECT work_item_id FROM work_item WHERE collab_id = ?)",
+	).run(collabId);
+	// (1) every collab_id table (excludes collab + sqlite_%).
+	for (const table of listCollabIdTables(db)) {
+		db.prepare(`DELETE FROM "${table}" WHERE collab_id = ?`).run(collabId);
+	}
+	// (3) special column.
+	db.prepare(
+		"DELETE FROM clipboard_capture_lease WHERE holder_collab_id = ?",
+	).run(collabId);
+	// (4) the collab row, last.
+	db.prepare("DELETE FROM collab WHERE collab_id = ?").run(collabId);
+}
+
 export function getCollab(
 	db: Database.Database,
 	collabId: string,

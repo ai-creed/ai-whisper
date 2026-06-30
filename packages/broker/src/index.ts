@@ -134,6 +134,8 @@ export {
 export {
 	listAllCollabs,
 	listCollabIdTables,
+	countCollabRows,
+	deleteCollabCascade,
 	type CollabListRow,
 } from "./storage/repositories/collab-repository.js";
 export type {
