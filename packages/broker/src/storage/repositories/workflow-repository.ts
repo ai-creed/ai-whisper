@@ -1,7 +1,12 @@
 import type Database from "better-sqlite3";
 import type { AgentType } from "@ai-whisper/shared";
 
-export type WorkflowStatus = "running" | "paused" | "halted" | "done" | "canceled";
+export type WorkflowStatus =
+	| "running"
+	| "paused"
+	| "halted"
+	| "done"
+	| "canceled";
 
 export type WorkflowRecord = {
 	workflowId: string;
@@ -42,7 +47,10 @@ function rowToRecord(row: {
 		status: row.status as WorkflowStatus,
 		currentPhaseIndex: row.current_phase_index,
 		haltReason: row.halt_reason,
-		workflowContext: JSON.parse(row.workflow_context) as Record<string, unknown>,
+		workflowContext: JSON.parse(row.workflow_context) as Record<
+			string,
+			unknown
+		>,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	};
@@ -136,7 +144,9 @@ export function updateWorkflowContext(
 ): void {
 	const existing = getWorkflowById(db, input.workflowId);
 	if (!existing) {
-		throw new Error(`updateWorkflowContext: unknown workflowId ${input.workflowId}`);
+		throw new Error(
+			`updateWorkflowContext: unknown workflowId ${input.workflowId}`,
+		);
 	}
 	const merged = { ...existing.workflowContext, ...input.patch };
 	db.prepare(
@@ -169,3 +179,27 @@ export function countActiveWorkflowsForCollab(
 
 /** @deprecated use countActiveWorkflowsForCollab — kept until all callers migrate. */
 export const countRunningWorkflowsForCollab = countActiveWorkflowsForCollab;
+
+/**
+ * The most-recent workflow for a collab whose status is non-terminal
+ * (NOT IN ('done','canceled')) — a running/paused/halted run that recover+resume
+ * could revive. Returns null when none. Drives purge's PROTECTED bucket and its
+ * display (workflow id + status).
+ */
+export function findNonTerminalWorkflow(
+	db: Database.Database,
+	collabId: string,
+): { workflowId: string; status: WorkflowStatus } | null {
+	const row = db
+		.prepare(
+			`SELECT workflow_id, status
+			   FROM workflows
+			  WHERE collab_id = ? AND status NOT IN ('done', 'canceled')
+			  ORDER BY created_at DESC
+			  LIMIT 1`,
+		)
+		.get(collabId) as { workflow_id: string; status: string } | undefined;
+	return row
+		? { workflowId: row.workflow_id, status: row.status as WorkflowStatus }
+		: null;
+}

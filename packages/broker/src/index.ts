@@ -138,6 +138,10 @@ export {
 	deleteCollabCascade,
 	type CollabListRow,
 } from "./storage/repositories/collab-repository.js";
+export {
+	findNonTerminalWorkflow,
+	type WorkflowStatus,
+} from "./storage/repositories/workflow-repository.js";
 export type {
 	RelayHandoffLogRow,
 	RelayHandoffWorkflowFilter,
