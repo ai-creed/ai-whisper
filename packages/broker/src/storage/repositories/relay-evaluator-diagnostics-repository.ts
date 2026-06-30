@@ -19,7 +19,7 @@ export type RelayEvaluatorDiagnosticRecord = {
 	handoffStep: "review" | "fix" | "implement" | "execute" | null;
 	attemptKind: "primary" | "fallback";
 	callGroupId: string;
-	provider: "anthropic" | "ollama";
+	provider: "anthropic" | "ollama" | "openai" | "agent-cli";
 	outcome: EvaluatorOutcome;
 	verdict: string | null;
 	confidence: number | null;
@@ -74,7 +74,7 @@ function rowToRecord(row: Row): RelayEvaluatorDiagnosticRecord {
 		handoffStep: row.handoff_step as RelayEvaluatorDiagnosticRecord["handoffStep"],
 		attemptKind: row.attempt_kind as "primary" | "fallback",
 		callGroupId: row.call_group_id,
-		provider: row.provider as "anthropic" | "ollama",
+		provider: row.provider as "anthropic" | "ollama" | "openai" | "agent-cli",
 		outcome: row.outcome as EvaluatorOutcome,
 		verdict: row.verdict,
 		confidence: row.confidence,

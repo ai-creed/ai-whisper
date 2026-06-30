@@ -240,6 +240,18 @@ describe("relay-evaluator-diagnostics repository", () => {
 		});
 	});
 
+	it("round-trips the new openai and agent-cli provider literals through the TEXT column", () => {
+		const broker = newBroker();
+		insertEvaluatorDiagnostic(broker.db, sampleRow({ provider: "openai", handoffId: "handoff_openai", evaluatorId: "eval_openai_1" }));
+		insertEvaluatorDiagnostic(broker.db, sampleRow({ provider: "agent-cli", handoffId: "handoff_agentcli", evaluatorId: "eval_agentcli_1" }));
+
+		const openai = listEvaluatorDiagnosticsByHandoff(broker.db, "handoff_openai");
+		const agentCli = listEvaluatorDiagnosticsByHandoff(broker.db, "handoff_agentcli");
+
+		expect(openai[0]?.provider).toBe("openai");
+		expect(agentCli[0]?.provider).toBe("agent-cli");
+	});
+
 	it("deleteOlderThan removes rows strictly older than the cutoff", () => {
 		const broker = newBroker();
 		try {

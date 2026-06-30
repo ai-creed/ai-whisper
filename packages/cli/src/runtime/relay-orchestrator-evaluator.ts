@@ -84,7 +84,7 @@ export type EvaluatorCallEvent = {
 	callGroupId: string;
 	context: ObserverContext;
 	branch: "legacy" | "review" | "delivered" | "execution";
-	provider: "anthropic" | "ollama";
+	provider: "anthropic" | "ollama" | "openai" | "agent-cli";
 	attemptKind: "primary" | "fallback";
 	outcome: "ok" | "parse_error" | "validation_error" | "provider_unavailable" | "unknown_error";
 	latencyMs: number;
@@ -654,7 +654,7 @@ export function createRelayOrchestratorEvaluator(input: {
 		async function runOne(
 			attemptKind: "primary" | "fallback",
 			runner: (p: EvaluatorAnyInput, b: Branch<EvaluatorAnyVerdict>) => Promise<CallResult>,
-			provider: "anthropic" | "ollama",
+			provider: "anthropic" | "ollama" | "openai" | "agent-cli",
 		): Promise<
 			| { verdict: EvaluatorAnyVerdict }
 			| {

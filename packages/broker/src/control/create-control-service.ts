@@ -1298,7 +1298,7 @@ export function createControlService(db: Database.Database, events: BrokerEventB
 			handoffStep: "review" | "fix" | "implement" | "execute" | null;
 			attemptKind: "primary" | "fallback";
 			callGroupId: string;
-			provider: "anthropic" | "ollama";
+			provider: "anthropic" | "ollama" | "openai" | "agent-cli";
 			outcome: "ok" | "parse_error" | "validation_error" | "provider_unavailable" | "unknown_error";
 			verdict: string | null;
 			confidence: number | null;
