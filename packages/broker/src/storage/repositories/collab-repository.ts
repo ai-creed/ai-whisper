@@ -62,6 +62,33 @@ export function listAllCollabs(db: Database.Database): CollabListRow[] {
 	}));
 }
 
+function tableHasCollabIdColumn(db: Database.Database, table: string): boolean {
+	const cols = db.prepare(`PRAGMA table_info("${table}")`).all() as Array<{
+		name: string;
+	}>;
+	return cols.some((c) => c.name === "collab_id");
+}
+
+/**
+ * Every non-internal table carrying a `collab_id` column, EXCLUDING `collab`
+ * itself (which has a collab_id column but is deleted last by
+ * deleteCollabCascade, not by the introspection loop). `sqlite_%` internal
+ * tables are excluded — they are never collab-scoped and must never be touched.
+ * Single source of truth shared by deleteCollabCascade and the drift-guard test.
+ */
+export function listCollabIdTables(db: Database.Database): string[] {
+	const names = (
+		db
+			.prepare(
+				"SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+			)
+			.all() as Array<{ name: string }>
+	).map((r) => r.name);
+	return names.filter(
+		(name) => name !== "collab" && tableHasCollabIdColumn(db, name),
+	);
+}
+
 export function getCollab(
 	db: Database.Database,
 	collabId: string,

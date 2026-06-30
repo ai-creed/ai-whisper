@@ -133,6 +133,7 @@ export {
 } from "./storage/repositories/recovery-state-repository.js";
 export {
 	listAllCollabs,
+	listCollabIdTables,
 	type CollabListRow,
 } from "./storage/repositories/collab-repository.js";
 export type {
