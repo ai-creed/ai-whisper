@@ -18,10 +18,10 @@ import type { SpawnLike, ChildProcessLike } from "../packages/cli/src/runtime/ag
 function makeFakeSpawn(opts: { stdout?: string; stderr?: string; exitCode?: number; spawnError?: Error }): {
 	spawn: SpawnLike;
 	calls: Array<{ command: string; args: readonly string[] }>;
-	stdin: { chunks: string[]; ended: boolean; endedAfterWrite: boolean };
+	stdin: { chunks: string[]; ended: boolean; endedAfterWrite: boolean; errorHandlerRegistered: boolean };
 } {
 	const calls: Array<{ command: string; args: readonly string[] }> = [];
-	const stdin = { chunks: [] as string[], ended: false, endedAfterWrite: false };
+	const stdin = { chunks: [] as string[], ended: false, endedAfterWrite: false, errorHandlerRegistered: false };
 	const spawn: SpawnLike = (command, args) => {
 		calls.push({ command, args });
 		const dataCbs: Record<"out" | "err", Array<(c: unknown) => void>> = { out: [], err: [] };
@@ -35,6 +35,8 @@ function makeFakeSpawn(opts: { stdout?: string; stderr?: string; exitCode?: numb
 				// Record close + that it happened AFTER a write, so a regression that never
 				// ends stdin (or ends it before writing) is caught.
 				end: () => { stdin.ended = true; stdin.endedAfterWrite = stdin.chunks.length > 0; },
+				// Record that the caller registered a stdin 'error' handler (EPIPE hardening).
+				on: (_event, _cb) => { stdin.errorHandlerRegistered = true; },
 			},
 			on: (e, cb) => { if (e === "close") closeCb = cb as (code: number | null) => void; else errorCb = cb as (err: Error) => void; },
 		};
@@ -882,6 +884,16 @@ describe("createRelayOrchestratorEvaluator — agent-cli provider", () => {
 		expect(fake.stdin.chunks.join("")).toContain("handbackText");
 		expect(fake.stdin.ended).toBe(true);            // stdin.end() was called — a never-closed-stdin regression fails here
 		expect(fake.stdin.endedAfterWrite).toBe(true);  // end() came AFTER write(), matching the caller's write→end order
+	});
+
+	it("registers a stdin 'error' handler so a closed read-end (EPIPE) cannot crash the process", async () => {
+		// If the child closes its stdin read-end before the write completes, Node emits an
+		// 'error' (EPIPE) on the stream; without a handler that is an unhandled error that
+		// would crash the daemon. The caller must register a handler before writing.
+		const fake = makeFakeSpawn({ stdout: okJson });
+		const evaluate = createRelayOrchestratorEvaluator({ primary: { provider: "agent-cli", agent: "agy", promptVia: "stdin", executable: "agy", execArgs: [], spawnImpl: fake.spawn } });
+		await evaluate({ payload: makePayload(), context: makeContext() });
+		expect(fake.stdin.errorHandlerRegistered).toBe(true);
 	});
 
 	it("extracts a verdict from chatter/markdown-fenced stdout", async () => {

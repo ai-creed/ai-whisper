@@ -650,6 +650,11 @@ function buildAgentCliCaller(
 				resolve({ raw: stdout });
 			});
 			if (promptVia === "stdin") {
+				// Swallow a stdin EPIPE: if the child closes its stdin read-end before the write
+				// completes (e.g. it exits within microseconds of spawn), Node would otherwise emit
+				// an unhandled 'error' on the stream and crash the daemon. The child's close/error
+				// events still drive the verdict / provider_unavailable outcome.
+				child.stdin.on("error", () => {});
 				child.stdin.write(prompt);
 				child.stdin.end();
 			}

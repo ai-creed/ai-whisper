@@ -10,7 +10,7 @@ export type AgentCliAgent = Exclude<AgentType, "ezio">;
 export type ChildProcessLike = {
 	stdout: { on(e: "data", cb: (chunk: unknown) => void): void };
 	stderr: { on(e: "data", cb: (chunk: unknown) => void): void };
-	stdin: { write(data: string): void; end(): void };
+	stdin: { write(data: string): void; end(): void; on(event: "error", cb: (err: Error) => void): void };
 	on(e: "error", cb: (err: Error) => void): void;
 	on(e: "close", cb: (code: number | null) => void): void;
 };
