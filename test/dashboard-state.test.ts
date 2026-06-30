@@ -276,6 +276,33 @@ describe("buildWallState", () => {
 		const w = buildWallState({ summaries: [s], now, idleThresholdMs: 30000, capacity: 4, page: 0, selected: 0, snapshots });
 		expect(w.panes[0]!.statusKey).toBe("stuck");
 	});
+
+	it("threads handsOff onto WallState when provided", () => {
+		const w = buildWallState({
+			summaries: [],
+			now: "2026-05-20T00:00:00.000Z",
+			idleThresholdMs: 30000,
+			capacity: 4,
+			page: 0,
+			selected: 0,
+			snapshots: {},
+			handsOff: { totalMs: 9_000_000, count: 3 },
+		});
+		expect(w.handsOff).toEqual({ totalMs: 9_000_000, count: 3 });
+	});
+
+	it("defaults handsOff to zero when omitted", () => {
+		const w = buildWallState({
+			summaries: [],
+			now: "2026-05-20T00:00:00.000Z",
+			idleThresholdMs: 30000,
+			capacity: 4,
+			page: 0,
+			selected: 0,
+			snapshots: {},
+		});
+		expect(w.handsOff).toEqual({ totalMs: 0, count: 0 });
+	});
 });
 
 describe("selectWallPage", () => {

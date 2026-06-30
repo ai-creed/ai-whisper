@@ -52,6 +52,9 @@ export type WallState = {
 	pageCount: number;
 	totalRuns: number;
 	selected: number;
+	// Accumulated hands-off time saved across all workflows (summary-bar segment).
+	// Populated by the dashboard poll from broker.control.getHandsOffStats().
+	handsOff: { totalMs: number; count: number };
 };
 export type PhaseStat = {
 	// Unique per phase RUN (the phase_runs PK). The timeline is a list of runs,
@@ -755,6 +758,7 @@ export function buildWallState(input: {
 		{ handoffs: RelayHandoffLogRow[]; phaseRuns: PhaseRunRef[]; totalPhases: number }
 	>;
 	home?: string;
+	handsOff?: { totalMs: number; count: number };
 }): WallState {
 	const home = input.home ?? homedir();
 	const groups = partitionWallGroups(input.summaries);
@@ -794,5 +798,6 @@ export function buildWallState(input: {
 		pageCount: alloc.pageCount,
 		totalRuns: alloc.totalRuns,
 		selected,
+		handsOff: input.handsOff ?? { totalMs: 0, count: 0 },
 	};
 }
