@@ -39,14 +39,24 @@ export async function sweepStaleBrokerDaemons(input: {
 	return { deleted };
 }
 
-export function defaultIsAlive(pid: number): Promise<IsAliveResult> {
+/**
+ * Synchronous liveness primitive: process.kill(pid, 0) probes the process
+ * without signaling it. ESRCH ⇒ the pid does not exist (dead); EPERM ⇒ it
+ * exists but we may not signal it (alive); anything else ⇒ treat as dead.
+ * PID reuse cannot be detected here, so a recycled pid reads alive — the safe
+ * direction for purge (skip, never wrongly delete a live collab).
+ */
+export function isPidAlive(pid: number): boolean {
 	try {
 		process.kill(pid, 0);
-		return Promise.resolve({ alive: true, startTime: null });
+		return true;
 	} catch (err: unknown) {
 		const code = (err as NodeJS.ErrnoException).code;
-		if (code === "ESRCH") return Promise.resolve({ alive: false, startTime: null });
-		if (code === "EPERM") return Promise.resolve({ alive: true, startTime: null });
-		return Promise.resolve({ alive: false, startTime: null });
+		if (code === "EPERM") return true;
+		return false;
 	}
+}
+
+export function defaultIsAlive(pid: number): Promise<IsAliveResult> {
+	return Promise.resolve({ alive: isPidAlive(pid), startTime: null });
 }

@@ -12,6 +12,7 @@ export {
 export {
 	sweepStaleBrokerDaemons,
 	defaultIsAlive,
+	isPidAlive,
 	type IsAliveResult,
 } from "./runtime/broker-daemon-sweep.js";
 export { applyMigrations } from "./storage/apply-migrations.js";
