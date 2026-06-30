@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { Ollama } from "ollama";
 import OpenAI from "openai";
 import { z } from "zod";
+import { defaultSpawn, resolveAgentCliInvocation, type AgentCliAgent, type SpawnLike } from "./agent-cli-presets.js";
 
 // Minimal structural interface covering only the messages.create path we use.
 // Defined here (not imported from `@anthropic-ai/sdk`) so tests can pass plain
@@ -452,12 +453,28 @@ export type OpenAIProviderConfig = {
 	createClient?: OpenAIClientFactory;
 };
 
+export type AgentCliProviderConfig = {
+	provider: "agent-cli";
+	agent: AgentCliAgent;
+	executable?: string;
+	execArgs?: string[];
+	promptVia?: "arg" | "stdin";
+	model?: string;
+	spawnImpl?: SpawnLike;
+};
+
 export type EvaluatorProviderConfig =
 	| AnthropicProviderConfig
 	| OllamaProviderConfig
-	| OpenAIProviderConfig;
+	| OpenAIProviderConfig
+	| AgentCliProviderConfig;
+
+// Thrown by the agent-cli caller for spawn failure / non-zero exit so the shared
+// classifier maps it to provider_unavailable (and a configured fallback engages).
+export class ProviderUnavailableError extends Error {}
 
 function isProviderUnavailableError(error: unknown): boolean {
+	if (error instanceof ProviderUnavailableError) return true;
 	if (!(error instanceof Error)) return false;
 	const code = (error as NodeJS.ErrnoException).code;
 	if (
@@ -600,6 +617,46 @@ function buildOpenAICaller(
 	};
 }
 
+function buildAgentCliCaller(
+	config: AgentCliProviderConfig,
+): (systemPrompt: string, payload: EvaluatorAnyInput) => Promise<{ raw: string }> {
+	const { executable, execArgs, promptVia } = resolveAgentCliInvocation(config);
+	const spawnImpl = config.spawnImpl ?? defaultSpawn;
+
+	return function (systemPrompt: string, payload: EvaluatorAnyInput): Promise<{ raw: string }> {
+		const prompt = `${systemPrompt}\n\n=== INPUT (JSON) ===\n${JSON.stringify(payload)}\n=== END INPUT ===\n\nReply with ONLY the JSON object described above — no prose, no code fence.`;
+		return new Promise((resolve, reject) => {
+			const child =
+				promptVia === "arg"
+					? spawnImpl(executable, [...execArgs, prompt], { stdio: ["ignore", "pipe", "pipe"] })
+					: spawnImpl(executable, execArgs, { stdio: ["pipe", "pipe", "pipe"] });
+			let stdout = "";
+			let stderr = "";
+			let settled = false;
+			child.stdout.on("data", (chunk) => { stdout += String(chunk); });
+			child.stderr.on("data", (chunk) => { stderr += String(chunk); });
+			child.on("error", (err) => {
+				if (settled) return;
+				settled = true;
+				reject(new ProviderUnavailableError(`agent-cli spawn failed (${executable}): ${err.message}`));
+			});
+			child.on("close", (code) => {
+				if (settled) return;
+				settled = true;
+				if (code !== 0) {
+					reject(new ProviderUnavailableError(`agent-cli ${executable} exited with code ${code}: ${stderr.trim()}`));
+					return;
+				}
+				resolve({ raw: stdout });
+			});
+			if (promptVia === "stdin") {
+				child.stdin.write(prompt);
+				child.stdin.end();
+			}
+		});
+	};
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // New factory: EvaluatorCall wrapper + observer hook + outcome classification
 // ─────────────────────────────────────────────────────────────────────────────
@@ -670,6 +727,26 @@ function buildSingleProviderCaller(
 				return { ok: true, verdict, raw: providerResult.raw, inputTokens: providerResult.inputTokens ?? null, outputTokens: providerResult.outputTokens ?? null, providerLatencyMs };
 			} catch (parseErr) {
 				return { ok: false, error: parseErr instanceof Error ? parseErr : new Error(String(parseErr)), raw: providerResult.raw, inputTokens: providerResult.inputTokens ?? null, outputTokens: providerResult.outputTokens ?? null, providerLatencyMs };
+			}
+		};
+	}
+	if (config.provider === "agent-cli") {
+		const call = buildAgentCliCaller(config);
+		return async function (payload, branch) {
+			const started = Date.now();
+			let raw: string;
+			try {
+				({ raw } = await call(branch.systemPrompt, payload));
+			} catch (callErr) {
+				const providerLatencyMs = Date.now() - started;
+				return { ok: false, error: callErr instanceof Error ? callErr : new Error(String(callErr)), raw: null, inputTokens: null, outputTokens: null, providerLatencyMs };
+			}
+			const providerLatencyMs = Date.now() - started;
+			try {
+				const verdict = branch.parse(raw);
+				return { ok: true, verdict, raw, inputTokens: null, outputTokens: null, providerLatencyMs };
+			} catch (parseErr) {
+				return { ok: false, error: parseErr instanceof Error ? parseErr : new Error(String(parseErr)), raw, inputTokens: null, outputTokens: null, providerLatencyMs };
 			}
 		};
 	}

@@ -13,6 +13,42 @@ import {
 	type WorkflowEvaluatorInput,
 } from "../packages/cli/src/runtime/relay-orchestrator-evaluator.ts";
 import type { OpenAIClientFactory } from "../packages/cli/src/runtime/relay-orchestrator-evaluator.ts";
+import type { SpawnLike, ChildProcessLike } from "../packages/cli/src/runtime/agent-cli-presets.ts";
+
+function makeFakeSpawn(opts: { stdout?: string; stderr?: string; exitCode?: number; spawnError?: Error }): {
+	spawn: SpawnLike;
+	calls: Array<{ command: string; args: readonly string[] }>;
+	stdin: { chunks: string[]; ended: boolean; endedAfterWrite: boolean };
+} {
+	const calls: Array<{ command: string; args: readonly string[] }> = [];
+	const stdin = { chunks: [] as string[], ended: false, endedAfterWrite: false };
+	const spawn: SpawnLike = (command, args) => {
+		calls.push({ command, args });
+		const dataCbs: Record<"out" | "err", Array<(c: unknown) => void>> = { out: [], err: [] };
+		let closeCb: ((code: number | null) => void) | undefined;
+		let errorCb: ((e: Error) => void) | undefined;
+		const child: ChildProcessLike = {
+			stdout: { on: (_e, cb) => dataCbs.out.push(cb) },
+			stderr: { on: (_e, cb) => dataCbs.err.push(cb) },
+			stdin: {
+				write: (d) => { stdin.chunks.push(String(d)); },
+				// Record close + that it happened AFTER a write, so a regression that never
+				// ends stdin (or ends it before writing) is caught.
+				end: () => { stdin.ended = true; stdin.endedAfterWrite = stdin.chunks.length > 0; },
+			},
+			on: (e, cb) => { if (e === "close") closeCb = cb as (code: number | null) => void; else errorCb = cb as (err: Error) => void; },
+		};
+		// Drive callbacks on the next microtask so listeners are registered first.
+		queueMicrotask(() => {
+			if (opts.spawnError) { errorCb?.(opts.spawnError); return; }
+			if (opts.stdout) dataCbs.out.forEach((cb) => cb(Buffer.from(opts.stdout!)));
+			if (opts.stderr) dataCbs.err.forEach((cb) => cb(Buffer.from(opts.stderr!)));
+			closeCb?.(opts.exitCode ?? 0);
+		});
+		return child;
+	};
+	return { spawn, calls, stdin };
+}
 
 function makePayload(overrides: Partial<EvaluatorInput> = {}): EvaluatorInput {
 	return {
@@ -797,6 +833,64 @@ describe("deliberation-loop key", () => {
 			);
 			expect(branch.systemPrompt).not.toBe(DELIBERATION_REVIEW_SYSTEM_PROMPT);
 		}
+	});
+});
+
+describe("createRelayOrchestratorEvaluator — agent-cli provider", () => {
+	const okJson = JSON.stringify({ verdict: "done", confidence: 0.9, reason: "ok" });
+
+	it("arg delivery appends the prompt as the last arg", async () => {
+		const fake = makeFakeSpawn({ stdout: okJson });
+		const evaluate = createRelayOrchestratorEvaluator({ primary: { provider: "agent-cli", agent: "claude", spawnImpl: fake.spawn } });
+		const result = await evaluate({ payload: makePayload(), context: makeContext() });
+		expect(result.verdict).toBe("done");
+		expect(fake.calls[0]?.command).toBe("claude");
+		expect(fake.calls[0]?.args.slice(0, 1)).toEqual(["-p"]);
+		expect(typeof fake.calls[0]?.args.at(-1)).toBe("string"); // prompt appended as last arg
+	});
+
+	it("stdin delivery writes the prompt to stdin AND closes it (write then end)", async () => {
+		const fake = makeFakeSpawn({ stdout: okJson });
+		const evaluate = createRelayOrchestratorEvaluator({ primary: { provider: "agent-cli", agent: "agy", promptVia: "stdin", executable: "agy", execArgs: [], spawnImpl: fake.spawn } });
+		await evaluate({ payload: makePayload(), context: makeContext() });
+		expect(fake.stdin.chunks.join("")).toContain("handbackText");
+		expect(fake.stdin.ended).toBe(true);            // stdin.end() was called — a never-closed-stdin regression fails here
+		expect(fake.stdin.endedAfterWrite).toBe(true);  // end() came AFTER write(), matching the caller's write→end order
+	});
+
+	it("extracts a verdict from chatter/markdown-fenced stdout", async () => {
+		const fake = makeFakeSpawn({ stdout: "Sure! Here you go:\n```json\n" + okJson + "\n```\n" });
+		const evaluate = createRelayOrchestratorEvaluator({ primary: { provider: "agent-cli", agent: "claude", spawnImpl: fake.spawn } });
+		const result = await evaluate({ payload: makePayload(), context: makeContext() });
+		expect(result.verdict).toBe("done");
+	});
+
+	it("non-zero exit → provider_unavailable carrying stderr", async () => {
+		const events: EvaluatorCallEvent[] = [];
+		const fake = makeFakeSpawn({ stdout: "", stderr: "boom", exitCode: 2 });
+		const evaluate = createRelayOrchestratorEvaluator({ primary: { provider: "agent-cli", agent: "claude", spawnImpl: fake.spawn }, onCall: (e) => events.push(e) });
+		await expect(evaluate({ payload: makePayload(), context: makeContext() })).rejects.toThrow(/boom/);
+		expect(events[0]?.outcome).toBe("provider_unavailable");
+	});
+
+	it("ENOENT spawn error → provider_unavailable", async () => {
+		const events: EvaluatorCallEvent[] = [];
+		const fake = makeFakeSpawn({ spawnError: Object.assign(new Error("spawn claude ENOENT"), { code: "ENOENT" }) });
+		const evaluate = createRelayOrchestratorEvaluator({ primary: { provider: "agent-cli", agent: "claude", spawnImpl: fake.spawn }, onCall: (e) => events.push(e) });
+		await expect(evaluate({ payload: makePayload(), context: makeContext() })).rejects.toThrow();
+		expect(events[0]?.outcome).toBe("provider_unavailable");
+	});
+
+	it("agent-cli unavailable → engages a configured ollama fallback", async () => {
+		const fake = makeFakeSpawn({ stdout: "", stderr: "down", exitCode: 1 });
+		const fallbackClient = makeOllamaClient(okJson);
+		const evaluate = createRelayOrchestratorEvaluator({
+			primary: { provider: "agent-cli", agent: "claude", spawnImpl: fake.spawn },
+			fallback: { provider: "ollama", client: fallbackClient },
+		});
+		const result = await evaluate({ payload: makePayload(), context: makeContext() });
+		expect(result.verdict).toBe("done");
+		expect((fallbackClient.chat as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
 	});
 });
 
