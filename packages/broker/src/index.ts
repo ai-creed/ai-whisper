@@ -93,7 +93,10 @@ export {
 	type TurnEventAction,
 	type TurnEventFidelityVerdict,
 } from "./storage/repositories/relay-turn-event-diagnostics-repository.js";
-export { getWorkflowDefinition, listWorkflowTypes } from "./runtime/workflow-registry.js";
+export {
+	getWorkflowDefinition,
+	listWorkflowTypes,
+} from "./runtime/workflow-registry.js";
 export {
 	upsertWorkspace,
 	getWorkspaceById,
@@ -128,6 +131,10 @@ export {
 	type RecoveryStateRecord,
 	type RecoveryStateValue,
 } from "./storage/repositories/recovery-state-repository.js";
+export {
+	listAllCollabs,
+	type CollabListRow,
+} from "./storage/repositories/collab-repository.js";
 export type {
 	RelayHandoffLogRow,
 	RelayHandoffWorkflowFilter,

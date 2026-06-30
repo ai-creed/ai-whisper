@@ -25,6 +25,43 @@ export function insertCollab(db: Database.Database, collab: Collab): void {
 	);
 }
 
+export type CollabListRow = {
+	collabId: string;
+	workspaceRoot: string;
+	workspaceId: string | null;
+	status: "active" | "stopped";
+	tmuxSession: string | null;
+};
+
+/**
+ * Every collab across every workspace and status. Purpose-built for purge —
+ * intentionally NOT a reuse of the cwd-scoped `WHERE workspace_id = ?` resolver
+ * lookup; an under- or over-narrow WHERE here is the exact failure prior
+ * incidents warned about.
+ */
+export function listAllCollabs(db: Database.Database): CollabListRow[] {
+	const rows = db
+		.prepare(
+			`SELECT collab_id, workspace_root, workspace_id, status, tmux_session
+         FROM collab
+        ORDER BY created_at`,
+		)
+		.all() as Array<{
+		collab_id: string;
+		workspace_root: string;
+		workspace_id: string | null;
+		status: "active" | "stopped";
+		tmux_session: string | null;
+	}>;
+	return rows.map((r) => ({
+		collabId: r.collab_id,
+		workspaceRoot: r.workspace_root,
+		workspaceId: r.workspace_id,
+		status: r.status,
+		tmuxSession: r.tmux_session,
+	}));
+}
+
 export function getCollab(
 	db: Database.Database,
 	collabId: string,
