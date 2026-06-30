@@ -157,9 +157,38 @@ Presets seed `{ executable, execArgs, promptVia }`. All values are overridable �
 |-------|-----------|--------------------|-----------|
 | claude | `claude` | `["-p"]` (print / non-interactive mode) | `arg` |
 | codex  | `codex`  | `["exec"]` | `arg` |
-| agy    | `agy`    | determined by an implementation-time probe of `agy --help` on the installed CLI (AC-7); seeded conservatively, `promptVia: "stdin"` | `stdin` |
+| agy    | `agy`    | `["-p"]` (confirmed by AC-7 probe — see §6.2.1) | `arg` |
 
-If the agy probe finds no non-interactive mode on the installed version, the agy preset is documented as "bring your own `execArgs`" — the hybrid override still lets an operator drive it — and that fact is recorded in the implementation notes. claude and codex presets are concrete and not conditional.
+The agy probe (§6.2.1) confirmed a `-p` non-interactive mode (agy v1.0.13), so the preset is seeded concretely — matching claude. Had the probe found no non-interactive flag, the agy preset would have been documented as "bring your own `execArgs`"; the hybrid override still lets an operator drive it regardless. claude and codex presets are concrete and not conditional.
+
+#### 6.2.1 Manual smoke results (AC-3, AC-7 — run 2026-06-30)
+
+Probes run on the machine at commit time. Commands used `<cli> <args> 'Reply with ONLY {"verdict":"done","confidence":1,"reason":"smoke"}'` with a 30-second watchdog.
+
+**claude `-p` (AC-3)**
+```
+$ claude -p 'Reply with ONLY {"verdict":"done","confidence":1,"reason":"smoke"}'
+{"verdict":"done","confidence":1,"reason":"smoke"}
+```
+Exit 0. Preset `{ execArgs: ["-p"], promptVia: "arg" }` confirmed.
+
+**codex `exec`**
+```
+$ codex exec 'Reply with ONLY {"verdict":"done","confidence":1,"reason":"smoke"}'
+...
+{"verdict":"done","confidence":1,"reason":"smoke"}
+```
+Exit 0 (OpenAI Codex v0.142.3, model gpt-5.5). Preset `{ execArgs: ["exec"], promptVia: "arg" }` confirmed.
+
+**agy `--help` probe (AC-7) — agy v1.0.13**
+
+`agy --help` (exit 0) revealed:
+```
+  -p                              Short alias for --print
+  --print                         Run a single prompt non-interactively and print the response
+```
+
+The conservative seed `{ execArgs: [], promptVia: "stdin" }` was updated to `{ execArgs: ["-p"], promptVia: "arg" }` to match the confirmed non-interactive mode. `pnpm vitest run test/agent-cli-presets.test.ts` passes (4/4 green) with the updated preset.
 
 ### 6.3 Caller
 

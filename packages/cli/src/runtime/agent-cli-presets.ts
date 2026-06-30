@@ -1,8 +1,11 @@
 import { spawn as nodeSpawn, type SpawnOptions } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
 import { delimiter, join } from "node:path";
+import type { AgentType } from "@ai-whisper/shared";
 
-export type AgentCliAgent = "claude" | "codex" | "agy";
+// Agents that have a preset invocation. "ezio" is excluded because it is an
+// SDK-based adapter, not a CLI, so it does not belong in the CLI-preset registry.
+export type AgentCliAgent = Exclude<AgentType, "ezio">;
 
 export type ChildProcessLike = {
 	stdout: { on(e: "data", cb: (chunk: unknown) => void): void };
@@ -23,14 +26,14 @@ export const defaultSpawn: SpawnLike = (command, args, options) =>
 
 export type AgentCliInvocation = { executable: string; execArgs: string[]; promptVia: "arg" | "stdin" };
 
-// Best-effort defaults; MUST be validated against the installed CLI at implementation
-// time (AC-7). claude/codex are concrete; agy is seeded conservatively (stdin) pending
-// the `agy --help` probe — if no non-interactive mode exists on the installed version,
-// document agy as override-only (operator supplies execArgs).
+// Validated presets (AC-7 probe — 2026-06-30). claude/codex/agy all use -p for
+// non-interactive single-prompt output. agy was seeded conservatively as stdin but
+// `agy --help` (agy v1.0.13) reveals `--print` / `-p` ("Run a single prompt
+// non-interactively and print the response"), so the preset now mirrors claude.
 const PRESETS: Record<AgentCliAgent, AgentCliInvocation> = {
 	claude: { executable: "claude", execArgs: ["-p"], promptVia: "arg" },
 	codex: { executable: "codex", execArgs: ["exec"], promptVia: "arg" },
-	agy: { executable: "agy", execArgs: [], promptVia: "stdin" },
+	agy: { executable: "agy", execArgs: ["-p"], promptVia: "arg" },
 };
 
 export function resolveAgentCliInvocation(input: {

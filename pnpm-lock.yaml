@@ -19,10 +19,6 @@ overrides:
 importers:
 
   .:
-    dependencies:
-      openai:
-        specifier: ^6.45.0
-        version: 6.45.0(ws@8.20.1)(zod@3.25.76)
     devDependencies:
       '@ai-ezio/harness':
         specifier: file:../ai-ezio/packages/harness

@@ -260,6 +260,32 @@ describe("createRelayOrchestratorEvaluator — fallback", () => {
 
 		expect(result.verdict).toBe("done");
 	});
+
+	it("openai unavailable → falls back to ollama (AC-6)", async () => {
+		const { factory } = makeOpenAIFactory(() => Promise.reject(Object.assign(new Error("server error"), { status: 503 })));
+		const fallbackClient = makeOllamaClient(JSON.stringify({ verdict: "done", confidence: 0.9, reason: "ok" }));
+		const evaluate = createRelayOrchestratorEvaluator({
+			primary: { provider: "openai", apiKey: "k", model: "m", createClient: factory },
+			fallback: { provider: "ollama", client: fallbackClient },
+		});
+		const result = await evaluate({ payload: makePayload(), context: makeContext() });
+		expect(result.verdict).toBe("done");
+		expect((fallbackClient.chat as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
+	});
+
+	it("agent-cli unavailable → falls back to anthropic (AC-6)", async () => {
+		const fake = makeFakeSpawn({ stdout: "", stderr: "down", exitCode: 1 });
+		const anthropicClient: AnthropicClientLike = {
+			messages: { create: vi.fn(() => Promise.resolve({ content: [{ type: "text", text: JSON.stringify({ verdict: "done", confidence: 0.9, reason: "ok" }) }] })) },
+		};
+		const evaluate = createRelayOrchestratorEvaluator({
+			primary: { provider: "agent-cli", agent: "claude", spawnImpl: fake.spawn },
+			fallback: { provider: "anthropic", apiKey: "sk", client: anthropicClient },
+		});
+		const result = await evaluate({ payload: makePayload(), context: makeContext() });
+		expect(result.verdict).toBe("done");
+		expect((anthropicClient.messages.create as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
+	});
 });
 
 // ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { getStateRoot } from "./state-root.js";
-import { isExecutableOnPath, resolveAgentCliInvocation } from "./agent-cli-presets.js";
+import { isExecutableOnPath, resolveAgentCliInvocation, type AgentCliAgent } from "./agent-cli-presets.js";
 
 export type EvaluatorStatus =
 	| "ready"
@@ -18,7 +18,7 @@ export interface ResolvedEvaluatorConfig {
 	anthropic: { apiKey: string | null; model: string | null };
 	ollama: { host: string | null; model: string | null };
 	openai: { apiKey: string | null; model: string | null; baseURL: string | null };
-	agentCli: { agent: "claude" | "codex" | "agy" | null; executable: string | null; execArgs: string[] | null; promptVia: "arg" | "stdin" | null; model: string | null };
+	agentCli: { agent: AgentCliAgent | null; executable: string | null; execArgs: string[] | null; promptVia: "arg" | "stdin" | null; model: string | null };
 }
 
 // Minimal KEY=VALUE parser. Handles comments (#), blank lines, surrounding
