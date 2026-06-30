@@ -122,11 +122,16 @@ direction. Documented, accepted.
 Because runtime cascade is off (§2.1), removing a collab is an explicit
 multi-table delete inside a single transaction. Built so it cannot rot:
 
-1. **Introspect** `sqlite_master` for every table, and for each, read
-   `pragma_table_info(<table>)`; if it has a `collab_id` column, run
-   `DELETE FROM <table> WHERE collab_id = ?`. This automatically covers every
-   directly-scoped table (see §5) and any future one. The `collab` table itself
-   is excluded here and deleted last (step 4).
+1. **Introspect** `sqlite_master` for every `type = 'table'` whose name does
+   **not** match `sqlite_%` — SQLite's internal bookkeeping tables (e.g.
+   `sqlite_sequence`, created because several tables use `AUTOINCREMENT`) appear
+   in `sqlite_master`, are never collab-scoped, and must never be touched. For
+   each remaining table, read `pragma_table_info(<table>)`; if it has a
+   `collab_id` column, run `DELETE FROM <table> WHERE collab_id = ?`. This
+   automatically covers every directly-scoped table (see §5) and any future one.
+   The `collab` table itself has a `collab_id` column but is **excluded** from
+   this loop and deleted last (step 4) — it is therefore the one `collab_id`
+   table the loop deliberately does not handle.
 2. **Explicit child deletes** for tables that have **no** `collab_id` and chain
    through a parent id (introspection blind spots). Run these **before** the
    introspection loop removes their parents:
@@ -144,10 +149,18 @@ only so the step-2 subqueries still see their parent rows.
 #### Drift guard
 
 A test (mirroring the existing `test/agent-type-drift-guard.test.ts` pattern)
-introspects the live schema and partitions all tables into:
+introspects the live schema — every `type = 'table'` in `sqlite_master` whose
+name does **not** match `sqlite_%` (the same internal-table exclusion the delete
+loop applies, so `sqlite_sequence` and any future `sqlite_*` table are out of
+scope for both sides of the partition) — and partitions the remaining tables
+into:
 
-- **has `collab_id`** — automatically handled by the introspection loop; the test
-  asserts the loop's table set equals this set (catches an accidental exclusion).
+- **has `collab_id`** — handled by the introspection loop, **with the single
+  deliberate exception of `collab` itself**, which also has a `collab_id` column
+  but is deleted last in step 4. The test asserts the loop's table set equals
+  this set **minus `collab`**, and separately asserts that `collab` is the one
+  excluded `collab_id` table. This catches an accidental exclusion of a real
+  scoped table while still accounting for the intentional `collab` special-case.
 - **no `collab_id`** — the test asserts this set equals a maintained allowlist:
   the explicit child tables handled in step 2 (`workflow_phases`,
   `work_item_cancellation`), the special-column table (`clipboard_capture_lease`),
