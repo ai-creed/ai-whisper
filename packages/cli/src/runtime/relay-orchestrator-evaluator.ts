@@ -1,6 +1,7 @@
 import * as crypto from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { Ollama } from "ollama";
+import OpenAI from "openai";
 import { z } from "zod";
 
 // Minimal structural interface covering only the messages.create path we use.
@@ -31,6 +32,32 @@ export type OllamaClientLike = {
 		options?: { temperature?: number };
 	}): Promise<{ message: { content: string } }>;
 };
+
+// Minimal structural interface covering only the chat.completions.create path we use.
+// Defined here (not imported from `openai`) so tests can pass plain mocks without the
+// SDK being hoisted to the root node_modules.
+export type OpenAIClientLike = {
+	chat: {
+		completions: {
+			create(request: {
+				model: string;
+				messages: Array<{ role: string; content: string }>;
+				response_format?: Record<string, unknown>;
+				temperature?: number;
+			}): Promise<{
+				choices: Array<{ message: { content: string | null } }>;
+				usage?: { prompt_tokens?: number; completion_tokens?: number };
+			}>;
+		};
+	};
+};
+
+// OpenAI injects a client FACTORY (not a pre-built client) so a test can assert that
+// `baseURL` was threaded into construction — a pre-built client would bypass `new OpenAI(...)`.
+export type OpenAIClientFactory = (opts: { apiKey: string; baseURL?: string }) => OpenAIClientLike;
+
+const defaultOpenAIFactory: OpenAIClientFactory = (opts) =>
+	new OpenAI(opts) as unknown as OpenAIClientLike;
 
 export type EvaluatorInput = {
 	rootRequestText: string;
@@ -417,7 +444,18 @@ export type OllamaProviderConfig = {
 	client?: OllamaClientLike;
 };
 
-export type EvaluatorProviderConfig = AnthropicProviderConfig | OllamaProviderConfig;
+export type OpenAIProviderConfig = {
+	provider: "openai";
+	apiKey: string;
+	model: string;
+	baseURL?: string;
+	createClient?: OpenAIClientFactory;
+};
+
+export type EvaluatorProviderConfig =
+	| AnthropicProviderConfig
+	| OllamaProviderConfig
+	| OpenAIProviderConfig;
 
 function isProviderUnavailableError(error: unknown): boolean {
 	if (!(error instanceof Error)) return false;
@@ -524,6 +562,44 @@ function buildOllamaCaller(
 	};
 }
 
+function buildOpenAICaller(
+	config: OpenAIProviderConfig,
+): (
+	systemPrompt: string,
+	payload: EvaluatorAnyInput,
+	jsonSchema: Record<string, unknown>,
+) => Promise<{ raw: string; inputTokens?: number; outputTokens?: number }> {
+	const client = (config.createClient ?? defaultOpenAIFactory)({
+		apiKey: config.apiKey,
+		...(config.baseURL ? { baseURL: config.baseURL } : {}),
+	});
+	const model = config.model;
+
+	return async function (
+		systemPrompt: string,
+		payload: EvaluatorAnyInput,
+		jsonSchema: Record<string, unknown>,
+	): Promise<{ raw: string; inputTokens?: number; outputTokens?: number }> {
+		const response = await client.chat.completions.create({
+			model,
+			messages: [
+				{ role: "system", content: systemPrompt },
+				{ role: "user", content: JSON.stringify(payload) },
+			],
+			// Non-strict json_schema: schema-shaped guidance only; branch.parse() is authoritative.
+			// `strict` is intentionally omitted (see spec §5.2.1) — do not set it true.
+			response_format: { type: "json_schema", json_schema: { name: "verdict", schema: jsonSchema } },
+			temperature: 0.3,
+		});
+		const raw = response.choices[0]?.message.content ?? "";
+		return {
+			raw,
+			...(typeof response.usage?.prompt_tokens === "number" ? { inputTokens: response.usage.prompt_tokens } : {}),
+			...(typeof response.usage?.completion_tokens === "number" ? { outputTokens: response.usage.completion_tokens } : {}),
+		};
+	};
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // New factory: EvaluatorCall wrapper + observer hook + outcome classification
 // ─────────────────────────────────────────────────────────────────────────────
@@ -574,6 +650,26 @@ function buildSingleProviderCaller(
 					outputTokens: providerResult.outputTokens ?? null,
 					providerLatencyMs,
 				};
+			}
+		};
+	}
+	if (config.provider === "openai") {
+		const call = buildOpenAICaller(config);
+		return async function (payload, branch) {
+			const started = Date.now();
+			let providerResult: { raw: string; inputTokens?: number; outputTokens?: number };
+			try {
+				providerResult = await call(branch.systemPrompt, payload, branch.jsonSchema);
+			} catch (callErr) {
+				const providerLatencyMs = Date.now() - started;
+				return { ok: false, error: callErr instanceof Error ? callErr : new Error(String(callErr)), raw: null, inputTokens: null, outputTokens: null, providerLatencyMs };
+			}
+			const providerLatencyMs = Date.now() - started;
+			try {
+				const verdict = branch.parse(providerResult.raw);
+				return { ok: true, verdict, raw: providerResult.raw, inputTokens: providerResult.inputTokens ?? null, outputTokens: providerResult.outputTokens ?? null, providerLatencyMs };
+			} catch (parseErr) {
+				return { ok: false, error: parseErr instanceof Error ? parseErr : new Error(String(parseErr)), raw: providerResult.raw, inputTokens: providerResult.inputTokens ?? null, outputTokens: providerResult.outputTokens ?? null, providerLatencyMs };
 			}
 		};
 	}

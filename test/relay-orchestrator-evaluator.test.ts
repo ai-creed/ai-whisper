@@ -12,6 +12,7 @@ import {
 	type OllamaClientLike,
 	type WorkflowEvaluatorInput,
 } from "../packages/cli/src/runtime/relay-orchestrator-evaluator.ts";
+import type { OpenAIClientFactory } from "../packages/cli/src/runtime/relay-orchestrator-evaluator.ts";
 
 function makePayload(overrides: Partial<EvaluatorInput> = {}): EvaluatorInput {
 	return {
@@ -45,6 +46,20 @@ function makeOllamaClient(content: string): OllamaClientLike {
 	return {
 		chat: vi.fn(() => Promise.resolve({ message: { content } })),
 	} as OllamaClientLike;
+}
+
+function makeOpenAIFactory(
+	impl: (req: { model: string; messages: Array<{ role: string; content: string }>; response_format?: Record<string, unknown>; temperature?: number }) => Promise<{
+		choices: Array<{ message: { content: string | null } }>;
+		usage?: { prompt_tokens?: number; completion_tokens?: number };
+	}>,
+): { factory: OpenAIClientFactory; seen: Array<{ apiKey: string; baseURL?: string }> } {
+	const seen: Array<{ apiKey: string; baseURL?: string }> = [];
+	const factory: OpenAIClientFactory = (opts) => {
+		seen.push(opts);
+		return { chat: { completions: { create: vi.fn(impl) } } };
+	};
+	return { factory, seen };
 }
 
 function makeContext(overrides: Partial<ObserverContext> = {}): ObserverContext {
@@ -782,5 +797,93 @@ describe("deliberation-loop key", () => {
 			);
 			expect(branch.systemPrompt).not.toBe(DELIBERATION_REVIEW_SYSTEM_PROMPT);
 		}
+	});
+});
+
+describe("createRelayOrchestratorEvaluator — OpenAI provider", () => {
+	it("parses a done verdict from chat.completions", async () => {
+		const { factory } = makeOpenAIFactory(() =>
+			Promise.resolve({ choices: [{ message: { content: JSON.stringify({ verdict: "done", confidence: 0.9, reason: "ok" }) } }] }),
+		);
+		const evaluate = createRelayOrchestratorEvaluator({
+			primary: { provider: "openai", apiKey: "sk-test", model: "gpt-4o-mini", createClient: factory },
+		});
+		const result = await evaluate({ payload: makePayload(), context: makeContext() });
+		expect(result.verdict).toBe("done");
+	});
+
+	it("threads apiKey and baseURL into the factory (construction seam)", async () => {
+		const { factory, seen } = makeOpenAIFactory(() =>
+			Promise.resolve({ choices: [{ message: { content: JSON.stringify({ verdict: "done", confidence: 1, reason: "ok" }) } }] }),
+		);
+		const evaluate = createRelayOrchestratorEvaluator({
+			primary: { provider: "openai", apiKey: "sk-xyz", model: "m", baseURL: "https://router.example/v1", createClient: factory },
+		});
+		await evaluate({ payload: makePayload(), context: makeContext() });
+		expect(seen[0]).toEqual({ apiKey: "sk-xyz", baseURL: "https://router.example/v1" });
+	});
+
+	it("sends non-strict json_schema response_format carrying branch.jsonSchema UNCHANGED", async () => {
+		const create = vi.fn(() =>
+			Promise.resolve({ choices: [{ message: { content: JSON.stringify({ verdict: "done", confidence: 1, reason: "ok" }) } }] }),
+		);
+		const factory: OpenAIClientFactory = () => ({ chat: { completions: { create } } });
+		const payload = makePayload(); // plain EvaluatorInput → selectBranch returns the legacy branch
+		// The EXACT object the caller must forward, fetched via the already-imported selectBranch.
+		const expectedSchema = selectBranch(payload).jsonSchema;
+		const evaluate = createRelayOrchestratorEvaluator({
+			primary: { provider: "openai", apiKey: "k", model: "m", createClient: factory },
+		});
+		await evaluate({ payload, context: makeContext() });
+		const req = (create.mock.calls as unknown[][])[0]![0] as { response_format: { type: string; json_schema: { name: string; schema: unknown; strict?: unknown } }; temperature: number };
+		expect(req.response_format.type).toBe("json_schema");
+		expect(req.response_format.json_schema.name).toBe("verdict");
+		// Deep-equals the selected branch schema — fails if the impl sends {} or a DIFFERENT
+		// branch's schema (e.g. EXECUTION_JSON_SCHEMA), proving branch.jsonSchema is forwarded unchanged.
+		expect(req.response_format.json_schema.schema).toEqual(expectedSchema);
+		// And it must be the legacy schema specifically (guards against a hardcoded look-alike).
+		expect((req.response_format.json_schema.schema as { properties: { verdict: { enum: string[] } } }).properties.verdict.enum)
+			.toEqual(["done", "loop", "escalate"]);
+		expect("strict" in req.response_format.json_schema).toBe(false);
+		expect(req.temperature).toBe(0.3);
+	});
+
+	it("maps prompt_tokens/completion_tokens onto telemetry", async () => {
+		const events: EvaluatorCallEvent[] = [];
+		const { factory } = makeOpenAIFactory(() =>
+			Promise.resolve({
+				choices: [{ message: { content: JSON.stringify({ verdict: "done", confidence: 1, reason: "ok" }) } }],
+				usage: { prompt_tokens: 11, completion_tokens: 7 },
+			}),
+		);
+		const evaluate = createRelayOrchestratorEvaluator({
+			primary: { provider: "openai", apiKey: "k", model: "m", createClient: factory },
+			onCall: (e) => events.push(e),
+		});
+		await evaluate({ payload: makePayload(), context: makeContext() });
+		expect(events[0]?.inputTokens).toBe(11);
+		expect(events[0]?.outputTokens).toBe(7);
+	});
+
+	it("classifies malformed content as parse_error (no fallback)", async () => {
+		const events: EvaluatorCallEvent[] = [];
+		const { factory } = makeOpenAIFactory(() => Promise.resolve({ choices: [{ message: { content: "not json at all" } }] }));
+		const evaluate = createRelayOrchestratorEvaluator({
+			primary: { provider: "openai", apiKey: "k", model: "m", createClient: factory },
+			onCall: (e) => events.push(e),
+		});
+		await expect(evaluate({ payload: makePayload(), context: makeContext() })).rejects.toThrow();
+		expect(events[0]?.outcome).toBe("parse_error");
+	});
+
+	it("classifies a 500 from the SDK as provider_unavailable", async () => {
+		const events: EvaluatorCallEvent[] = [];
+		const { factory } = makeOpenAIFactory(() => Promise.reject(Object.assign(new Error("server error"), { status: 500 })));
+		const evaluate = createRelayOrchestratorEvaluator({
+			primary: { provider: "openai", apiKey: "k", model: "m", createClient: factory },
+			onCall: (e) => events.push(e),
+		});
+		await expect(evaluate({ payload: makePayload(), context: makeContext() })).rejects.toThrow();
+		expect(events[0]?.outcome).toBe("provider_unavailable");
 	});
 });
