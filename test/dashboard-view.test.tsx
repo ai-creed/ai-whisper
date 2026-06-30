@@ -734,7 +734,7 @@ describe("Wall — sectioned grid + footer (Task 12)", () => {
 	});
 
 	it("empty Wall keeps the existing 'no active collabs' message", () => {
-		const empty = { sections: [], panes: [], page: 0, pageCount: 1, totalRuns: 0, selected: 0 } as WallState;
+		const empty = { sections: [], panes: [], page: 0, pageCount: 1, totalRuns: 0, selected: 0, handsOff: { totalMs: 0, count: 0 } } as WallState;
 		const { lastFrame } = render(<Wall state={empty} cols={80} rows={30} />);
 		const out = stripAnsi(lastFrame() ?? "");
 		expect(out).toContain("no active collabs");
@@ -1223,6 +1223,7 @@ describe("Wall — footer label (Task 4 --all mode)", () => {
 		const state: WallState = {
 			sections: [{ group: "active", label: "ACTIVE (2)", cardKind: "full", panes: [] }],
 			panes: [], page: 0, pageCount: 1, totalRuns: 2, selected: 0,
+			handsOff: { totalMs: 0, count: 0 },
 		};
 		const def = render(<Wall state={state} cols={120} rows={24} />);
 		expect(def.lastFrame()).toContain("2 collabs");
@@ -1246,6 +1247,7 @@ describe("Wall — per-run card keys (Task 3 --all support)", () => {
 			sections: [{ group: "active", label: "ACTIVE (2)", cardKind: "full", panes: [mk("wf_a", "A"), mk("wf_b", "B")] }],
 			panes: [mk("wf_a", "A"), mk("wf_b", "B")],
 			page: 0, pageCount: 1, totalRuns: 2, selected: 0,
+			handsOff: { totalMs: 0, count: 0 },
 		};
 		const { lastFrame } = render(<Wall state={state} cols={120} rows={24} />);
 		expect(lastFrame()).toContain("A");

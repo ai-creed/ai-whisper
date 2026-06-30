@@ -7,7 +7,7 @@ import { createCli } from "../packages/cli/src/create-cli.ts";
 describe("whisper workflow stats — global, no active collab", () => {
 	let stateRoot: string;
 	let prevStateRoot: string | undefined;
-	let writeSpy: ReturnType<typeof vi.spyOn>;
+	let writeSpy: { mockRestore: () => void };
 	let out: string;
 
 	beforeEach(() => {
