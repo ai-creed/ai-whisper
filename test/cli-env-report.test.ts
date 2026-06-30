@@ -25,6 +25,10 @@ const EVALUATOR_ENV_KEYS = [
 	"AI_WHISPER_EVALUATOR_FALLBACK",
 	"AI_WHISPER_EVALUATOR_OLLAMA_HOST",
 	"AI_WHISPER_EVALUATOR_OLLAMA_MODEL",
+	"OPENAI_API_KEY",
+	"AI_WHISPER_EVALUATOR_OPENAI_MODEL",
+	"AI_WHISPER_EVALUATOR_OPENAI_BASE_URL",
+	"AI_WHISPER_EVALUATOR_AGENT_CLI_AGENT",
 ];
 
 describe("buildEnvReport", () => {
@@ -121,6 +125,19 @@ describe("buildEnvReport", () => {
 			status: "invalid_config",
 			ready: false,
 		});
+	});
+
+	it("reports missing_openai_key when provider=openai has no key", () => {
+		writeFileSync(join(root, "config.json"), JSON.stringify({ evaluator: { provider: "openai", openai: { model: "gpt-4o-mini" } } }));
+		expect(buildEnvReport().evaluator).toEqual({ status: "missing_openai_key", ready: false });
+	});
+
+	it("reports invalid_config when provider=openai has a key but no model", () => {
+		const authPath = join(root, "auth.json");
+		writeFileSync(authPath, JSON.stringify({ OPENAI_API_KEY: "sk-test" }));
+		chmodSync(authPath, 0o600);
+		writeFileSync(join(root, "config.json"), JSON.stringify({ evaluator: { provider: "openai" } }));
+		expect(buildEnvReport().evaluator).toEqual({ status: "invalid_config", ready: false });
 	});
 
 	it("renderEnvReportText prints one labeled line per field, including evaluator", () => {

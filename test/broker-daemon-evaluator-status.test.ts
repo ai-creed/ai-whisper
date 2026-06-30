@@ -33,6 +33,8 @@ const withKey: ResolvedEvaluatorConfig = {
 	fallback: null,
 	anthropic: { apiKey: "sk-test", model: null },
 	ollama: { host: null, model: null },
+	openai: { apiKey: null, model: null, baseURL: null },
+	agentCli: { agent: null, executable: null, execArgs: null, promptVia: null, model: null },
 };
 
 const noKey: ResolvedEvaluatorConfig = {
@@ -40,6 +42,8 @@ const noKey: ResolvedEvaluatorConfig = {
 	fallback: null,
 	anthropic: { apiKey: null, model: null },
 	ollama: { host: null, model: null },
+	openai: { apiKey: null, model: null, baseURL: null },
+	agentCli: { agent: null, executable: null, execArgs: null, promptVia: null, model: null },
 };
 
 describe("recordEvaluatorStatus", () => {

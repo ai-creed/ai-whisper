@@ -52,12 +52,29 @@ export async function runWorkflowStart(
 					"(mode 600), then restart the daemon: whisper collab stop and re-mount. " +
 					EVALUATOR_README_HINT,
 			);
-		} else {
-			// invalid_config
+		} else if (evaluatorStatus === "missing_openai_key") {
 			throw new Error(
-				"Evaluator configuration is invalid: ~/.ai-whisper/auth.json or config.json " +
-					"contains malformed JSON. Fix the file, then restart the daemon: " +
-					"whisper collab stop and re-mount. " +
+				"Evaluator is not configured: OPENAI_API_KEY is missing. " +
+					"Add it to ~/.ai-whisper/auth.json as { \"OPENAI_API_KEY\": \"sk-...\" } " +
+					"(mode 600) or export OPENAI_API_KEY, then restart the daemon: whisper collab stop and re-mount. " +
+					EVALUATOR_README_HINT,
+			);
+		} else if (evaluatorStatus === "agent_cli_unavailable") {
+			throw new Error(
+				"Evaluator is not configured: the agent-cli executable was not found on PATH. " +
+					"Install/mount the agent CLI (claude/codex/agy) or set evaluator.agentCli.executable to its absolute path, " +
+					"then restart the daemon: whisper collab stop and re-mount. " +
+					EVALUATOR_README_HINT,
+			);
+		} else {
+			// invalid_config: malformed JSON OR a required setting is missing
+			// (provider=openai without a model; provider=agent-cli without an agent).
+			throw new Error(
+				"Evaluator configuration is invalid: a required setting is missing or " +
+					"~/.ai-whisper/auth.json / config.json contains malformed JSON. " +
+					"For provider=openai set evaluator.openai.model (AI_WHISPER_EVALUATOR_OPENAI_MODEL); " +
+					"for provider=agent-cli set the agent (AI_WHISPER_EVALUATOR_AGENT_CLI_AGENT). " +
+					"Fix the config, then restart the daemon: whisper collab stop and re-mount. " +
 					EVALUATOR_README_HINT,
 			);
 		}

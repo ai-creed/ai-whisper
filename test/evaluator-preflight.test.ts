@@ -142,4 +142,16 @@ describe("evaluator preflight in runWorkflowStart", () => {
 			await broker.stop();
 		}
 	});
+
+	it("missing_openai_key → rejects with OPENAI_API_KEY remediation", async () => {
+		const broker = newBroker();
+		try {
+			seedCollab(broker);
+			seedDaemon(broker);
+			setBrokerDaemonEvaluatorStatus(broker.db, { collabId: "collab_y", status: "missing_openai_key" });
+			await expect(runWorkflowStart({ broker, ...baseInput })).rejects.toThrow(/OPENAI_API_KEY/);
+		} finally {
+			broker.db.close();
+		}
+	});
 });

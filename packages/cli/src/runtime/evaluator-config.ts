@@ -5,15 +5,19 @@ import { getStateRoot } from "./state-root.js";
 export type EvaluatorStatus =
 	| "ready"
 	| "missing_anthropic_key"
+	| "missing_openai_key"
+	| "agent_cli_unavailable"
 	| "invalid_config"
 	| "disabled"
 	| "unknown";
 
 export interface ResolvedEvaluatorConfig {
-	provider: "anthropic" | "ollama";
-	fallback: "anthropic" | "ollama" | null;
+	provider: "anthropic" | "ollama" | "openai" | "agent-cli";
+	fallback: "anthropic" | "ollama" | "openai" | "agent-cli" | null;
 	anthropic: { apiKey: string | null; model: string | null };
 	ollama: { host: string | null; model: string | null };
+	openai: { apiKey: string | null; model: string | null; baseURL: string | null };
+	agentCli: { agent: "claude" | "codex" | "agy" | null; executable: string | null; execArgs: string[] | null; promptVia: "arg" | "stdin" | null; model: string | null };
 }
 
 // Minimal KEY=VALUE parser. Handles comments (#), blank lines, surrounding
@@ -97,28 +101,35 @@ export function loadEvaluatorConfig(): ResolvedEvaluatorConfig {
 	const evalOllama = (evalCfg.ollama ?? {}) as Record<string, unknown>;
 
 	const provider =
-		(envGet("AI_WHISPER_EVALUATOR_PROVIDER") ?? (evalCfg.provider as string | undefined)) === "ollama"
-			? "ollama"
-			: "anthropic";
-	const rawFallback =
-		envGet("AI_WHISPER_EVALUATOR_FALLBACK") ?? (evalCfg.fallback as string | undefined);
+		((envGet("AI_WHISPER_EVALUATOR_PROVIDER") ?? (evalCfg.provider as string | undefined)) as ResolvedEvaluatorConfig["provider"] | undefined);
+	const resolvedProvider: ResolvedEvaluatorConfig["provider"] =
+		provider === "ollama" || provider === "openai" || provider === "agent-cli" ? provider : "anthropic";
+	const rawFallback = envGet("AI_WHISPER_EVALUATOR_FALLBACK") ?? (evalCfg.fallback as string | undefined);
 	const fallback =
-		rawFallback === "anthropic" || rawFallback === "ollama" ? rawFallback : null;
+		rawFallback === "anthropic" || rawFallback === "ollama" || rawFallback === "openai" || rawFallback === "agent-cli"
+			? rawFallback
+			: null;
 
 	const apiKey =
 		envGet("ANTHROPIC_API_KEY") ?? (auth?.ANTHROPIC_API_KEY as string | undefined) ?? null;
 
+	const evalOpenai = (evalCfg.openai ?? {}) as Record<string, unknown>;
+	const openaiKey = envGet("OPENAI_API_KEY") ?? (auth?.OPENAI_API_KEY as string | undefined) ?? null;
+
 	return {
-		provider,
+		provider: resolvedProvider,
 		fallback,
-		anthropic: {
-			apiKey: apiKey && apiKey.length > 0 ? apiKey : null,
-			model: (evalCfg.anthropicModel as string | undefined) ?? null,
-		},
+		anthropic: { apiKey: apiKey && apiKey.length > 0 ? apiKey : null, model: (evalCfg.anthropicModel as string | undefined) ?? null },
 		ollama: {
 			host: envGet("AI_WHISPER_EVALUATOR_OLLAMA_HOST") ?? (evalOllama.host as string | undefined) ?? null,
 			model: envGet("AI_WHISPER_EVALUATOR_OLLAMA_MODEL") ?? (evalOllama.model as string | undefined) ?? null,
 		},
+		openai: {
+			apiKey: openaiKey && openaiKey.length > 0 ? openaiKey : null,
+			model: envGet("AI_WHISPER_EVALUATOR_OPENAI_MODEL") ?? (evalOpenai.model as string | undefined) ?? null,
+			baseURL: envGet("AI_WHISPER_EVALUATOR_OPENAI_BASE_URL") ?? (evalOpenai.baseURL as string | undefined) ?? null,
+		},
+		agentCli: { agent: null, executable: null, execArgs: null, promptVia: null, model: null }, // resolved in Task 5
 	};
 }
 
@@ -130,6 +141,10 @@ export function computeEvaluatorStatus(
 	if (!ctx.orchestratorEnabled) return "disabled";
 	if (cfg.provider === "anthropic" && cfg.anthropic.apiKey === null) {
 		return "missing_anthropic_key";
+	}
+	if (cfg.provider === "openai") {
+		if (cfg.openai.apiKey === null) return "missing_openai_key";
+		if (cfg.openai.model === null) return "invalid_config";
 	}
 	return "ready";
 }
@@ -143,5 +158,10 @@ export function isEvaluatorReady(status: EvaluatorStatus): boolean {
 // (disabled/unknown/ready all PROCEED — disabled is governed by createWorkflow's
 // own orchestrator check.) Centralized so the literal set lives in one place.
 export function isEvaluatorPreflightBlocked(status: EvaluatorStatus): boolean {
-	return status === "missing_anthropic_key" || status === "invalid_config";
+	return (
+		status === "missing_anthropic_key" ||
+		status === "missing_openai_key" ||
+		status === "agent_cli_unavailable" ||
+		status === "invalid_config"
+	);
 }

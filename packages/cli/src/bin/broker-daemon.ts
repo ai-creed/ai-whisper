@@ -99,16 +99,29 @@ if (loaderError) {
 // key) — never passes "" / undefined into new Anthropic(...). Guards BOTH
 // primary and fallback, so provider=ollama + fallback=anthropic + no key omits
 // the anthropic fallback rather than building one with an empty key.
-function providerConfigFrom(kind: "anthropic" | "ollama"): EvaluatorProviderConfig | null {
+function providerConfigFrom(kind: "anthropic" | "ollama" | "openai" | "agent-cli"): EvaluatorProviderConfig | null {
 	if (kind === "anthropic") {
 		if (!resolved || resolved.anthropic.apiKey === null) return null;
 		return { provider: "anthropic", apiKey: resolved.anthropic.apiKey };
 	}
-	return {
-		provider: "ollama",
-		...(resolved?.ollama.host ? { host: resolved.ollama.host } : {}),
-		...(resolved?.ollama.model ? { model: resolved.ollama.model } : {}),
-	};
+	if (kind === "openai") {
+		if (!resolved || resolved.openai.apiKey === null || resolved.openai.model === null) return null;
+		return {
+			provider: "openai",
+			apiKey: resolved.openai.apiKey,
+			model: resolved.openai.model,
+			...(resolved.openai.baseURL ? { baseURL: resolved.openai.baseURL } : {}),
+		};
+	}
+	if (kind === "ollama") {
+		return {
+			provider: "ollama",
+			...(resolved?.ollama.host ? { host: resolved.ollama.host } : {}),
+			...(resolved?.ollama.model ? { model: resolved.ollama.model } : {}),
+		};
+	}
+	// kind === "agent-cli" — implemented in Task 5
+	return null;
 }
 
 const collab = broker.control.getCollab(collabId);

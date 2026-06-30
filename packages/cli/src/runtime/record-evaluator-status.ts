@@ -11,6 +11,8 @@ const NOT_CONFIGURED: ResolvedEvaluatorConfig = {
 	fallback: null,
 	anthropic: { apiKey: null, model: null },
 	ollama: { host: null, model: null },
+	openai: { apiKey: null, model: null, baseURL: null },
+	agentCli: { agent: null, executable: null, execArgs: null, promptVia: null, model: null },
 };
 
 // Computes the daemon's evaluator readiness and persists it to the broker_daemon

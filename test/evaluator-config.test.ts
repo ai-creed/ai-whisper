@@ -21,6 +21,9 @@ describe("loadEvaluatorConfig precedence", () => {
 	let prevFallback: string | undefined;
 	let prevOllamaHost: string | undefined;
 	let prevOllamaModel: string | undefined;
+	let prevOpenaiKey: string | undefined;
+	let prevOpenaiModel: string | undefined;
+	let prevOpenaiBaseUrl: string | undefined;
 
 	beforeEach(() => {
 		root = tmpRoot();
@@ -30,12 +33,18 @@ describe("loadEvaluatorConfig precedence", () => {
 		prevFallback = process.env.AI_WHISPER_EVALUATOR_FALLBACK;
 		prevOllamaHost = process.env.AI_WHISPER_EVALUATOR_OLLAMA_HOST;
 		prevOllamaModel = process.env.AI_WHISPER_EVALUATOR_OLLAMA_MODEL;
+		prevOpenaiKey = process.env.OPENAI_API_KEY;
+		prevOpenaiModel = process.env.AI_WHISPER_EVALUATOR_OPENAI_MODEL;
+		prevOpenaiBaseUrl = process.env.AI_WHISPER_EVALUATOR_OPENAI_BASE_URL;
 		process.env.AI_WHISPER_STATE_ROOT = root;
 		delete process.env.ANTHROPIC_API_KEY;
 		delete process.env.AI_WHISPER_EVALUATOR_PROVIDER;
 		delete process.env.AI_WHISPER_EVALUATOR_FALLBACK;
 		delete process.env.AI_WHISPER_EVALUATOR_OLLAMA_HOST;
 		delete process.env.AI_WHISPER_EVALUATOR_OLLAMA_MODEL;
+		delete process.env.OPENAI_API_KEY;
+		delete process.env.AI_WHISPER_EVALUATOR_OPENAI_MODEL;
+		delete process.env.AI_WHISPER_EVALUATOR_OPENAI_BASE_URL;
 	});
 	afterEach(() => {
 		const restore = (k: string, v: string | undefined) =>
@@ -46,6 +55,9 @@ describe("loadEvaluatorConfig precedence", () => {
 		restore("AI_WHISPER_EVALUATOR_FALLBACK", prevFallback);
 		restore("AI_WHISPER_EVALUATOR_OLLAMA_HOST", prevOllamaHost);
 		restore("AI_WHISPER_EVALUATOR_OLLAMA_MODEL", prevOllamaModel);
+		restore("OPENAI_API_KEY", prevOpenaiKey);
+		restore("AI_WHISPER_EVALUATOR_OPENAI_MODEL", prevOpenaiModel);
+		restore("AI_WHISPER_EVALUATOR_OPENAI_BASE_URL", prevOpenaiBaseUrl);
 		rmSync(root, { recursive: true, force: true });
 	});
 
@@ -118,10 +130,36 @@ describe("loadEvaluatorConfig precedence", () => {
 		expect(warn).not.toHaveBeenCalled();
 		warn.mockRestore();
 	});
+
+	describe("openai provider resolution + status", () => {
+		it("resolves openai key/model/baseURL with env > auth > config precedence", () => {
+			writeFileSync(join(root, "auth.json"), JSON.stringify({ OPENAI_API_KEY: "sk-auth" }), { mode: 0o600 });
+			writeFileSync(join(root, "config.json"), JSON.stringify({ evaluator: { provider: "openai", openai: { model: "cfg-model", baseURL: "https://cfg/v1" } } }));
+			process.env.AI_WHISPER_EVALUATOR_OPENAI_MODEL = "env-model";
+			const cfg = loadEvaluatorConfig();
+			expect(cfg.provider).toBe("openai");
+			expect(cfg.openai.apiKey).toBe("sk-auth");
+			expect(cfg.openai.model).toBe("env-model");           // env beats config
+			expect(cfg.openai.baseURL).toBe("https://cfg/v1");
+		});
+
+		it("missing key → missing_openai_key; missing model → invalid_config", () => {
+			const noKey = { provider: "openai" as const, fallback: null, anthropic: { apiKey: null, model: null }, ollama: { host: null, model: null }, openai: { apiKey: null, model: "m", baseURL: null }, agentCli: { agent: null, executable: null, execArgs: null, promptVia: null, model: null } };
+			expect(computeEvaluatorStatus(noKey, { orchestratorEnabled: true, loaderError: null })).toBe("missing_openai_key");
+			const noModel = { ...noKey, openai: { apiKey: "k", model: null, baseURL: null } };
+			expect(computeEvaluatorStatus(noModel, { orchestratorEnabled: true, loaderError: null })).toBe("invalid_config");
+			const ready = { ...noKey, openai: { apiKey: "k", model: "m", baseURL: null } };
+			expect(computeEvaluatorStatus(ready, { orchestratorEnabled: true, loaderError: null })).toBe("ready");
+		});
+
+		it("missing_openai_key and is preflight-blocked", () => {
+			expect(isEvaluatorPreflightBlocked("missing_openai_key")).toBe(true);
+		});
+	});
 });
 
 describe("computeEvaluatorStatus", () => {
-	const base = { provider: "anthropic" as const, fallback: null, anthropic: { apiKey: "sk", model: null }, ollama: { host: null, model: null } };
+	const base = { provider: "anthropic" as const, fallback: null, anthropic: { apiKey: "sk", model: null }, ollama: { host: null, model: null }, openai: { apiKey: null, model: null, baseURL: null }, agentCli: { agent: null, executable: null, execArgs: null, promptVia: null, model: null } };
 	it("orchestrator off → disabled", () => {
 		expect(computeEvaluatorStatus(base, { orchestratorEnabled: false, loaderError: null })).toBe("disabled");
 	});
