@@ -1,5 +1,6 @@
 import { execSync } from "node:child_process";
 import type { AgentType } from "@ai-whisper/shared";
+import { createBrokerRuntime } from "@ai-whisper/broker";
 import { Command, Option } from "commander";
 import { waitForBrokerReady } from "./runtime/wait-for-broker-ready.js";
 import { runCollabMount } from "./commands/collab/mount.js";
@@ -34,6 +35,7 @@ import { runWorkflowResume } from "./commands/workflow/resume.js";
 import { runWorkflowPause } from "./commands/workflow/pause.js";
 import { runWorkflowCancel } from "./commands/workflow/cancel.js";
 import { runWorkflowTypes } from "./commands/workflow/types.js";
+import { runWorkflowStats } from "./commands/workflow/stats.js";
 import { runSkillInstall } from "./commands/skill/install.js";
 import { buildEnvReport, renderEnvReportText } from "./commands/env/report.js";
 import { connectToWorkspaceBroker } from "./runtime/broker-connect.js";
@@ -658,6 +660,31 @@ export function createCli(): Command {
 			const types = await runWorkflowTypes();
 			for (const t of types) {
 				console.log(t);
+			}
+		});
+
+	workflow
+		.command("stats")
+		.description(
+			"Show accumulated hands-off time saved across all workflows (global, all-time)",
+		)
+		.option("--json", "Output raw JSON instead of the human summary")
+		.action(async (opts: { json?: boolean }) => {
+			// Global command: open the shared state DB directly (no active collab
+			// required), mirroring runCollabDashboard. Driver + sweeps are off — this
+			// is a one-shot read.
+			const sqlitePath = getSharedSqlitePath();
+			const broker = createBrokerRuntime({
+				sqlitePath,
+				runWorkflowDriver: false,
+				runDiagnosticsSweep: false,
+				runDaemonHeartbeat: false,
+				runBrokerDaemonSweep: false,
+			});
+			try {
+				runWorkflowStats({ broker, json: opts.json ?? false });
+			} finally {
+				await broker.stop();
 			}
 		});
 

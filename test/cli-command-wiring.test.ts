@@ -88,4 +88,30 @@ describe("cli command wiring", () => {
 		const verdicts = inspect.options.find((o) => o.long === "--verdicts")!;
 		expect(verdicts.flags).toMatch(/\[/);
 	});
+
+	it("registers workflow subcommands: start, list, inspect, pause, resume, cancel, types, stats", () => {
+		const cli = createCli();
+		const workflow = cli.commands.find((c) => c.name() === "workflow");
+		expect(workflow).toBeDefined();
+
+		const subcommandNames = workflow!.commands.map((c) => c.name()).sort();
+		expect(subcommandNames).toEqual([
+			"cancel",
+			"inspect",
+			"list",
+			"pause",
+			"resume",
+			"start",
+			"stats",
+			"types",
+		]);
+	});
+
+	it("workflow stats exposes a --json option", () => {
+		const cli = createCli();
+		const workflow = cli.commands.find((c) => c.name() === "workflow")!;
+		const stats = workflow.commands.find((c) => c.name() === "stats");
+		expect(stats).toBeDefined();
+		expect(stats!.options.map((o) => o.long)).toContain("--json");
+	});
 });
