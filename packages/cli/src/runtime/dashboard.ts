@@ -484,6 +484,7 @@ export function createDashboardRuntime(input: {
 				mountAlive: mountAliveOf(sess.agentType),
 			}));
 		}
+		const handsOff = c.getHandsOffStats();
 		const wallState = buildWallState({
 			summaries,
 			now: isoNow,
@@ -493,6 +494,7 @@ export function createDashboardRuntime(input: {
 			page: wallPage,
 			selected: wallSelected,
 			snapshots,
+			handsOff: { totalMs: handsOff.totalMs, count: handsOff.count },
 		});
 		wallPage = wallState.page;
 		wallSelected = wallState.selected;

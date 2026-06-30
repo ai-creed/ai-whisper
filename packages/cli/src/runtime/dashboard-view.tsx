@@ -3,7 +3,7 @@ import type { AgentType } from "@ai-whisper/shared";
 import type { ReactElement, ReactNode } from "react";
 import type { WallState, WallPaneState, WallSummaryCounts, WorkflowAction } from "./dashboard-state.js";
 import { RelayView, type Viewport } from "./relay-view.js";
-import { fmtDur } from "./relay-view-state.js";
+import { fmtDur, fmtDurCoarse } from "./relay-view-state.js";
 import type { InspectorState } from "./dashboard-state.js";
 import { THEME, AGENT_COLOR } from "./theme.js";
 import { statusGlyph } from "./dashboard-glyph.js";
@@ -402,6 +402,9 @@ export function Wall(props: {
 							</Text>
 						);
 					})}
+					<Text color={THEME.muted}>
+						{`  │  hands-off saved ${fmtDurCoarse(state.handsOff.totalMs)} (${state.handsOff.count})`}
+					</Text>
 				</Text>
 			) : null}
 			{state.sections.map((sec) => {

@@ -79,6 +79,7 @@ function mkWallState(input: {
 	page?: number;
 	pageCount?: number;
 	totalRuns?: number;
+	handsOff?: { totalMs: number; count: number };
 }): WallState {
 	const sections = input.sections ?? [];
 	const panes = sections.flatMap((s) => s.panes);
@@ -90,6 +91,7 @@ function mkWallState(input: {
 		pageCount: input.pageCount ?? 1,
 		totalRuns,
 		selected: input.selected ?? 0,
+		handsOff: input.handsOff ?? { totalMs: 0, count: 0 },
 	};
 }
 
@@ -1309,6 +1311,28 @@ describe("Wall summary bar", () => {
 		const { lastFrame } = render(<Wall state={state} cols={120} rows={24} />);
 		const firstLine = (lastFrame() ?? "").split("\n").find((l) => l.trim().length > 0) ?? "";
 		expect(firstLine).not.toContain("running"); // first line is the ACTIVE section header, not a bar
+	});
+
+	it("renders the hands-off saved segment from state.handsOff", () => {
+		const counts: WallSummaryCounts = { running: 1, paused: 0, stuck: 0, done: 0, canceled: 0, idle: 0 };
+		const state = mkWallState({
+			sections: [mkSection({ group: "active", panes: [mkPane({ collabId: "c1", statusKey: "running" })] })],
+			handsOff: { totalMs: 1_138_800_000, count: 112 }, // 13d 4h
+		});
+		const { lastFrame } = render(<Wall state={state} cols={120} rows={24} counts={counts} />);
+		const firstLine = (lastFrame() ?? "").split("\n").find((l) => l.trim().length > 0) ?? "";
+		expect(firstLine).toContain("hands-off saved 13d 4h (112)");
+	});
+
+	it("renders hands-off saved 0m (0) when the figure is zero", () => {
+		const counts: WallSummaryCounts = { running: 0, paused: 0, stuck: 0, done: 0, canceled: 0, idle: 1 };
+		const state = mkWallState({
+			sections: [mkSection({ group: "active", panes: [mkPane({ collabId: "c1", statusKey: "running" })] })],
+			handsOff: { totalMs: 0, count: 0 },
+		});
+		const { lastFrame } = render(<Wall state={state} cols={120} rows={24} counts={counts} />);
+		const firstLine = (lastFrame() ?? "").split("\n").find((l) => l.trim().length > 0) ?? "";
+		expect(firstLine).toContain("hands-off saved 0m (0)");
 	});
 });
 

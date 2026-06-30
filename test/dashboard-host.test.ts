@@ -29,6 +29,13 @@ function fakeBroker(summaries: unknown[] = []) {
 		pauseWorkflow: vi.fn(),
 		resumeWorkflow: vi.fn(),
 		cancelWorkflow: vi.fn(),
+		getHandsOffStats: vi.fn(() => ({
+			totalMs: 0,
+			count: 0,
+			byStatus: { done: { count: 0, totalMs: 0 }, halted: { count: 0, totalMs: 0 } },
+			earliestKickoffAt: null,
+			skipped: 0,
+		})),
 	};
 	return { db: {}, control };
 }
@@ -690,5 +697,34 @@ describe("dashboard host", () => {
 		// The summary bar (rendered before page sections) must show the FULL count
 		// of running workflows — all N — not just however many fit on page 1.
 		expect(buf).toContain(`${N} running`);
+	});
+
+	it("poll sources the hands-off segment from getHandsOffStats (non-zero threaded to render)", async () => {
+		const stdout = new PassThrough();
+		(stdout as unknown as { columns: number }).columns = 120;
+		(stdout as unknown as { rows: number }).rows = 24;
+		let buf = "";
+		stdout.on("data", (c) => (buf += String(c)));
+		const broker = fakeBroker([S({})]);
+		broker.control.getHandsOffStats = vi.fn(() => ({
+			totalMs: 1_138_800_000, // 13d 4h
+			count: 112,
+			byStatus: { done: { count: 98, totalMs: 972_000_000 }, halted: { count: 14, totalMs: 166_800_000 } },
+			earliestKickoffAt: "2026-05-21T03:17:25.898Z",
+			skipped: 0,
+		})) as never;
+		const m = createDashboardRuntime({
+			broker: broker as never,
+			dashboardId: "d1",
+			stdout: stdout as unknown as NodeJS.WritableStream,
+			pollIntervalMs: 10,
+		});
+		m.start();
+		await new Promise((r) => setTimeout(r, 50));
+		await m.stop();
+		// Proves the poll called the source...
+		expect((broker.control.getHandsOffStats as { mock: { calls: unknown[] } }).mock.calls.length).toBeGreaterThan(0);
+		// ...and that its NON-ZERO return reached the rendered frame (not the default 0m (0)).
+		expect(buf).toContain("hands-off saved 13d 4h (112)");
 	});
 });
