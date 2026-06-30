@@ -1,6 +1,7 @@
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { getStateRoot } from "./state-root.js";
+import { isExecutableOnPath, resolveAgentCliInvocation } from "./agent-cli-presets.js";
 
 export type EvaluatorStatus =
 	| "ready"
@@ -116,6 +117,10 @@ export function loadEvaluatorConfig(): ResolvedEvaluatorConfig {
 	const evalOpenai = (evalCfg.openai ?? {}) as Record<string, unknown>;
 	const openaiKey = envGet("OPENAI_API_KEY") ?? (auth?.OPENAI_API_KEY as string | undefined) ?? null;
 
+	const evalAgentCli = (evalCfg.agentCli ?? {}) as Record<string, unknown>;
+	const rawAgent = envGet("AI_WHISPER_EVALUATOR_AGENT_CLI_AGENT") ?? (evalAgentCli.agent as string | undefined);
+	const agent = rawAgent === "claude" || rawAgent === "codex" || rawAgent === "agy" ? rawAgent : null;
+
 	return {
 		provider: resolvedProvider,
 		fallback,
@@ -129,13 +134,19 @@ export function loadEvaluatorConfig(): ResolvedEvaluatorConfig {
 			model: envGet("AI_WHISPER_EVALUATOR_OPENAI_MODEL") ?? (evalOpenai.model as string | undefined) ?? null,
 			baseURL: envGet("AI_WHISPER_EVALUATOR_OPENAI_BASE_URL") ?? (evalOpenai.baseURL as string | undefined) ?? null,
 		},
-		agentCli: { agent: null, executable: null, execArgs: null, promptVia: null, model: null }, // resolved in Task 5
+		agentCli: {
+			agent,
+			executable: (evalAgentCli.executable as string | undefined) ?? null,
+			execArgs: Array.isArray(evalAgentCli.execArgs) ? (evalAgentCli.execArgs as string[]) : null,
+			promptVia: evalAgentCli.promptVia === "arg" || evalAgentCli.promptVia === "stdin" ? evalAgentCli.promptVia : null,
+			model: (evalAgentCli.model as string | undefined) ?? null,
+		},
 	};
 }
 
 export function computeEvaluatorStatus(
 	cfg: ResolvedEvaluatorConfig,
-	ctx: { orchestratorEnabled: boolean; loaderError: Error | null },
+	ctx: { orchestratorEnabled: boolean; loaderError: Error | null; executableExists?: (exe: string) => boolean },
 ): Exclude<EvaluatorStatus, "unknown"> {
 	if (ctx.loaderError) return "invalid_config";
 	if (!ctx.orchestratorEnabled) return "disabled";
@@ -145,6 +156,17 @@ export function computeEvaluatorStatus(
 	if (cfg.provider === "openai") {
 		if (cfg.openai.apiKey === null) return "missing_openai_key";
 		if (cfg.openai.model === null) return "invalid_config";
+	}
+	if (cfg.provider === "agent-cli") {
+		if (cfg.agentCli.agent === null) return "invalid_config";
+		const { executable } = resolveAgentCliInvocation({
+			agent: cfg.agentCli.agent,
+			executable: cfg.agentCli.executable,
+			execArgs: cfg.agentCli.execArgs,
+			promptVia: cfg.agentCli.promptVia,
+		});
+		const exists = (ctx.executableExists ?? isExecutableOnPath)(executable);
+		if (!exists) return "agent_cli_unavailable";
 	}
 	return "ready";
 }

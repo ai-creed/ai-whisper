@@ -24,6 +24,7 @@ describe("loadEvaluatorConfig precedence", () => {
 	let prevOpenaiKey: string | undefined;
 	let prevOpenaiModel: string | undefined;
 	let prevOpenaiBaseUrl: string | undefined;
+	let prevAgentCliAgent: string | undefined;
 
 	beforeEach(() => {
 		root = tmpRoot();
@@ -36,6 +37,7 @@ describe("loadEvaluatorConfig precedence", () => {
 		prevOpenaiKey = process.env.OPENAI_API_KEY;
 		prevOpenaiModel = process.env.AI_WHISPER_EVALUATOR_OPENAI_MODEL;
 		prevOpenaiBaseUrl = process.env.AI_WHISPER_EVALUATOR_OPENAI_BASE_URL;
+		prevAgentCliAgent = process.env.AI_WHISPER_EVALUATOR_AGENT_CLI_AGENT;
 		process.env.AI_WHISPER_STATE_ROOT = root;
 		delete process.env.ANTHROPIC_API_KEY;
 		delete process.env.AI_WHISPER_EVALUATOR_PROVIDER;
@@ -45,6 +47,7 @@ describe("loadEvaluatorConfig precedence", () => {
 		delete process.env.OPENAI_API_KEY;
 		delete process.env.AI_WHISPER_EVALUATOR_OPENAI_MODEL;
 		delete process.env.AI_WHISPER_EVALUATOR_OPENAI_BASE_URL;
+		delete process.env.AI_WHISPER_EVALUATOR_AGENT_CLI_AGENT;
 	});
 	afterEach(() => {
 		const restore = (k: string, v: string | undefined) =>
@@ -58,6 +61,7 @@ describe("loadEvaluatorConfig precedence", () => {
 		restore("OPENAI_API_KEY", prevOpenaiKey);
 		restore("AI_WHISPER_EVALUATOR_OPENAI_MODEL", prevOpenaiModel);
 		restore("AI_WHISPER_EVALUATOR_OPENAI_BASE_URL", prevOpenaiBaseUrl);
+		restore("AI_WHISPER_EVALUATOR_AGENT_CLI_AGENT", prevAgentCliAgent);
 		rmSync(root, { recursive: true, force: true });
 	});
 
@@ -154,6 +158,25 @@ describe("loadEvaluatorConfig precedence", () => {
 
 		it("missing_openai_key and is preflight-blocked", () => {
 			expect(isEvaluatorPreflightBlocked("missing_openai_key")).toBe(true);
+		});
+	});
+
+	describe("agent-cli provider resolution + status", () => {
+		it("resolves agent from env and overrides from config.json", () => {
+			writeFileSync(join(root, "config.json"), JSON.stringify({ evaluator: { provider: "agent-cli", agentCli: { executable: "/opt/claude", execArgs: ["--print"], promptVia: "stdin", model: "sonnet" } } }));
+			process.env.AI_WHISPER_EVALUATOR_AGENT_CLI_AGENT = "claude";
+			const cfg = loadEvaluatorConfig();
+			expect(cfg.provider).toBe("agent-cli");
+			expect(cfg.agentCli).toEqual({ agent: "claude", executable: "/opt/claude", execArgs: ["--print"], promptVia: "stdin", model: "sonnet" });
+		});
+
+		it("agent===null → invalid_config; missing executable → agent_cli_unavailable; present → ready", () => {
+			const base = { provider: "agent-cli" as const, fallback: null, anthropic: { apiKey: null, model: null }, ollama: { host: null, model: null }, openai: { apiKey: null, model: null, baseURL: null } };
+			const noAgent = { ...base, agentCli: { agent: null, executable: null, execArgs: null, promptVia: null, model: null } };
+			expect(computeEvaluatorStatus(noAgent, { orchestratorEnabled: true, loaderError: null })).toBe("invalid_config");
+			const withAgent = { ...base, agentCli: { agent: "claude" as const, executable: null, execArgs: null, promptVia: null, model: null } };
+			expect(computeEvaluatorStatus(withAgent, { orchestratorEnabled: true, loaderError: null, executableExists: () => false })).toBe("agent_cli_unavailable");
+			expect(computeEvaluatorStatus(withAgent, { orchestratorEnabled: true, loaderError: null, executableExists: () => true })).toBe("ready");
 		});
 	});
 });

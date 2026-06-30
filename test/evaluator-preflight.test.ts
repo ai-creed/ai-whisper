@@ -154,4 +154,16 @@ describe("evaluator preflight in runWorkflowStart", () => {
 			broker.db.close();
 		}
 	});
+
+	it("agent_cli_unavailable → rejects with PATH remediation", async () => {
+		const broker = newBroker();
+		try {
+			seedCollab(broker);
+			seedDaemon(broker);
+			setBrokerDaemonEvaluatorStatus(broker.db, { collabId: "collab_y", status: "agent_cli_unavailable" });
+			await expect(runWorkflowStart({ broker, ...baseInput })).rejects.toThrow(/PATH/);
+		} finally {
+			broker.db.close();
+		}
+	});
 });

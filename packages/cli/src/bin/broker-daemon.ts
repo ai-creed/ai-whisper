@@ -120,8 +120,16 @@ function providerConfigFrom(kind: "anthropic" | "ollama" | "openai" | "agent-cli
 			...(resolved?.ollama.model ? { model: resolved.ollama.model } : {}),
 		};
 	}
-	// kind === "agent-cli" — implemented in Task 5
-	return null;
+	// kind === "agent-cli"
+	if (!resolved || resolved.agentCli.agent === null) return null;
+	return {
+		provider: "agent-cli",
+		agent: resolved.agentCli.agent,
+		...(resolved.agentCli.executable ? { executable: resolved.agentCli.executable } : {}),
+		...(resolved.agentCli.execArgs ? { execArgs: resolved.agentCli.execArgs } : {}),
+		...(resolved.agentCli.promptVia ? { promptVia: resolved.agentCli.promptVia } : {}),
+		...(resolved.agentCli.model ? { model: resolved.agentCli.model } : {}),
+	};
 }
 
 const collab = broker.control.getCollab(collabId);

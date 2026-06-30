@@ -140,6 +140,18 @@ describe("buildEnvReport", () => {
 		expect(buildEnvReport().evaluator).toEqual({ status: "invalid_config", ready: false });
 	});
 
+	it("reports agent_cli_unavailable when the configured executable is absent", () => {
+		// Absolute path that does not exist → the REAL isExecutableOnPath returns false
+		// deterministically (no $PATH dependence), so buildEnvReport's daemon-free check is exercised end-to-end.
+		writeFileSync(join(root, "config.json"), JSON.stringify({ evaluator: { provider: "agent-cli", agentCli: { agent: "claude", executable: "/nonexistent/aiw-no-such-cli" } } }));
+		expect(buildEnvReport().evaluator).toEqual({ status: "agent_cli_unavailable", ready: false });
+	});
+
+	it("reports invalid_config when provider=agent-cli has no agent", () => {
+		writeFileSync(join(root, "config.json"), JSON.stringify({ evaluator: { provider: "agent-cli" } }));
+		expect(buildEnvReport().evaluator).toEqual({ status: "invalid_config", ready: false });
+	});
+
 	it("renderEnvReportText prints one labeled line per field, including evaluator", () => {
 		const text = renderEnvReportText(buildEnvReport());
 		expect(text).toContain("engineVersion:");
