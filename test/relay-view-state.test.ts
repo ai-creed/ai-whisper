@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveLogLines, buildRelayViewState } from "../packages/cli/src/runtime/relay-view-state.ts";
+import { deriveLogLines, buildRelayViewState, fmtDurCoarse } from "../packages/cli/src/runtime/relay-view-state.ts";
 import type { RelayViewSnapshot } from "../packages/cli/src/runtime/relay-view-state.ts";
 import type { RelayHandoffLogRow } from "@ai-whisper/broker";
 
@@ -582,5 +582,24 @@ describe("agentHealth structured field", () => {
 			],
 		});
 		expect(s.agentHealth.map((a) => a.agent)).toEqual(["ezio", "claude"]);
+	});
+});
+
+describe("fmtDurCoarse", () => {
+	it.each([
+		[0, "0m"],
+		[45_000, "0m"], // 45s — sub-minute
+		[2_820_000, "47m"], // 47m
+		[3_600_000, "1h 0m"], // exact 1h — lower field shown though zero
+		[12_240_000, "3h 24m"], // 3h 24m
+		[86_400_000, "1d 0h"], // exact 1d — lower field shown though zero
+		[90_000_000, "1d 1h"], // 25h
+		[1_138_800_000, "13d 4h"], // 13d 4h 20m — minutes dropped at day scale
+	])("formats %i ms as %s", (ms, expected) => {
+		expect(fmtDurCoarse(ms)).toBe(expected);
+	});
+
+	it("clamps negative input to 0m", () => {
+		expect(fmtDurCoarse(-5000)).toBe("0m");
 	});
 });

@@ -38,6 +38,20 @@ export function fmtDur(ms: number): string {
 	return m > 0 ? `${m}m${String(s % 60).padStart(2, "0")}s` : `${s}s`;
 }
 
+// Coarse duration for large accumulated totals (hands-off time saved). Renders
+// the two largest place-value units; the lower field is shown even when zero so
+// day-scale values keep a stable `Xd Yh` shape and hour-scale an `Xh Ym` shape.
+// Seconds are never shown; any sub-minute total renders `0m`.
+export function fmtDurCoarse(ms: number): string {
+	const totalMin = Math.floor(Math.max(0, ms) / 60000);
+	const d = Math.floor(totalMin / 1440);
+	const h = Math.floor((totalMin % 1440) / 60);
+	const m = totalMin % 60;
+	if (d > 0) return `${d}d ${h}h`;
+	if (h > 0) return `${h}h ${m}m`;
+	return `${m}m`;
+}
+
 function isOkOutcome(outcome: string | null): boolean {
 	if (!outcome) return false;
 	return !/escalat|halt|fail|cancel/i.test(outcome);
