@@ -90,3 +90,284 @@ export function classifyAllCollabs(
 ): CollabClassification[] {
 	return collabs.map((c) => classifyCollab(db, c, isAlive));
 }
+
+import { execSync } from "node:child_process";
+import { createInterface } from "node:readline/promises";
+import {
+	applyMigrations,
+	openDatabase,
+	listAllCollabs,
+	deleteCollabCascade,
+	isPidAlive,
+} from "@ai-whisper/broker";
+import { getSharedSqlitePath } from "../../runtime/state-root.js";
+import { workspaceIdFromPath } from "../../runtime/workspace-id.js";
+
+export interface CollabPurgeOpts {
+	cwd: string;
+	dryRun?: boolean;
+	yes?: boolean;
+	force?: boolean;
+	json?: boolean;
+	collabId?: string;
+	workspace?: string;
+	isAlive?: (pid: number) => boolean;
+	isTTY?: boolean;
+	confirm?: (promptText: string) => Promise<boolean>;
+	log?: (line: string) => void;
+	killTmuxSession?: (session: string) => void;
+	deleteCascade?: (db: Database.Database, collabId: string) => void;
+}
+
+export interface PurgeResult {
+	classifications: CollabClassification[];
+	purged: string[];
+	skippedWentLive: string[];
+	skippedError: { collabId: string; error: string }[];
+	protectedSkipped: string[];
+	aborted: boolean;
+	exitCode: number;
+}
+
+function defaultConfirm(promptText: string): Promise<boolean> {
+	const rl = createInterface({ input: process.stdin, output: process.stdout });
+	return rl
+		.question(`${promptText} [y/N] `)
+		.then((answer) => /^y(es)?$/i.test(answer.trim()))
+		.finally(() => rl.close());
+}
+
+function defaultKillTmuxSession(session: string): void {
+	try {
+		const escaped = session.replace(/'/g, "'\\''");
+		execSync(`tmux kill-session -t '${escaped}'`, { stdio: "ignore" });
+	} catch {
+		// session may already be gone — cleanup is best-effort
+	}
+}
+
+function buildJsonPayload(
+	classifications: CollabClassification[],
+	purged: string[],
+	skippedWentLive: string[],
+	skippedError: { collabId: string; error: string }[],
+	protectedSkipped: string[],
+	aborted: boolean,
+) {
+	return {
+		classifications,
+		purged,
+		skipped: { wentLive: skippedWentLive, error: skippedError },
+		protected: protectedSkipped,
+		aborted,
+	};
+}
+
+function renderTable(
+	classifications: CollabClassification[],
+	log: (line: string) => void,
+): void {
+	if (classifications.length === 0) {
+		log("No collabs found.");
+		return;
+	}
+	log(
+		"COLLAB                          BUCKET     REASON           ROWS  WORKSPACE",
+	);
+	for (const c of classifications) {
+		const wf = c.workflowId ? ` [${c.workflowId} ${c.workflowStatus}]` : "";
+		log(
+			`${c.collabId.padEnd(31)} ${c.bucket.padEnd(10)} ${c.reason.padEnd(16)} ${String(c.rowCount).padStart(4)}  ${c.workspaceRoot}${wf}`,
+		);
+	}
+}
+
+export async function runCollabPurge(
+	opts: CollabPurgeOpts,
+): Promise<PurgeResult> {
+	if (opts.collabId && opts.workspace) {
+		throw new Error("--collab and --workspace are mutually exclusive");
+	}
+	const isAlive = opts.isAlive ?? isPidAlive;
+	const log = opts.log ?? ((line: string) => console.log(line));
+	const isTTY = opts.isTTY ?? Boolean(process.stdin.isTTY);
+	const confirm = opts.confirm ?? defaultConfirm;
+	const killTmux = opts.killTmuxSession ?? defaultKillTmuxSession;
+
+	const empty = (
+		exitCode: number,
+		classifications: CollabClassification[] = [],
+		protectedSkipped: string[] = [],
+		aborted = false,
+	): PurgeResult => ({
+		classifications,
+		purged: [],
+		skippedWentLive: [],
+		skippedError: [],
+		protectedSkipped,
+		aborted,
+		exitCode,
+	});
+
+	let workspaceFilter: string | null = null;
+	if (opts.workspace) {
+		try {
+			workspaceFilter = workspaceIdFromPath(opts.workspace);
+		} catch {
+			log(`Cannot resolve --workspace path: ${opts.workspace}`);
+			return empty(1);
+		}
+	}
+
+	const db = openDatabase(getSharedSqlitePath());
+	applyMigrations(db);
+	try {
+		let collabs = listAllCollabs(db);
+		if (opts.collabId)
+			collabs = collabs.filter((c) => c.collabId === opts.collabId);
+		if (workspaceFilter)
+			collabs = collabs.filter((c) => c.workspaceId === workspaceFilter);
+
+		const classifications = classifyAllCollabs(db, collabs, isAlive);
+		const protectedSkipped = classifications
+			.filter((c) => c.bucket === "protected")
+			.map((c) => c.collabId);
+		const candidates = classifications.filter(
+			(c) =>
+				c.bucket === "stale" ||
+				(opts.force === true && c.bucket === "protected"),
+		);
+
+		if (!opts.json) {
+			renderTable(classifications, log);
+		}
+
+		if (candidates.length === 0) {
+			if (opts.json) {
+				log(
+					JSON.stringify(
+						buildJsonPayload(
+							classifications,
+							[],
+							[],
+							[],
+							protectedSkipped,
+							false,
+						),
+						null,
+						2,
+					),
+				);
+			} else {
+				log("Nothing to purge.");
+			}
+			return empty(0, classifications, protectedSkipped);
+		}
+
+		const previewOnly =
+			opts.dryRun === true || (opts.json === true && opts.yes !== true);
+		if (previewOnly) {
+			if (opts.json) {
+				log(
+					JSON.stringify(
+						buildJsonPayload(
+							classifications,
+							[],
+							[],
+							[],
+							protectedSkipped,
+							false,
+						),
+						null,
+						2,
+					),
+				);
+			} else {
+				log(
+					`Dry run — ${candidates.length} collab(s) would be purged. Nothing deleted.`,
+				);
+			}
+			return empty(0, classifications, protectedSkipped);
+		}
+
+		if (opts.yes !== true) {
+			if (!isTTY) {
+				log(
+					`Refusing to delete ${candidates.length} collab(s) without confirmation. Re-run with --yes.`,
+				);
+				return empty(1, classifications, protectedSkipped, true);
+			}
+			const ok = await confirm(`Delete these ${candidates.length} collab(s)?`);
+			if (!ok) {
+				log("Aborted. Nothing deleted.");
+				return empty(0, classifications, protectedSkipped, true);
+			}
+		}
+
+		const purged: string[] = [];
+		const skippedWentLive: string[] = [];
+		const skippedError: { collabId: string; error: string }[] = [];
+
+		// Per-collab IMMEDIATE transaction with an in-transaction synchronous
+		// liveness re-check (TOCTOU guard). Defined once; invoked per candidate.
+		// deleteCascade is injectable so tests can simulate a per-collab failure;
+		// a throw rolls back that one transaction and is caught below — the sweep
+		// continues to the next candidate.
+		const cascade = opts.deleteCascade ?? deleteCollabCascade;
+		const purgeOne = db.transaction((collabId: string): boolean => {
+			if (isCollabLive(db, collabId, isAlive)) return false;
+			cascade(db, collabId);
+			return true;
+		});
+
+		for (const cand of candidates) {
+			try {
+				const deleted = purgeOne.immediate(cand.collabId);
+				if (deleted) {
+					purged.push(cand.collabId);
+					if (cand.tmuxSession) killTmux(cand.tmuxSession); // best-effort, post-commit
+				} else {
+					skippedWentLive.push(cand.collabId);
+				}
+			} catch (err) {
+				skippedError.push({
+					collabId: cand.collabId,
+					error: (err as Error).message,
+				});
+			}
+		}
+
+		if (opts.json) {
+			log(
+				JSON.stringify(
+					buildJsonPayload(
+						classifications,
+						purged,
+						skippedWentLive,
+						skippedError,
+						protectedSkipped,
+						false,
+					),
+					null,
+					2,
+				),
+			);
+		} else {
+			log(
+				`Purged ${purged.length}, skipped (went live) ${skippedWentLive.length}, errors ${skippedError.length}, protected ${protectedSkipped.length}.`,
+			);
+		}
+
+		return {
+			classifications,
+			purged,
+			skippedWentLive,
+			skippedError,
+			protectedSkipped,
+			aborted: false,
+			exitCode: skippedError.length > 0 ? 1 : 0,
+		};
+	} finally {
+		db.close();
+	}
+}
