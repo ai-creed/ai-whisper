@@ -59,7 +59,7 @@ You pair any two of four agents — `claude`, `codex`, `ezio`, and `agy`. ai-whi
 - **ezio** *(optional)* — bundled with ai-whisper; mount it with `whisper collab mount ezio`, no separate install.
 - **agy** *(optional)* — the `agy` command (Antigravity CLI), signed in. Mount it with `whisper collab mount agy` (manual-mount parity; no auto-launch via `collab start`).
 - **Node.js 22+**.
-- **An LLM evaluator with credentials** — workflows are gated by it and refuse to start without it. See [Evaluator configuration](docs/evaluator-configuration.md).
+- **An LLM evaluator with credentials** — workflows are gated by it and refuse to start without it. It supports four providers: **Anthropic** (default), a local **Ollama** model, **OpenAI** (and any OpenAI-compatible backend via a `baseURL` — Azure, OpenRouter, vLLM, LM Studio, …), or reusing an **already-mounted agent CLI** (`claude`/`codex`/`agy`) in non-interactive mode (no separate key — it reuses that CLI's own auth). See [Evaluator configuration](docs/evaluator-configuration.md).
 - **tmux** *(optional)* — only for `whisper collab start`, which auto-arranges both agents into panes. The mount flow below does not need it.
 
 > **Platform support:** ai-whisper is terminal-native and Unix-oriented — it drives interactive PTY sessions, so it runs on **macOS and Linux**. It is **not supported natively on Windows**: `whisper collab mount` / `reconnect` require a Unix tty-backed shell and will exit with an error pointing here. On Windows, run ai-whisper inside **[WSL2](https://learn.microsoft.com/windows/wsl/install)** — install Node, your agent CLI, and ai-whisper inside the WSL2 distro and run the commands there, where everything works as-is.

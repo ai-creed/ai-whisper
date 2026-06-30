@@ -190,6 +190,16 @@ Exit 0 (OpenAI Codex v0.142.3, model gpt-5.5). Preset `{ execArgs: ["exec"], pro
 
 The conservative seed `{ execArgs: [], promptVia: "stdin" }` was updated to `{ execArgs: ["-p"], promptVia: "arg" }` to match the confirmed non-interactive mode. `pnpm vitest run test/agent-cli-presets.test.ts` passes (4/4 green) with the updated preset.
 
+**End-to-end evaluator-pipeline smoke (AC-3) — agent-cli/claude through the real subprocess.** Beyond the raw `claude -p` invocation above, the full evaluator pipeline was run with no fakes: `createRelayOrchestratorEvaluator({ provider: "agent-cli", agent: "claude" })` with the real `defaultSpawn`, evaluating a sample legacy handoff. `buildAgentCliCaller` assembled the prompt (legacy system prompt + `JSON.stringify(payload)` + the "reply with ONLY the JSON object" instruction), spawned `claude -p <prompt>`, and `branch.parse()` extracted the verdict:
+
+```
+provider=agent-cli  branch=legacy  outcome=ok  latencyMs≈4900  tokens=null
+claude returned: {"verdict":"done","confidence":0.95,"reason":"…","followUpMessage":""}
+parsed verdict:   { verdict: "done", confidence: 0.95, reason: "…" }
+```
+
+The extra `followUpMessage: ""` (not a valid field on the `done` variant) was stripped by the non-strict zod parse — confirming the `/\{[\s\S]*\}/` extraction + zod validation is the authoritative validator against live, slightly-noisy CLI output. `tokens=null` as designed (CLIs do not report usage). This validates AC-3 at the evaluator-pipeline level, not just the CLI-invocation level. (Run via a throwaway `tsx` script driving the real source; not committed.)
+
 ### 6.3 Caller
 
 `buildAgentCliCaller(config)` resolves `{ executable, execArgs, promptVia }`, then per call:
