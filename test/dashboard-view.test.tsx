@@ -1323,10 +1323,10 @@ describe("Wall summary bar", () => {
 		});
 		const { lastFrame } = render(<Wall state={state} cols={120} rows={24} counts={counts} />);
 		const firstLine = (lastFrame() ?? "").split("\n").find((l) => l.trim().length > 0) ?? "";
-		expect(firstLine).toContain("hands-off saved 13d 4h (112)");
+		expect(firstLine).toContain("hands-off saved 13d 4h (or 316h) (112 wf runs)");
 	});
 
-	it("renders hands-off saved 0m (0) when the figure is zero", () => {
+	it("renders hands-off saved 0m (or 0h) (0 wf runs) when the figure is zero", () => {
 		const counts: WallSummaryCounts = { running: 0, paused: 0, stuck: 0, done: 0, canceled: 0, idle: 1 };
 		const state = mkWallState({
 			sections: [mkSection({ group: "active", panes: [mkPane({ collabId: "c1", statusKey: "running" })] })],
@@ -1334,7 +1334,7 @@ describe("Wall summary bar", () => {
 		});
 		const { lastFrame } = render(<Wall state={state} cols={120} rows={24} counts={counts} />);
 		const firstLine = (lastFrame() ?? "").split("\n").find((l) => l.trim().length > 0) ?? "";
-		expect(firstLine).toContain("hands-off saved 0m (0)");
+		expect(firstLine).toContain("hands-off saved 0m (or 0h) (0 wf runs)");
 	});
 });
 

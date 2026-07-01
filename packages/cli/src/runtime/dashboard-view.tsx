@@ -403,7 +403,7 @@ export function Wall(props: {
 						);
 					})}
 					<Text color={THEME.muted}>
-						{`  │  hands-off saved ${fmtDurCoarse(state.handsOff.totalMs)} (${state.handsOff.count})`}
+						{`  │  hands-off saved ${fmtDurCoarse(state.handsOff.totalMs)} (or ${Math.floor(state.handsOff.totalMs / 3_600_000)}h) (${state.handsOff.count} wf runs)`}
 					</Text>
 				</Text>
 			) : null}

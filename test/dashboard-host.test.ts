@@ -724,7 +724,7 @@ describe("dashboard host", () => {
 		await m.stop();
 		// Proves the poll called the source...
 		expect((broker.control.getHandsOffStats as { mock: { calls: unknown[] } }).mock.calls.length).toBeGreaterThan(0);
-		// ...and that its NON-ZERO return reached the rendered frame (not the default 0m (0)).
-		expect(buf).toContain("hands-off saved 13d 4h (112)");
+		// ...and that its NON-ZERO return reached the rendered frame (not the default 0m (or 0h) (0 wf runs)).
+		expect(buf).toContain("hands-off saved 13d 4h (or 316h) (112 wf runs)");
 	});
 });
