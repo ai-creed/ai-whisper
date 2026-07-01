@@ -6,7 +6,10 @@ import {
 	computeContainment,
 	computeOrderedJaccard,
 } from "./mounted-turn-owned-relay.js";
-import type { CaptureHandbackResult } from "./capture-handback-text.js";
+import type {
+	CaptureHandbackResult,
+	CaptureHandbackStatus,
+} from "./capture-handback-text.js";
 
 // ---------------------------------------------------------------------------
 // Cursor mounted-handback capture.
@@ -47,6 +50,18 @@ function parseEntry(line: string): TranscriptEntry | null {
 	}
 }
 
+/** Parse a JSONL transcript into entries, skipping blank/malformed lines. */
+function parseEntries(jsonl: string): TranscriptEntry[] {
+	const entries: TranscriptEntry[] = [];
+	for (const line of jsonl.split("\n")) {
+		const trimmed = line.trim();
+		if (trimmed.length === 0) continue;
+		const entry = parseEntry(trimmed);
+		if (entry) entries.push(entry);
+	}
+	return entries;
+}
+
 function textPartsOf(entry: TranscriptEntry): string[] {
 	const content = entry.message?.content;
 	if (!Array.isArray(content)) return [];
@@ -80,13 +95,7 @@ export interface TurnAnalysis {
  * entries contribute nothing). Malformed lines are skipped.
  */
 export function analyzeTurn(jsonl: string): TurnAnalysis {
-	const entries: TranscriptEntry[] = [];
-	for (const line of jsonl.split("\n")) {
-		const trimmed = line.trim();
-		if (trimmed.length === 0) continue;
-		const entry = parseEntry(trimmed);
-		if (entry) entries.push(entry);
-	}
+	const entries = parseEntries(jsonl);
 
 	let lastUser = -1;
 	for (let i = entries.length - 1; i >= 0; i -= 1) {
@@ -120,6 +129,21 @@ export function analyzeTurn(jsonl: string): TurnAnalysis {
  */
 export function extractLastAssistantText(jsonl: string): string {
 	return analyzeTurn(jsonl).text;
+}
+
+/**
+ * The text of the last `role:"user"` entry — the instruction the relay delivered
+ * to Cursor for this turn. This is the reliable selection anchor: it is written
+ * verbatim from the delivered handoff and is stable across polls while the
+ * assistant response streams. Empty when the transcript has no user entry.
+ */
+export function extractLastUserText(jsonl: string): string {
+	const entries = parseEntries(jsonl);
+	for (let i = entries.length - 1; i >= 0; i -= 1) {
+		const entry = entries[i];
+		if (entry?.role === "user") return textPartsOf(entry).join("\n").trim();
+	}
+	return "";
 }
 
 export interface ListCursorTranscriptsSeams {
@@ -189,6 +213,108 @@ function turnTextMatches(text: string, turn: string): boolean {
 }
 function turnTextScore(text: string, turn: string): number {
 	return Math.max(computeContainment(text, turn), computeOrderedJaccard(text, turn));
+}
+
+/**
+ * Does a transcript's user-entry text correspond to the relay-delivered prompt?
+ * Symmetric containment (either direction) tolerates any framing the relay wraps
+ * around the instruction; ordered Jaccard covers reworded-but-similar cases.
+ */
+function promptMatches(userText: string, expected: string): boolean {
+	const u = userText.trim();
+	const e = expected.trim();
+	if (u.length === 0 || e.length === 0) return false;
+	return (
+		computeContainment(u, e) >= 0.8 ||
+		computeContainment(e, u) >= 0.8 ||
+		computeOrderedJaccard(u, e) >= 0.6
+	);
+}
+function promptScore(userText: string, expected: string): number {
+	return Math.max(
+		computeContainment(userText, expected),
+		computeContainment(expected, userText),
+		computeOrderedJaccard(userText, expected),
+	);
+}
+
+export interface PromptPickResult {
+	/** How many transcripts were considered (post-freshness, within the limit). */
+	candidateCount: number;
+	/** How many of those had a user entry matching the expected prompt. */
+	matchedCount: number;
+	/** The best-matching transcript's ref + analysis, or null when none matched. */
+	pick: { path: string; analysis: TurnAnalysis } | null;
+}
+
+export interface PickByPromptInput {
+	refs: TranscriptRef[];
+	expectedPrompt: string;
+	readFile: (path: string) => string;
+	limit?: number;
+}
+
+/**
+ * Select the transcript whose LAST user entry best matches `expectedPrompt` — the
+ * instruction the relay delivered. Unlike assistant-text matching, the user entry
+ * is stable across polls and unaffected by the noisy TUI scrape, so it reliably
+ * identifies the active turn even amongst concurrent/stale transcripts.
+ */
+export function pickByPrompt(input: PickByPromptInput): PromptPickResult {
+	const limit = input.limit ?? 5;
+	const candidates = input.refs.slice(0, limit).map((ref) => {
+		const jsonl = input.readFile(ref.path);
+		return {
+			path: ref.path,
+			userText: extractLastUserText(jsonl),
+			analysis: analyzeTurn(jsonl),
+		};
+	});
+	const expected = input.expectedPrompt.trim();
+
+	let best: { path: string; analysis: TurnAnalysis } | null = null;
+	let bestScore = -1;
+	let matchedCount = 0;
+	for (const candidate of candidates) {
+		if (!promptMatches(candidate.userText, expected)) continue;
+		matchedCount += 1;
+		const score = promptScore(candidate.userText, expected);
+		if (score > bestScore) {
+			bestScore = score;
+			best = { path: candidate.path, analysis: candidate.analysis };
+		}
+	}
+	return { candidateCount: candidates.length, matchedCount, pick: best };
+}
+
+/**
+ * Drop transcripts last modified before the prompt was delivered (minus a clock-
+ * skew allowance). This is the freshness floor that stops a prior run's transcript
+ * — whose delivered instruction may be byte-identical to this run's — from being
+ * selected. A no-op when `promptDeliveredAtMs` is unknown.
+ */
+export function applyFreshnessFloor(
+	refs: TranscriptRef[],
+	promptDeliveredAtMs: number | undefined,
+	clockSkewMs: number,
+): TranscriptRef[] {
+	if (promptDeliveredAtMs === undefined) return refs;
+	const floor = promptDeliveredAtMs - clockSkewMs;
+	return refs.filter((ref) => ref.mtimeMs >= floor);
+}
+
+/** One capture-decision breadcrumb (persisted as JSONL by the mount wiring). */
+export interface CursorCaptureTrace {
+	/** Transcripts considered after the freshness floor. */
+	candidateCount: number;
+	/** Candidates whose user entry matched the expected prompt (0 when unused). */
+	matchedCount: number;
+	/** The chosen transcript path, or null when nothing was selected. */
+	chosenPath: string | null;
+	/** Length of the captured handback text (0 for no-response/degrade). */
+	textLen: number;
+	/** The resolved capture status. */
+	status: CaptureHandbackStatus;
 }
 
 export interface SelectTranscriptInput {
@@ -273,10 +399,20 @@ function sha256(text: string): string {
 }
 
 export interface CaptureCursorHandbackInput {
-	/** This turn's PTY scrape; used to disambiguate concurrent transcripts. */
+	/** This turn's PTY scrape; a fallback selection signal when no expectedPrompt. */
 	turnText: string;
+	/** The instruction the relay delivered — the primary selection anchor (matched
+	 *  against each transcript's last user entry). Falls back to turnText when absent. */
+	expectedPrompt?: string;
+	/** When the prompt was delivered (ms epoch); enables the freshness floor so a
+	 *  prior run's byte-identical transcript is not selected. */
+	promptDeliveredAtMs?: number;
+	/** Clock-skew allowance subtracted from the freshness floor (default 5s). */
+	clockSkewMs?: number;
 	/** Per-mount holder of the last delivered handback hash (freshness guard). */
 	lastDelivered: { hash: string | null };
+	/** Observability sink: one breadcrumb per capture resolution. */
+	onTrace?: (trace: CursorCaptureTrace) => void;
 	// Seams (default to real fs / timers):
 	listTranscripts?: () => TranscriptRef[];
 	readFile?: (path: string) => string;
@@ -316,21 +452,45 @@ export async function captureCursorHandback(
 	const pollIntervalMs = input.pollIntervalMs ?? 500;
 	const stabilityPolls = input.stabilityPolls ?? 4;
 	const limit = input.selectLimit ?? 5;
+	const clockSkewMs = input.clockSkewMs ?? 5_000;
+	const expectedPrompt = input.expectedPrompt?.trim() ?? "";
 	const maxPolls = Math.max(1, Math.ceil(budgetMs / pollIntervalMs));
 
 	let sawTranscript = false;
 	let prevText: string | null = null;
 	let stableCount = 0;
+	// Last-poll observability, emitted with the terminal result.
+	let candidateCount = 0;
+	let matchedCount = 0;
+	let chosenPath: string | null = null;
+
+	const finish = (
+		status: CaptureHandbackStatus,
+		text: string | null,
+	): CaptureHandbackResult => {
+		input.onTrace?.({
+			candidateCount,
+			matchedCount,
+			chosenPath,
+			textLen: text?.length ?? 0,
+			status,
+		});
+		return { status, text, interferenceDetected: false };
+	};
 
 	for (let attempt = 0; attempt < maxPolls; attempt += 1) {
 		if (attempt > 0) await sleep(pollIntervalMs);
 
-		let refs: TranscriptRef[];
+		let allRefs: TranscriptRef[];
 		try {
-			refs = listTranscripts();
+			allRefs = listTranscripts();
 		} catch {
-			refs = [];
+			allRefs = [];
 		}
+		// Freshness floor: never select a transcript last written before this
+		// prompt was delivered (a prior run's, possibly byte-identical).
+		const refs = applyFreshnessFloor(allRefs, input.promptDeliveredAtMs, clockSkewMs);
+		candidateCount = refs.length;
 		if (refs.length === 0) {
 			prevText = null;
 			stableCount = 0;
@@ -340,16 +500,26 @@ export async function captureCursorHandback(
 
 		let pick: { path: string; analysis: TurnAnalysis } | null;
 		try {
-			pick = pickActiveTranscript(refs, input.turnText, readFile, limit);
+			if (expectedPrompt.length > 0) {
+				// Anchor on the delivered instruction (the transcript's user entry) —
+				// robust to the noisy TUI scrape and to concurrent/stale sessions.
+				const result = pickByPrompt({ refs, expectedPrompt, readFile, limit });
+				matchedCount = result.matchedCount;
+				pick = result.pick;
+			} else {
+				// No delivered prompt available → fall back to assistant-text/newest.
+				pick = pickActiveTranscript(refs, input.turnText, readFile, limit);
+			}
 		} catch {
 			pick = null;
 		}
 		if (!pick || !pick.analysis.hasAssistant) {
-			// Turn hasn't started yet — reset stability tracking and wait.
+			// Turn hasn't started (or no match yet) — reset stability and wait.
 			prevText = null;
 			stableCount = 0;
 			continue;
 		}
+		chosenPath = pick.path;
 
 		const { turnEnded, text } = pick.analysis;
 		if (text === prevText && text.length > 0) {
@@ -363,15 +533,15 @@ export async function captureCursorHandback(
 		if (turnEnded || stableComplete) {
 			if (text.length === 0) {
 				// Turn ended with no prose (e.g. tool-only) → no-response.
-				return { status: "captured", text: null, interferenceDetected: false };
+				return finish("captured", null);
 			}
 			const hash = sha256(text);
 			if (hash === input.lastDelivered.hash) {
 				// Same as the last handback (re-poll / repeated turn) → no-response.
-				return { status: "captured", text: null, interferenceDetected: false };
+				return finish("captured", null);
 			}
 			input.lastDelivered.hash = hash;
-			return { status: "captured", text, interferenceDetected: false };
+			return finish("captured", text);
 		}
 		// Assistant is mid-response — keep polling.
 	}
@@ -379,9 +549,9 @@ export async function captureCursorHandback(
 	if (sawTranscript) {
 		// The turn never completed within the budget — let the relay's retry ladder
 		// give Cursor more time rather than handing back an empty/partial deliverable.
-		return { status: "timed_out", text: null, interferenceDetected: false };
+		return finish("timed_out", null);
 	}
 	// Never found a transcript (not flushed / unreadable). Degrade to the PTY
 	// scrape so a transcript hiccup never stalls the run.
-	return { status: "degraded_pty_only", text: null, interferenceDetected: false };
+	return finish("degraded_pty_only", null);
 }

@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
 	analyzeTurn,
+	applyFreshnessFloor,
 	captureCursorHandback,
 	extractLastAssistantText,
+	extractLastUserText,
+	pickByPrompt,
 	selectTranscript,
+	type CursorCaptureTrace,
 	type TranscriptRef,
 } from "../packages/cli/src/runtime/cursor-transcript-capture.ts";
 
@@ -24,6 +28,10 @@ const turnEndedLine = () => JSON.stringify({ type: "turn_ended", status: "succes
 /** A completed turn: user prompt, assistant reply, turn_ended marker. */
 const completedTurn = (text: string) =>
 	[userLine("ask"), assistantLine(text), turnEndedLine()].join("\n");
+
+/** A completed turn with an explicit user prompt (for prompt-anchored selection). */
+const completedTurnFor = (prompt: string, answer: string) =>
+	[userLine(prompt), assistantLine(answer), turnEndedLine()].join("\n");
 
 describe("extractLastAssistantText", () => {
 	it("returns the assistant text after the last user entry", () => {
@@ -238,5 +246,159 @@ describe("captureCursorHandback (turn_ended-gated)", () => {
 		});
 		expect(result.status).toBe("degraded_pty_only");
 		expect(result.text).toBeNull();
+	});
+});
+
+describe("extractLastUserText", () => {
+	it("returns the text of the last user entry", () => {
+		const jsonl = [
+			userLine("stale prior prompt"),
+			assistantLine("prior answer"),
+			userLine("the delivered instruction"),
+			assistantLine("working"),
+		].join("\n");
+		expect(extractLastUserText(jsonl)).toBe("the delivered instruction");
+	});
+
+	it("returns empty string when there is no user entry", () => {
+		expect(extractLastUserText(assistantLine("only assistant"))).toBe("");
+	});
+});
+
+describe("pickByPrompt", () => {
+	const refs: TranscriptRef[] = [
+		{ path: "/newest.jsonl", mtimeMs: 300 },
+		{ path: "/match.jsonl", mtimeMs: 200 },
+		{ path: "/old.jsonl", mtimeMs: 100 },
+	];
+	const files: Record<string, string> = {
+		"/newest.jsonl": completedTurnFor("implement the parser refactor please", "did parser"),
+		"/match.jsonl": completedTurnFor("add a hello world helper with tests", "added hello.py and tests"),
+		"/old.jsonl": completedTurnFor("ancient unrelated request", "old answer"),
+	};
+	const readFile = (p: string) => files[p] ?? "";
+
+	it("picks the transcript whose last user entry matches the expected prompt, not the newest", () => {
+		const r = pickByPrompt({
+			refs,
+			expectedPrompt: "add a hello world helper with tests, everything passing",
+			readFile,
+		});
+		expect(r.pick?.path).toBe("/match.jsonl");
+		expect(r.pick?.analysis.text).toBe("added hello.py and tests");
+	});
+
+	it("reports candidate and matched counts", () => {
+		const r = pickByPrompt({
+			refs,
+			expectedPrompt: "add a hello world helper with tests",
+			readFile,
+		});
+		expect(r.candidateCount).toBe(3);
+		expect(r.matchedCount).toBe(1);
+	});
+
+	it("returns a null pick when no user entry matches the expected prompt", () => {
+		const r = pickByPrompt({
+			refs,
+			expectedPrompt: "something entirely different concerning telemetry dashboards",
+			readFile,
+		});
+		expect(r.pick).toBeNull();
+		expect(r.matchedCount).toBe(0);
+	});
+});
+
+describe("applyFreshnessFloor", () => {
+	it("drops refs older than promptDeliveredAtMs minus clockSkew", () => {
+		const refs: TranscriptRef[] = [
+			{ path: "/fresh.jsonl", mtimeMs: 1000 },
+			{ path: "/stale.jsonl", mtimeMs: 100 },
+		];
+		const out = applyFreshnessFloor(refs, 900, 200); // floor = 700
+		expect(out.map((r) => r.path)).toEqual(["/fresh.jsonl"]);
+	});
+
+	it("returns all refs when promptDeliveredAtMs is undefined", () => {
+		const refs: TranscriptRef[] = [
+			{ path: "/a.jsonl", mtimeMs: 1 },
+			{ path: "/b.jsonl", mtimeMs: 2 },
+		];
+		expect(applyFreshnessFloor(refs, undefined, 200)).toEqual(refs);
+	});
+});
+
+describe("captureCursorHandback (prompt-anchored + freshness + trace)", () => {
+	const noSleep = async () => {};
+
+	it("captures the assistant text of the expectedPrompt-matching transcript, not the newest", async () => {
+		const refs: TranscriptRef[] = [
+			{ path: "/newest.jsonl", mtimeMs: 300 },
+			{ path: "/match.jsonl", mtimeMs: 200 },
+		];
+		const files: Record<string, string> = {
+			"/newest.jsonl": completedTurnFor("do the unrelated refactor task", "unrelated answer"),
+			"/match.jsonl": completedTurnFor(
+				"apply the hotfix to the auth module",
+				"applied the auth hotfix, tests green",
+			),
+		};
+		const result = await captureCursorHandback({
+			turnText: "", // PTY scrape unreliable for the TUI
+			expectedPrompt: "apply the hotfix to the auth module now",
+			lastDelivered: { hash: null },
+			listTranscripts: () => refs,
+			readFile: (p) => files[p] ?? "",
+			sleep: noSleep,
+		});
+		expect(result.status).toBe("captured");
+		expect(result.text).toBe("applied the auth hotfix, tests green");
+	});
+
+	it("ignores a matching but stale transcript below the freshness floor", async () => {
+		const refs: TranscriptRef[] = [{ path: "/stale.jsonl", mtimeMs: 100 }];
+		const files: Record<string, string> = {
+			"/stale.jsonl": completedTurnFor("apply the hotfix to the auth module", "stale answer"),
+		};
+		const result = await captureCursorHandback({
+			turnText: "",
+			expectedPrompt: "apply the hotfix to the auth module",
+			promptDeliveredAtMs: 10_000,
+			clockSkewMs: 1_000, // floor 9000 > 100 → excluded
+			lastDelivered: { hash: null },
+			listTranscripts: () => refs,
+			readFile: (p) => files[p] ?? "",
+			sleep: noSleep,
+			budgetMs: 300,
+			pollIntervalMs: 100,
+		});
+		expect(result.status).toBe("degraded_pty_only");
+		expect(result.text).toBeNull();
+	});
+
+	it("emits a trace breadcrumb on capture", async () => {
+		const refs: TranscriptRef[] = [{ path: "/match.jsonl", mtimeMs: 200 }];
+		const files: Record<string, string> = {
+			"/match.jsonl": completedTurnFor("apply the hotfix to the auth module", "applied the auth hotfix"),
+		};
+		const traces: CursorCaptureTrace[] = [];
+		const result = await captureCursorHandback({
+			turnText: "",
+			expectedPrompt: "apply the hotfix to the auth module",
+			lastDelivered: { hash: null },
+			listTranscripts: () => refs,
+			readFile: (p) => files[p] ?? "",
+			sleep: noSleep,
+			onTrace: (t) => traces.push(t),
+		});
+		expect(result.status).toBe("captured");
+		expect(traces).toHaveLength(1);
+		expect(traces[0]).toMatchObject({
+			candidateCount: 1,
+			matchedCount: 1,
+			chosenPath: "/match.jsonl",
+			status: "captured",
+		});
+		expect(traces[0]!.textLen).toBeGreaterThan(0);
 	});
 });
