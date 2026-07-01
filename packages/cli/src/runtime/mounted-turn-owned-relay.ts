@@ -310,6 +310,11 @@ export function createMountedTurnOwnedRelay(input: {
 	openComposer: (args: { prompt: string; initialValue: string }) => Promise<string | null>;
 	captureHandbackText?: (
 		turnText: string,
+		/** Provider-specific capture hints. Cursor uses these to select the right
+		 *  on-disk transcript: `expectedPrompt` is the delivered instruction (matched
+		 *  against the transcript's user entry) and `promptDeliveredAtMs` is the
+		 *  freshness floor. Ignored by the clipboard path (claude/codex). */
+		meta?: { expectedPrompt?: string; promptDeliveredAtMs?: number },
 	) => Promise<string | CaptureHandbackResult | null>;
 	confirmHandbackCapture?: (args: { target: AgentType; text: string }) => Promise<boolean>;
 	prefillHandbackFromCapture?: boolean;
@@ -368,6 +373,11 @@ export function createMountedTurnOwnedRelay(input: {
 		string,
 		{ attempts: number; nextEligibleAt: number }
 	>();
+	// Per-handoff estimate of when this turn's instruction reached the mounted agent
+	// (≈ handoff-accept time). Cursor's transcript freshness floor uses it to reject
+	// a prior run's stale transcript. Recorded once (stable) the first time we
+	// capture, from the turn's age, so later re-polls don't drift the value.
+	const promptDeliveredAt = new Map<string, number>();
 	// Synchronous reservation guarding the awaited capture. The mount fires
 	// checkIdleActions() on a 1s timer while a capture can take several seconds
 	// (clipboard poll + lease wait), so an overlapping tick must not start a second
@@ -1185,6 +1195,15 @@ export function createMountedTurnOwnedRelay(input: {
 				return; // within spacing window — don't hammer /copy on the 1s poll
 			}
 
+			// Record when this turn's instruction reached the mounted agent (≈ accept
+			// time, from the turn's current age) once, so re-polls reuse a stable
+			// freshness floor for cursor's transcript selection.
+			let promptDeliveredAtMs = promptDeliveredAt.get(accepted.handoffId);
+			if (promptDeliveredAtMs === undefined) {
+				promptDeliveredAtMs = Date.now() - (refreshTurnState().handoffAgeMs ?? 0);
+				promptDeliveredAt.set(accepted.handoffId, promptDeliveredAtMs);
+			}
+
 			// Reserve synchronously BEFORE the awaited capture so a concurrent 1s
 			// timer tick cannot start a second /copy for this in-flight handoff.
 			// (retryState is only updated after the await, so the checks above do not
@@ -1221,7 +1240,11 @@ export function createMountedTurnOwnedRelay(input: {
 			let captureTimedOut = false;
 			try {
 				const captureResult = await raceCaptureAgainstWatchdog(
-					() => input.captureHandbackText?.(turnResult.text ?? ""),
+					() =>
+						input.captureHandbackText?.(turnResult.text ?? "", {
+							expectedPrompt: accepted.requestText,
+							promptDeliveredAtMs,
+						}),
 					captureWatchdogMs,
 					scheduleWatchdog,
 				);
@@ -1274,7 +1297,18 @@ export function createMountedTurnOwnedRelay(input: {
 				);
 			}
 
-			const classification = classifyCapture(turnResult, clipboardText);
+			// Cursor's handback is read from its on-disk transcript, already validated
+			// by prompt-anchor + freshness in captureCursorHandback. Cursor is a
+			// full-screen TUI, so re-validating that text against the noisy PTY scrape
+			// via classifyCapture would reject a valid deliverable as a confident-miss
+			// (and poison the retry ladder). Treat a non-empty cursor capture as
+			// authoritative and skip the PTY-similarity check. An EMPTY cursor capture
+			// still flows through classifyCapture (no-response / retry handling).
+			const cursorAuthoritative =
+				input.currentAgent === "cursor" && (clipboardText ?? "").trim().length > 0;
+			const classification: CaptureClassification = cursorAuthoritative
+				? { status: "ok", jaccardScore: null, containmentScore: null }
+				: classifyCapture(turnResult, clipboardText);
 			const captureStatus = classification.status;
 			let requestText = captureStatus === "ok" ? (clipboardText ?? "") : "";
 
@@ -1337,6 +1371,7 @@ export function createMountedTurnOwnedRelay(input: {
 			// Burn the one-shot guard and stop tracking retries for this handoff.
 			autoHandbackFiredFor = accepted.handoffId;
 			autoHandbackAttempts.delete(accepted.handoffId);
+			promptDeliveredAt.delete(accepted.handoffId);
 
 			// Evaluate race guard synchronously so the diagnostic row carries the correct flag.
 			const currentAcceptedId = getAcceptedHandoff()?.handoffId;

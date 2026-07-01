@@ -1976,6 +1976,116 @@ describe("auto-handback gate — stale prior-phase clipboard (Bug 2026-06-06)", 
 	});
 });
 
+describe("auto-handback gate — cursor transcript capture is authoritative", () => {
+	// Cursor is a full-screen TUI: its PTY scrape (turnResult) is noisy chrome that
+	// won't resemble the real deliverable read from the on-disk transcript. The
+	// transcript capture already validated the turn (prompt-anchored + freshness),
+	// so the relay must NOT re-validate it against the PTY scrape via classifyCapture
+	// — doing so rejects a valid handback as a confident-miss and stalls the run.
+	const cursorInstruction =
+		"Implement the retry helper in utils and add a passing unit test.";
+	// The genuine deliverable, read from Cursor's transcript by captureCursorHandback.
+	const cursorHandback =
+		"Added retryWithBackoff to utils.ts and a passing unit test in utils.test.ts.";
+	// The noisy TUI PTY scrape — high confidence, but dissimilar to the deliverable.
+	const cursorPtyScrape =
+		"⠋ Generating (12s · ↑ 2.1k tokens) — press esc to interrupt";
+
+	function makeCursorBroker() {
+		return {
+			control: {
+				getRelayTurnState: vi.fn(() => ({
+					collabId: "collab_turn",
+					turnOwner: "cursor" as const,
+					waitingAgent: "claude" as const,
+					unresolvedHandoffId: "handoff_1",
+					handoffState: "accepted" as const,
+					handoffAgeMs: 35_000,
+				})),
+				getRelayHandoff: vi.fn(() => ({
+					handoffId: "handoff_1",
+					collabId: "collab_turn",
+					senderAgent: "claude" as const,
+					targetAgent: "cursor" as const,
+					requestText: cursorInstruction,
+					status: "accepted" as const,
+				})),
+				acceptRelayHandoff: vi.fn(),
+				declineRelayHandoff: vi.fn(),
+				deferRelayHandoff: vi.fn(),
+				handoffBackRelay: vi.fn(),
+				recordCaptureDiagnostic: vi.fn(() => ({ captureId: "cap_1" })),
+				getHandoffWithWorkflowMeta: vi.fn(() => ({
+					workflowId: "wf_test",
+					chainId: "ch_test",
+				})),
+			},
+		};
+	}
+
+	function makeCursorRelay(
+		broker: ReturnType<typeof makeCursorBroker>,
+		captureHandbackText: (
+			turnText: string,
+			meta?: { expectedPrompt?: string; promptDeliveredAtMs?: number },
+		) => Promise<string | null>,
+	) {
+		return createMountedTurnOwnedRelay({
+			broker,
+			collabId: "collab_turn",
+			currentAgent: "cursor",
+			writeLocalMessage() {},
+			writeUserInput() {},
+			openComposer: () => Promise.resolve(null),
+			turnCapture: {
+				reset: vi.fn(),
+				finishAssistantTurn: vi.fn(),
+				hasVisibleAssistantTurn: () => true,
+				extractLatestAssistantTurn: () => ({
+					confidence: "high" as const,
+					text: cursorPtyScrape,
+				}),
+			},
+			autoHandbackRetryMs: 0,
+			autoHandbackMaxAttempts: 5,
+			captureHandbackText,
+		});
+	}
+
+	it("delivers a non-empty cursor transcript capture even when it does not match the PTY scrape", async () => {
+		const broker = makeCursorBroker();
+		const relay = makeCursorRelay(broker, () => Promise.resolve(cursorHandback));
+
+		await relay.checkIdleActions();
+
+		expect(broker.control.handoffBackRelay).toHaveBeenCalledTimes(1);
+		expect(broker.control.handoffBackRelay).toHaveBeenCalledWith(
+			expect.objectContaining({
+				targetAgent: "claude",
+				requestText: cursorHandback,
+				captureStatus: "ok",
+			}),
+		);
+	});
+
+	it("passes the delivered instruction (and a delivery timestamp) to the capture callback", async () => {
+		const broker = makeCursorBroker();
+		const capture = vi.fn(
+			(_turnText: string, _meta?: { expectedPrompt?: string; promptDeliveredAtMs?: number }) =>
+				Promise.resolve(cursorHandback),
+		);
+		const relay = makeCursorRelay(broker, capture);
+
+		await relay.checkIdleActions();
+
+		expect(capture).toHaveBeenCalled();
+		const meta = capture.mock.calls[0]![1];
+		expect(meta?.expectedPrompt).toBe(cursorInstruction);
+		expect(typeof meta?.promptDeliveredAtMs).toBe("number");
+		expect(meta!.promptDeliveredAtMs!).toBeLessThanOrEqual(Date.now());
+	});
+});
+
 describe.skip("classifyCapture — short freshly-captured clipboard (Mode A repro)", () => {
 	it("accepts a short claude reply when PTY turn text is empty/low-confidence (TUI normalization)", () => {
 		const result = classifyCapture(
