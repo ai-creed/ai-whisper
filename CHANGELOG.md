@@ -5,6 +5,13 @@ All notable changes to the `ai-whisper` package are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-07-01
+
+### Added
+
+- **`whisper collab purge` — reclaim stale collab state across every workspace**: enumerate collabs across all known workspaces, classify each as stale (no live broker/daemon process) or active, and cascade-delete the stale ones from every collab-scoped table. Safe by default: a collab with a non-terminal (resumable) workflow is protected unless `--force`; deletion refuses to run without `--yes` (use `--dry-run` to classify and print only); and the cascade is TOCTOU-safe with a schema-drift guard that aborts rather than partially wipe if the collab-scoped table set has drifted. Scope the sweep with `--collab <id>` or `--workspace <path>` (mutually exclusive), and add `--json` for machine-readable output.
+- **Accumulated "hands-off time saved" metric**: a new `whisper workflow stats` command reports the summed wall-clock elapsed of every completed (`done`/`halted`) workflow across all history — the time you were hands-off while the agents drove the work — with a per-status breakdown and a `--json` form. The collab dashboard summary bar gains a live segment showing the same figure as a coarse duration plus a whole-hour total and run count (e.g. `hands-off saved 14d 12h (or 348h) (135 wf runs)`), so the number can drive a cost-of-labor showcase. Computed on read from workflow timestamps — no persisted counter and no database migration.
+
 ## [0.10.0] - 2026-06-30
 
 ### Added
@@ -709,6 +716,7 @@ Requires `@ai-creed/ai-ezio` ≥ 0.2.0-beta.4 (the `@ai-ezio/surface` slash seam
   (Claude + Codex) driven by structured workflows, with npm metadata
   (description, repository, homepage).
 
+[0.11.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.11.0
 [0.10.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.10.0
 [0.9.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.9.0
 [0.8.1]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.8.1
