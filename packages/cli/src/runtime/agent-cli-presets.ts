@@ -4,8 +4,10 @@ import { delimiter, join } from "node:path";
 import type { AgentType } from "@ai-whisper/shared";
 
 // Agents that have a preset invocation. "ezio" is excluded because it is an
-// SDK-based adapter, not a CLI, so it does not belong in the CLI-preset registry.
-export type AgentCliAgent = Exclude<AgentType, "ezio">;
+// SDK-based adapter, not a CLI. "cursor" is excluded because its headless output
+// is a JSON envelope (not the plain -p text the agent-cli evaluator consumes) and
+// the evaluator config never resolves cursor as an agent-cli agent.
+export type AgentCliAgent = Exclude<AgentType, "ezio" | "cursor">;
 
 export type ChildProcessLike = {
 	stdout: { on(e: "data", cb: (chunk: unknown) => void): void };

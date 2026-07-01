@@ -5,6 +5,7 @@ const DISPLAY_NAMES: Record<AgentType, string> = {
 	codex: "Codex",
 	ezio: "Ezio",
 	agy: "Agy",
+	cursor: "Cursor",
 };
 
 export function agentDisplayName(agentType: AgentType): string {

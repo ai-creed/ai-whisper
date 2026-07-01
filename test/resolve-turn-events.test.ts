@@ -39,7 +39,7 @@ describe("resolveTurnEvents (flag > env > default ON)", () => {
 
   it("a cursor-only allow-list leaves both event providers off (cursor uses clipboard, not events)", () => {
     delete process.env.AI_WHISPER_TURN_EVENTS;
-    expect(resolveTurnEvents("cursor")).toEqual({ claude: false, codex: false });
+    expect(resolveTurnEvents("cursor")).toEqual({ claude: false, codex: false, agy: false });
   });
 
   it("flag overrides env", () => {
