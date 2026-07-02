@@ -447,7 +447,7 @@ export function Wall(props: {
 					props.showAll
 						? `${state.totalRuns} runs (every run, unmasked)`
 						: `${state.totalRuns} collabs (one latest run each)`
-				} · ↑↓/jk select · ↵ inspect · p/r/c act · [ ] page · q quit`}
+				} · ↑↓/jk select · ↵ inspect · p/r/c/d act · [ ] page · q quit`}
 			</Text>
 			<Text color={THEME.muted}>
 				● running ‖ paused ⚠ stuck/halted ✓ done ✖ canceled ◌ idle
@@ -521,7 +521,7 @@ export function Inspector(props: {
 				<Text color={THEME.muted}>
 					{`   1-4 section${
 						props.section === "live" ? " · ↑↓/g/G/f scroll" : ""
-					} · p/r/c act · Esc wall · q quit`}
+					} · p/r/c/d act · Esc wall · q quit`}
 				</Text>
 			</Text>
 			{props.section === "live" ? (

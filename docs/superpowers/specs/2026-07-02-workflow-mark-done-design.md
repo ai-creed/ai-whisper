@@ -2,7 +2,7 @@
 
 Status: design approved, not yet implemented
 Date: 2026-07-02
-Revision: 2026-07-03a — broker contract made atomic after workflow review: eligibility guards moved inside the immediate transaction and `workflow.done` is emitted iff the `halted → done` transition committed, eliminating the race path where a no-op transaction was followed by an unconditional completion event
+Revision: 2026-07-03a — broker contract made atomic after workflow review: eligibility guards moved inside the immediate transaction and `workflow.done` is emitted iff the `halted → done` transition committed, eliminating the race path where a no-op transaction was followed by an unconditional completion event; 2026-07-03b — footer key legend correction: the p/r/c legend does exist and gains d (final-review finding)
 
 ## Summary
 
@@ -16,7 +16,7 @@ A halted (escalated) workflow can be marked **done** by the human operator. Some
   - The standalone `haltWorkflow` (~line 1213) — **only flips status**; it leaves the open phase run and chain untouched. A mark-done must therefore defensively sweep open phase runs, exactly as `cancelWorkflow` does.
 - `cancelWorkflow` (~line 1430) is the model for a terminal operator transition's cleanup steps: close open phase runs with outcome `superseded`, set the chain terminal with a reason, set workflow status, reset relay turn state, `emitAndRecord` an event. Its control-flow shape (guard outside the transaction, silent re-check no-op inside, unconditional emit after) is NOT copied — that pairing carries a latent race where the no-op path still emits the event; see the atomic-guard design below.
 - The control service (`packages/broker/src/control/create-control-service.ts` line 1529) merges the whole `workflowControl` object into its return, so a new method on `createWorkflowControl`'s return is automatically exposed on `broker.control.<method>` — no per-method registration.
-- Dashboard action machinery (`packages/cli/src/runtime/dashboard-state.ts`, `dashboard.ts`, `dashboard-view.tsx`): `WorkflowAction = "pause" | "resume" | "cancel"`, `actionsForStatus(status)` mirrors broker guards, keys `p`/`r`/`c` open a y/n confirm modal, `executeConfirmed` calls the matching `broker.control` method and sets a transient feedback line. There is no on-screen key legend to update — keys are documented in `docs/workflows.md` only.
+- Dashboard action machinery (`packages/cli/src/runtime/dashboard-state.ts`, `dashboard.ts`, `dashboard-view.tsx`): `WorkflowAction = "pause" | "resume" | "cancel"`, `actionsForStatus(status)` mirrors broker guards, keys `p`/`r`/`c` open a y/n confirm modal, `executeConfirmed` calls the matching `broker.control` method and sets a transient feedback line. The Wall and Inspector footers carry a `p/r/c act` key legend (dashboard-view.tsx), which gains `d`.
 - CLI workflow commands (`packages/cli/src/commands/workflow/{pause,resume,cancel}.ts`) are thin structural-deps wrappers registered in `packages/cli/src/create-cli.ts` (~line 593).
 - `workflow.done` event: typed `{ workflowId }` in `packages/broker/src/runtime/broker-event-bus.ts:38`, already allowlisted in `event-socket-server.ts:27` — natural completion emits it (`workflow-control.ts:1162`), so downstream display reacts to an operator mark-done with zero new display code.
 - Hands-off stats (`getHandsOffStats`, workflow-repository.ts): counts `done` and `halted` runs, elapsed = `updated_at − created_at`.
@@ -95,4 +95,3 @@ TDD throughout; tests live in root `test/` per repo convention.
 - Marking a **paused** workflow done.
 - An operator note/message on completion (resume's `--message` pattern) — add later if audit needs grow.
 - Un-doing a mark-done (done stays terminal; `cancelWorkflow` already rejects done runs).
-- Dashboard on-screen key legend (none exists today for p/r/c either).
