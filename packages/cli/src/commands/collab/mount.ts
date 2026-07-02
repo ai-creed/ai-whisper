@@ -471,7 +471,7 @@ export async function runCollabMount(input: {
 				// Dramatic pause, then a scrollback push: pump `rows` newlines so the
 				// art survives codex's first-frame viewport wipe (ESC[1;1H + ESC[J).
 				// Harmless for claude; applied uniformly for all providers/outcomes.
-				await sleep(2000);
+				await sleep(3000);
 				bannerOut.write("\n".repeat(bannerOut.rows ?? 40));
 			} catch (err) {
 				console.error(

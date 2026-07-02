@@ -170,6 +170,7 @@ describe("runCollabMount duo banner (pre-spawn claim)", () => {
 		const { stream, writes } = fakeBannerOut(1000, 5);
 		let capturedCharacterEnv: string | undefined;
 		let capturedCharacterRoleEnv: string | undefined;
+		let capturedPauseMs: number | undefined;
 		const fakeRuntime = {
 			start: vi.fn(async () => {
 				// Env stamps are documented to land BEFORE runtime.start() — capture
@@ -186,7 +187,9 @@ describe("runCollabMount duo banner (pre-spawn claim)", () => {
 			resolveCurrentTty: () => "/dev/null",
 			createRuntime: () => fakeRuntime as never,
 			assessBroker: okBroker,
-			sleep: async () => {},
+			sleep: async (ms) => {
+				capturedPauseMs = ms;
+			},
 			bannerOut: stream,
 		});
 
@@ -213,6 +216,8 @@ describe("runCollabMount duo banner (pre-spawn claim)", () => {
 		expect(banner.endsWith(`${RESET}\n`)).toBe(true);
 		// Scrollback push: exactly `rows` newlines written AFTER the banner.
 		expect(writes[writes.length - 1]).toBe("\n".repeat(5));
+		// Dramatic pause: 3s so the operator actually sees the summoning.
+		expect(capturedPauseMs).toBe(3000);
 
 		// Env stamps: raw assignment fields (characterName/role), set before start().
 		expect(capturedCharacterEnv).toBe(assignment.characterName);
