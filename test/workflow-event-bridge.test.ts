@@ -98,6 +98,17 @@ describe("createWorkflowEventBridge (append-only outbox tail)", () => {
 		]);
 	});
 
+	it("delivers an operator mark-done workflow.done row verbatim", () => {
+		const db = freshDb();
+		const bus = createBrokerEventBus();
+		const seen = collect(bus);
+		const bridge = createWorkflowEventBridge({ db, events: bus, collabId: COLLAB, intervalMs: 1 });
+		bridge.tick(); // seed empty
+		append(db, "workflow.done", { workflowId: "wf_a" });
+		bridge.tick();
+		expect(seen).toEqual([{ name: "workflow.done", payload: { workflowId: "wf_a" } }]);
+	});
+
 	it("does not re-deliver rows on a subsequent tick", () => {
 		const db = freshDb();
 		const bus = createBrokerEventBus();

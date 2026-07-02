@@ -30,8 +30,9 @@ export interface WorkflowEventBridge {
 // there to kick off phases; re-emitting them would trigger driving side-effects
 // and race the driver's own sweep. The daemon wires this onto a dedicated bus
 // that only the event socket consumes, so driving behavior is left exactly
-// as-is. Driver-native events (phase/round/halted/done) are never outboxed, so
-// the socket sees each event exactly once.
+// as-is. Driver-native events (phase/round/halted, and the driver's own
+// natural workflow.done) are never outboxed; workflow.done is outboxed ONLY
+// by operator mark-done, so the socket sees each event exactly once.
 export function createWorkflowEventBridge(input: {
 	db: Database.Database;
 	events: BrokerEventBus;
@@ -56,7 +57,7 @@ export function createWorkflowEventBridge(input: {
 			afterId: lastId,
 		});
 		for (const row of rows) {
-			// The outbox holds only the four CLI-originated lifecycle events, each
+			// The outbox holds only CLI-originated lifecycle events, each
 			// written with its BrokerEventMap payload shape by workflow-control, so
 			// the (name, payload) pair is replayed verbatim. Emitted as a method
 			// call (never an extracted reference) and type-erased via `never` for

@@ -1514,6 +1514,89 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 		);
 	}
 
+	function markWorkflowDone(input: { workflowId: string; now: string }): void {
+		// Eligibility guard and transition run atomically inside ONE immediate
+		// transaction: the emit below is reached iff the halted → done transition
+		// committed. A raced status change makes the guard throw (rolling back)
+		// instead of letting a no-op transaction emit a false completion event —
+		// deliberate deviation from cancelWorkflow's guard-outside shape.
+		const tx = db.transaction(() => {
+			const workflow = getWorkflowById(db, input.workflowId);
+			if (!workflow) {
+				throw new Error(`markWorkflowDone: unknown workflowId ${input.workflowId}`);
+			}
+			if (workflow.status !== "halted") {
+				throw new Error(
+					`markWorkflowDone: workflow ${input.workflowId} is ${workflow.status}, only halted (escalated) workflows can be marked done`,
+				);
+			}
+
+			// Close any phase runs the halt left open. The escalation-verdict path
+			// already closed everything; a bare haltWorkflow only flips status.
+			const openPhaseRuns = listPhaseRunsForWorkflow(db, input.workflowId).filter(
+				(r) => r.endedAt === null,
+			);
+			let lastChainRecord: RelayChainRecord | undefined;
+			for (const run of openPhaseRuns) {
+				const latest = db
+					.prepare(
+						`SELECT handoff_id FROM relay_handoff
+						 WHERE chain_id = ?
+						 ORDER BY created_at DESC LIMIT 1`,
+					)
+					.get(run.chainId) as { handoff_id: string } | undefined;
+
+				const chainRecord = getRelayChainRepo(db, run.chainId) ?? undefined;
+				lastChainRecord = chainRecord;
+
+				closeWorkflowPhaseRun(db, {
+					phaseRunId: run.phaseRunId,
+					outcome: "superseded",
+					now: input.now,
+				});
+
+				setChainTerminal(db, {
+					chainId: run.chainId,
+					status: "abandoned",
+					terminalHandoffId: latest?.handoff_id ?? null,
+					terminalReason: "marked done by operator",
+					now: input.now,
+				});
+			}
+
+			setWorkflowStatus(db, {
+				workflowId: input.workflowId,
+				status: "done",
+				haltReason: "marked done by operator",
+				now: input.now,
+			});
+
+			const collabRow = db
+				.prepare("SELECT orchestrator_max_rounds FROM collab WHERE collab_id = ?")
+				.get(workflow.collabId) as { orchestrator_max_rounds: number } | undefined;
+
+			// chainStatus "done", matching natural completion — the run concluded
+			// successfully from the operator's perspective (not cancel's "abandoned").
+			upsertRelayTurnState(db, {
+				collabId: workflow.collabId,
+				turnOwner: "none",
+				waitingAgent: null,
+				unresolvedHandoffId: null,
+				handoffState: "idle",
+				updatedAt: input.now,
+				orchestratorEnabled: true,
+				currentRound: lastChainRecord?.currentRound ?? 1,
+				maxRounds: lastChainRecord?.maxRounds ?? collabRow?.orchestrator_max_rounds ?? 3,
+				chainStatus: "done",
+			});
+
+			return workflow.collabId;
+		});
+		const collabId = tx.immediate();
+
+		emitAndRecord(collabId, "workflow.done", { workflowId: input.workflowId }, input.now);
+	}
+
 	function getHandoffWithWorkflowMeta(handoffId: string) {
 		const meta = getHandoffWithWorkflowMetaById(db, handoffId);
 		if (!meta) return null;
@@ -1559,6 +1642,7 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 		consumeResumeNotice,
 		resumeWorkflow,
 		cancelWorkflow,
+		markWorkflowDone,
 		getHandoffWithWorkflowMeta,
 		getLatestHandoffForPhaseRun,
 	};
