@@ -427,7 +427,7 @@ export function buildRelayViewState(snap: RelayViewSnapshot): RelayViewState {
 		.map(({ agent, health }) => {
 			const glyph =
 				health === "healthy" ? "●" : health === "degraded" ? "◐(degraded)" : "●(dead)";
-			return `${glyph} ${agent}`;
+			return `${glyph} ${characterDisplayName(agent, charNames[agent])}`;
 		})
 		.join("  ");
 

@@ -264,6 +264,20 @@ describe("buildRelayViewState — status", () => {
 		expect(s.turn).toBe("none · waiting none · handoff idle");
 	});
 
+	it("review fix: health line renders character labels when a characterNames map is provided", () => {
+		const s = buildRelayViewState({
+			...baseSnapshot,
+			characterNames: { codex: "Batman", claude: "Robin" },
+		});
+		expect(s.health).toContain("● Batman (codex)");
+		expect(s.health).toContain("● Robin (claude)");
+	});
+
+	it("review fix: health line is byte-identical to today when characterNames is omitted (regression)", () => {
+		const s = buildRelayViewState(baseSnapshot);
+		expect(s.health).toContain("● codex  ● claude");
+	});
+
 	it("empty sessions → no health dots (no synthesized dead peers)", () => {
 		const s = buildRelayViewState({ ...baseSnapshot, sessions: [] });
 		expect(s.health).not.toContain("codex");

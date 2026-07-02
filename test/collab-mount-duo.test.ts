@@ -261,6 +261,44 @@ describe("runCollabMount duo banner (pre-spawn claim)", () => {
 		}
 	});
 
+	it("--no-duo mount clears stale AI_WHISPER_CHARACTER* stamps inherited from the parent env", async () => {
+		const stateRoot = tempStateRoot();
+		process.env.AI_WHISPER_STATE_ROOT = stateRoot;
+		// Simulate a parent shell that still carries another mount's stamps.
+		process.env.AI_WHISPER_CHARACTER = "Stale Batman";
+		process.env.AI_WHISPER_CHARACTER_ROLE = "reviewer";
+		const workspaceRoot = join(stateRoot, "ws-noduo-staleenv");
+		mkdirSync(workspaceRoot, { recursive: true });
+		seedActiveCollab(workspaceRoot);
+
+		const { stream } = fakeBannerOut(1000, 5);
+		let capturedCharacterEnv: string | undefined;
+		let capturedCharacterRoleEnv: string | undefined;
+		const fakeRuntime = {
+			start: vi.fn(async () => {
+				capturedCharacterEnv = process.env.AI_WHISPER_CHARACTER;
+				capturedCharacterRoleEnv = process.env.AI_WHISPER_CHARACTER_ROLE;
+			}),
+		};
+
+		await runCollabMount({
+			workspaceRoot,
+			target: "codex",
+			duoFlag: false,
+			now: new Date().toISOString(),
+			resolveCurrentTty: () => "/dev/null",
+			createRuntime: () => fakeRuntime as never,
+			assessBroker: okBroker,
+			sleep: async () => {},
+			bannerOut: stream,
+		});
+
+		// The stale stamps must be CLEARED before runtime.start(), or the child
+		// PTY inherits another mount's character via `baseEnv ?? process.env`.
+		expect(capturedCharacterEnv).toBeUndefined();
+		expect(capturedCharacterRoleEnv).toBeUndefined();
+	});
+
 	it("AI_WHISPER_DUO=off behaves like --no-duo", async () => {
 		const stateRoot = tempStateRoot();
 		process.env.AI_WHISPER_STATE_ROOT = stateRoot;
@@ -858,5 +896,90 @@ describe("buildHandoffChromeLine (Task 5 handoff chrome)", () => {
 		expect(buildHandoffChromeLine("codex", null)).toBe(
 			"[ai-whisper] Handed turn to codex.",
 		);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Review fix: the onRelay closure IS drivable — capture it through the
+// createLiveSession seam after start() completes (resolvedClaim is then set).
+// This exercises the real chrome path, proving the target-character DB read is
+// NOT gated on the sender's own persona (`input.duo`): opt-out is per mount,
+// so an unassigned/opted-out sender must still render a charactered target.
+// ---------------------------------------------------------------------------
+
+describe("createMountSessionRuntime handoff chrome (onRelay path)", () => {
+	let prevStateRoot: string | undefined;
+
+	beforeEach(() => {
+		prevStateRoot = process.env.AI_WHISPER_STATE_ROOT;
+	});
+
+	afterEach(() => {
+		if (prevStateRoot === undefined) delete process.env.AI_WHISPER_STATE_ROOT;
+		else process.env.AI_WHISPER_STATE_ROOT = prevStateRoot;
+	});
+
+	type CapturedOnRelay = (
+		directive: { target: string; instruction: string },
+		sendNow: (message: string) => void,
+	) => Promise<string | null>;
+
+	async function startRuntimeCapturingOnRelay(collabId: string): Promise<CapturedOnRelay> {
+		let capturedOnRelay: CapturedOnRelay | undefined;
+		// Sender mount has NO duo persona (no `duo` input) and is not opted out
+		// (duoDisabled false) — the exact configuration the chrome fix targets.
+		const input = baseRuntimeInput({
+			collabId,
+			duoDisabled: false,
+			liveStart: () => Promise.resolve(),
+		}) as unknown as Record<string, unknown>;
+		const control = (input.broker as { control: Record<string, unknown> }).control;
+		control.createRelayHandoff = vi.fn();
+		control.appendRelayEvent = vi.fn();
+		input.createLiveSession = (opts: { onRelay: CapturedOnRelay }) => {
+			capturedOnRelay = opts.onRelay;
+			return { start: () => Promise.resolve(), stop: () => Promise.resolve() };
+		};
+		const runtime = createMountSessionRuntime(input as never);
+		await runtime.start();
+		if (capturedOnRelay === undefined) throw new Error("onRelay was not captured");
+		return capturedOnRelay;
+	}
+
+	it("renders the target's character in chrome even when the sender itself has no duo persona", async () => {
+		const stateRoot = tempStateRoot();
+		process.env.AI_WHISPER_STATE_ROOT = stateRoot;
+		seedSharedMigrated();
+		const collabId = "collab_duo_chrome_target";
+		const db0 = openDatabase(getSharedSqlitePath());
+		try {
+			upsertDuoAssignment(db0, {
+				collabId,
+				agentType: "claude",
+				duoId: "batman-robin",
+				characterId: "robin",
+				characterName: "Robin",
+				role: "implementer",
+				assignedAt: new Date().toISOString(),
+			});
+		} finally {
+			db0.close();
+		}
+
+		const onRelay = await startRuntimeCapturingOnRelay(collabId);
+		const sent: string[] = [];
+		await onRelay({ target: "claude", instruction: "take over" }, (m) => sent.push(m));
+		expect(sent).toContain("[ai-whisper] Handed turn to Robin (claude).");
+	});
+
+	it("falls back to vendor chrome when the target has no assignment", async () => {
+		const stateRoot = tempStateRoot();
+		process.env.AI_WHISPER_STATE_ROOT = stateRoot;
+		seedSharedMigrated();
+		const collabId = "collab_duo_chrome_vendor";
+		const onRelay = await startRuntimeCapturingOnRelay(collabId);
+		const sent: string[] = [];
+		await onRelay({ target: "claude", instruction: "take over" }, (m) => sent.push(m));
+		expect(sent).toContain("[ai-whisper] Handed turn to claude.");
 	});
 });

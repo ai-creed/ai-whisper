@@ -484,10 +484,16 @@ export async function runCollabMount(input: {
 
 		// Env stamps (Task 4): raw assignment fields, set BEFORE runtime.start()
 		// so `baseEnv ?? process.env` inheritance in every adapter's PTY spawn
-		// helper carries them into the child with zero adapter edits.
+		// helper carries them into the child with zero adapter edits. On the
+		// no-assignment paths (--no-duo, fallback outcome, claim failure) any
+		// stale stamps inherited from the parent shell are CLEARED for the same
+		// reason — otherwise the child would pick up another mount's character.
 		if (duoAssignmentForEnv !== null) {
 			process.env.AI_WHISPER_CHARACTER = duoAssignmentForEnv.characterName;
 			process.env.AI_WHISPER_CHARACTER_ROLE = duoAssignmentForEnv.role;
+		} else {
+			delete process.env.AI_WHISPER_CHARACTER;
+			delete process.env.AI_WHISPER_CHARACTER_ROLE;
 		}
 
 		const runtime = (input.createRuntime ?? createMountSessionRuntime)({

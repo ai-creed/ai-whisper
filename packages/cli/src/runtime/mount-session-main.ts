@@ -602,32 +602,39 @@ export function createMountSessionRuntime(input: {
 					let duoForHandoff:
 						| { character: string; role: DuoRole; teammateCharacter: string | null }
 						| undefined;
-					// Task 5: the target's OWN raw characterName (display form, e.g.
-					// "Batman" — not the summonName resolveTeammateCharacterFromAssignments
-					// returns) for the chrome line below. Resolved from the SAME fresh
-					// read as the persona fragment — no second DB read per handoff.
+					// Task 5 (+review fix): the target's OWN raw characterName (display
+					// form, e.g. "Batman" — not the summonName
+					// resolveTeammateCharacterFromAssignments returns) for the chrome
+					// line below. The read is NOT gated on this mount's own persona
+					// (`input.duo`): opt-out is per mount, so an unassigned/opted-out
+					// sender must still render a charactered target in chrome. One read
+					// serves both chrome and the persona fragment — no second DB read.
 					let targetCharacterName: string | null = null;
+					let freshAssignments: ReturnType<typeof listDuoAssignments> | null = null;
+					try {
+						const db = openDatabase(getSharedSqlitePath());
+						try {
+							freshAssignments = listDuoAssignments(db, resolvedClaim.collabId);
+							targetCharacterName =
+								freshAssignments.find((a) => a.agentType === directive.target)
+									?.characterName ?? null;
+						} finally {
+							db.close();
+						}
+					} catch {
+						// freshAssignments/targetCharacterName stay null — the persona
+						// fragment falls back to the mount-time snapshot and the chrome
+						// falls back to the vendor name.
+					}
 					if (input.duo) {
 						const snapshotTeammateCharacter = input.duo.teammate?.character ?? null;
-						let teammateCharacter = snapshotTeammateCharacter;
-						try {
-							const db = openDatabase(getSharedSqlitePath());
-							try {
-								const freshAssignments = listDuoAssignments(db, resolvedClaim.collabId);
-								teammateCharacter = resolveTeammateCharacterFromAssignments(
-									freshAssignments,
-									directive.target,
-								);
-								targetCharacterName =
-									freshAssignments.find((a) => a.agentType === directive.target)
-										?.characterName ?? null;
-							} finally {
-								db.close();
-							}
-						} catch {
-							teammateCharacter = snapshotTeammateCharacter;
-							// targetCharacterName stays null — chrome falls back to the vendor name.
-						}
+						const teammateCharacter =
+							freshAssignments !== null
+								? resolveTeammateCharacterFromAssignments(
+										freshAssignments,
+										directive.target,
+									)
+								: snapshotTeammateCharacter;
 						duoForHandoff = {
 							character: input.duo.character,
 							role: input.duo.role,
