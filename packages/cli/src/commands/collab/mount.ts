@@ -35,6 +35,11 @@ import { waitForBrokerReady } from "../../runtime/wait-for-broker-ready.js";
 import { runCollabRecover } from "./recover.js";
 import { runCollabStart } from "./start.js";
 import { agentDisplayName } from "../../runtime/agent-display.js";
+import { resolveDuoEnabled } from "../../runtime/duo-config.js";
+import { rollDuo } from "../../duo/roll-duo.js";
+import { getCharacter } from "../../duo/duo-table.js";
+import { loadCharacterArt } from "../../duo/art-assets.js";
+import { renderDuoBanner, renderVendorBanner } from "../../duo/banner.js";
 
 function defaultIsPidAlive(pid: number): boolean {
 	try {
@@ -44,6 +49,10 @@ function defaultIsPidAlive(pid: number): boolean {
 		// ESRCH = no such process (dead). EPERM = exists but not signalable (alive).
 		return (err as NodeJS.ErrnoException).code === "EPERM";
 	}
+}
+
+function defaultSleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export function recordMountedSession(input: {
@@ -98,6 +107,14 @@ export async function runCollabMount(input: {
 	 * When absent, falls through to the env var (then defaults to on for both).
 	 */
 	turnEventsFlag?: string;
+	/**
+	 * Duo banner enablement (flag > env > default ON). From commander's
+	 * `--no-duo` this is `false`; `undefined` falls through to the env var
+	 * (`AI_WHISPER_DUO`) then defaults ON. When disabled the pre-spawn banner is
+	 * skipped and the mount's binding path releases any stale duo assignment row
+	 * for this agent (see createMountSessionRuntime.duoDisabled).
+	 */
+	duoFlag?: boolean;
 	now: string;
 	resolveCurrentTty?: () => string;
 	createRuntime?: typeof createMountSessionRuntime;
@@ -127,6 +144,19 @@ export async function runCollabMount(input: {
 	 * mounted session-attachment owner pid.
 	 */
 	isDaemonPidAlive?: (pid: number) => boolean;
+	/**
+	 * Test seam: the dramatic pause between drawing the duo banner and the
+	 * scrollback push. Defaults to a real `setTimeout`-backed sleep; tests stub
+	 * it to a no-op so the 2s pause does not slow the suite.
+	 */
+	sleep?: (ms: number) => Promise<void>;
+	/**
+	 * Test seam: the stream the pre-spawn duo banner is written to. Defaults to
+	 * `process.stdout`; tests inject a fake capturing writes with fixed
+	 * `columns`/`rows`. Never the child PTY — the banner is drawn strictly before
+	 * `runtime.start()` spawns the provider.
+	 */
+	bannerOut?: NodeJS.WriteStream;
 }) {
 	// Ensure the shared SQLite file exists with all tables before any
 	// resolve attempt. Without this, the initial resolveCollab in a
@@ -371,6 +401,56 @@ export async function runCollabMount(input: {
 			expiresAt: new Date(Date.parse(input.now) + 5 * 60_000).toISOString(),
 		});
 
+		// Duo character banner (pre-spawn, cosmetic). Runs strictly AFTER the
+		// attach claim above and BEFORE the provider spawn below. The claim is
+		// additive and self-healing (a failed claimer leaves a dead-owner row that
+		// inherit-if-dead reclaims), so it is safe here where the banner needs it.
+		// A claim/render failure degrades to no banner and NEVER breaks the mount.
+		// The opt-out RELEASE is deliberately NOT here — it runs post-binding in
+		// createMountSessionRuntime (see `duoDisabled`) because deleting a stale
+		// row is destructive with no self-heal and must only fire once bound.
+		const duoEnabled = resolveDuoEnabled(input.duoFlag);
+		if (duoEnabled) {
+			try {
+				const bannerOut = input.bannerOut ?? process.stdout;
+				const sleep = input.sleep ?? defaultSleep;
+				const result = broker.control.claimDuoCharacter({
+					collabId: resolved.collabId,
+					agentType: input.target,
+					proposedRoll: rollDuo(),
+				});
+				const character =
+					result.assignment !== null
+						? getCharacter(
+								result.assignment.duoId,
+								result.assignment.characterId,
+							)
+						: undefined;
+				const banner =
+					result.assignment !== null && character !== undefined
+						? renderDuoBanner({
+								summonName: character.summonName,
+								role: result.assignment.role,
+								punchline: character.punchline,
+								art: loadCharacterArt(character.artFile),
+								columns: bannerOut.columns ?? 80,
+							})
+						: renderVendorBanner({ agentType: input.target });
+				bannerOut.write(banner);
+				// Dramatic pause, then a scrollback push: pump `rows` newlines so the
+				// art survives codex's first-frame viewport wipe (ESC[1;1H + ESC[J).
+				// Harmless for claude; applied uniformly for all providers/outcomes.
+				await sleep(2000);
+				bannerOut.write("\n".repeat(bannerOut.rows ?? 40));
+			} catch (err) {
+				console.error(
+					`[ai-whisper] duo: banner skipped (${
+						err instanceof Error ? err.message : String(err)
+					})`,
+				);
+			}
+		}
+
 		const runtime = (input.createRuntime ?? createMountSessionRuntime)({
 			target: input.target,
 			ttyPath,
@@ -380,6 +460,7 @@ export async function runCollabMount(input: {
 			broker,
 			passthroughArgs: input.passthroughArgs ?? [],
 			turnEventsEnablement: enablement,
+			duoDisabled: !duoEnabled,
 		});
 
 		brokerHandedOff = true;

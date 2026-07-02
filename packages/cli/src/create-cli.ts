@@ -287,11 +287,19 @@ export function createCli(): Command {
 			"--turn-events <providers>",
 			"Scope the push turn-completion event path to the given providers (comma-separated providers with turn-end hooks: claude,codex,agy), or disable it with `off`/`none` to revert to pure clipboard capture. Overrides AI_WHISPER_TURN_EVENTS. Default: on (claude,codex,agy).",
 		)
+		.option(
+			"--no-duo",
+			"disable the duo character banner and persona for this mount",
+		)
 		.action(
 			async (
 				target: AgentType,
 				passthroughArgs: string[],
-				opts: WorkspaceOpts & { collab?: string; turnEvents?: string },
+				opts: WorkspaceOpts & {
+					collab?: string;
+					turnEvents?: string;
+					duo: boolean;
+				},
 			) => {
 				await runCollabMount({
 					workspaceRoot: opts.workspace,
@@ -299,6 +307,7 @@ export function createCli(): Command {
 					...(opts.turnEvents !== undefined
 						? { turnEventsFlag: opts.turnEvents }
 						: {}),
+					duoFlag: opts.duo,
 					target,
 					passthroughArgs,
 					now: new Date().toISOString(),

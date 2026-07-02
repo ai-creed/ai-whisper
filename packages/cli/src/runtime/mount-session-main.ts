@@ -3,6 +3,7 @@ import type { AgentType,  BrokerRuntime } from "@ai-whisper/broker";
 import type { OverlayIO, RelayDirective } from "@ai-whisper/shared";
 import {
 	openDatabase,
+	deleteDuoAssignment,
 	deleteSessionAttachment,
 	DEFAULT_LEASE_TTL_MS,
 	getRecoveryState,
@@ -193,6 +194,15 @@ export function createMountSessionRuntime(input: {
 	 * a socket listener is started to receive the shim's forwarded events.
 	 */
 	turnEventsEnablement?: TurnEventsEnablement;
+	/**
+	 * Set by runCollabMount to `true` when `resolveDuoEnabled` returned false
+	 * (`--no-duo` / `AI_WHISPER_DUO=off`). Triggers the post-binding opt-out
+	 * release: after this mount is genuinely bound (completeAttachClaim succeeds),
+	 * any stale duo assignment row for this agent is deleted. Deliberately
+	 * post-binding — the release is destructive with no self-heal, so a mount that
+	 * dies during spawn or claim completion must leave the prior row untouched.
+	 */
+	duoDisabled?: boolean;
 	createProvider?: typeof createProviderForTarget;
 	createInteractiveSession?: typeof createInteractiveSessionForTarget;
 	createLiveSession?: typeof createLiveSessionRuntime;
@@ -522,6 +532,29 @@ export function createMountSessionRuntime(input: {
 					now: new Date().toISOString(),
 					bindingSource: "mounted",
 				});
+
+				// Duo opt-out release (post-binding). A `--no-duo` mount deletes any
+				// stale duo assignment row for its agent type now that it is genuinely
+				// bound — fires ONLY here (after completeAttachClaim), never on the
+				// pre-spawn path, so a mount that dies before binding leaves the prior
+				// row untouched. Best-effort: a release failure must not kill the
+				// session (one [ai-whisper]-prefixed stderr line, then continue).
+				if (input.duoDisabled === true) {
+					try {
+						const db = openDatabase(getSharedSqlitePath());
+						try {
+							deleteDuoAssignment(db, resolvedClaim.collabId, input.target);
+						} finally {
+							db.close();
+						}
+					} catch (err) {
+						console.error(
+							`[ai-whisper] duo: opt-out release failed (non-fatal): ${
+								err instanceof Error ? err.message : String(err)
+							}`,
+						);
+					}
+				}
 
 				relayPaneWriter = createRelayPaneWriter({
 					broker: input.broker,
