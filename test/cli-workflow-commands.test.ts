@@ -5,6 +5,7 @@ import { runWorkflowList } from "../packages/cli/src/commands/workflow/list.ts";
 import { runWorkflowResume } from "../packages/cli/src/commands/workflow/resume.ts";
 import { runWorkflowPause } from "../packages/cli/src/commands/workflow/pause.ts";
 import { runWorkflowCancel } from "../packages/cli/src/commands/workflow/cancel.ts";
+import { runWorkflowComplete } from "../packages/cli/src/commands/workflow/complete.ts";
 import { runWorkflowTypes } from "../packages/cli/src/commands/workflow/types.ts";
 
 function boot() {
@@ -143,6 +144,56 @@ describe("whisper workflow commands", () => {
 		expect(noticeOnContext.includes("Operator note: re-read the spec") || !!bakedHandoff).toBe(true);
 		// Drain the workflow.resumed driver kickoff (a no-op given the open phase run)
 		// before closing the db, so its setImmediate doesn't fire post-stop.
+		await new Promise((r) => setImmediate(r));
+		await broker.stop();
+	});
+
+	it("complete marks a halted workflow done", async () => {
+		const broker = boot();
+		const { workflowId } = await runWorkflowStart({
+			broker,
+			collabId: "collab_c1",
+			workflowType: "spec-driven-development",
+			specPath: "docs/spec.md",
+			implementer: "claude",
+			reviewer: "codex",
+			now: "2026-04-21T00:00:00Z",
+		});
+		broker.control.haltWorkflow({
+			workflowId,
+			reason: "escalated: env blocker",
+			now: "2026-04-21T00:01:00Z",
+		});
+		await runWorkflowComplete({
+			broker,
+			workflowId,
+			now: "2026-04-21T00:02:00Z",
+		});
+		const wf = broker.control.getWorkflow(workflowId);
+		expect(wf?.status).toBe("done");
+		expect(wf?.haltReason).toBe("marked done by operator");
+		await new Promise((r) => setImmediate(r));
+		await broker.stop();
+	});
+
+	it("complete rejects a non-halted workflow", async () => {
+		const broker = boot();
+		const { workflowId } = await runWorkflowStart({
+			broker,
+			collabId: "collab_c1",
+			workflowType: "spec-driven-development",
+			specPath: "docs/spec.md",
+			implementer: "claude",
+			reviewer: "codex",
+			now: "2026-04-21T00:00:00Z",
+		});
+		await expect(
+			runWorkflowComplete({
+				broker,
+				workflowId,
+				now: "2026-04-21T00:02:00Z",
+			}),
+		).rejects.toThrow("only halted (escalated) workflows can be marked done");
 		await new Promise((r) => setImmediate(r));
 		await broker.stop();
 	});

@@ -34,6 +34,7 @@ import { runWorkflowInspect } from "./commands/workflow/inspect.js";
 import { runWorkflowResume } from "./commands/workflow/resume.js";
 import { runWorkflowPause } from "./commands/workflow/pause.js";
 import { runWorkflowCancel } from "./commands/workflow/cancel.js";
+import { runWorkflowComplete } from "./commands/workflow/complete.js";
 import { runWorkflowTypes } from "./commands/workflow/types.js";
 import { runWorkflowStats } from "./commands/workflow/stats.js";
 import { runSkillInstall } from "./commands/skill/install.js";
@@ -657,6 +658,27 @@ export function createCli(): Command {
 					now: new Date().toISOString(),
 				});
 				console.log(`Workflow canceled: ${workflowId}`);
+			} finally {
+				await broker.stop();
+			}
+		});
+
+	workflow
+		.command("complete")
+		.description("Mark a halted (escalated) workflow as done after manual verification")
+		.argument("<workflowId>", "Workflow ID")
+		.option("--workspace <path>", "Workspace root", process.cwd())
+		.action(async (workflowId: string, opts: WorkspaceOpts) => {
+			const { broker } = await connectToWorkspaceBroker({
+				cwd: opts.workspace,
+			});
+			try {
+				await runWorkflowComplete({
+					broker,
+					workflowId,
+					now: new Date().toISOString(),
+				});
+				console.log(`Workflow marked done: ${workflowId}`);
 			} finally {
 				await broker.stop();
 			}
