@@ -61,12 +61,13 @@
 		"ink-testing-library": "^4.0.0"
 	},
 	"scripts": {
-		"build": "node scripts/bundle.mjs && node scripts/build-native.mjs && node scripts/copy-skills.mjs && node scripts/copy-package-files.mjs",
+		"build": "node scripts/bundle.mjs && node scripts/build-native.mjs && node scripts/copy-skills.mjs && node scripts/copy-assets.mjs && node scripts/copy-package-files.mjs",
 		"typecheck": "node scripts/stamp-ezio-provenance.mjs && tsc -b --emitDeclarationOnly"
 	},
 	"files": [
 		"dist",
 		"skills",
+		"assets",
 		"README.md",
 		"LICENSE",
 		"NOTICE"
