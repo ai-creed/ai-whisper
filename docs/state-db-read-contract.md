@@ -1,6 +1,6 @@
 # ai-whisper state-db read contract
 
-<!-- contract-version: 6 -->
+<!-- contract-version: 7 -->
 <!-- protocol-version: 1 -->
 
 **Status:** Stable, versioned. This document is the explicit, versioned list of

@@ -154,3 +154,15 @@ export type {
 	RunCostRow,
 	WorkflowSummaryRow,
 } from "./storage/repositories/dashboard-repository.js";
+export {
+	insertDuoRoll,
+	getDuoRoll,
+	upsertDuoAssignment,
+	getDuoAssignment,
+	listDuoAssignments,
+	deleteDuoAssignment,
+	type DuoRole,
+	type DuoRollSlot,
+	type DuoRollRecord,
+	type DuoAssignmentRecord,
+} from "./storage/repositories/duo-assignment-repository.js";

@@ -7,7 +7,7 @@ import { sweepStaleCaptureLease } from "./clipboard-capture-lease.js";
 // ALTERs), so a persisted DB at an older user_version safely re-runs it and
 // picks up the additions. Forgetting to bump means a persisted DB never gets
 // the new schema (it only worked for freshly-created DBs).
-export const CURRENT_SCHEMA_VERSION = 6;
+export const CURRENT_SCHEMA_VERSION = 7;
 
 const initMigrationSql = `
 CREATE TABLE IF NOT EXISTS broker_state (
@@ -301,6 +301,28 @@ CREATE TABLE IF NOT EXISTS clipboard_capture_lease (
   holder_collab_id  TEXT,
   holder_pid        INTEGER,
   acquired_at       TEXT
+);
+
+CREATE TABLE IF NOT EXISTS duo_roll (
+  collab_id TEXT PRIMARY KEY,
+  duo_id TEXT NOT NULL,
+  slot0_character_id TEXT NOT NULL,
+  slot0_character_name TEXT NOT NULL,
+  slot0_role TEXT NOT NULL,
+  slot1_character_id TEXT NOT NULL,
+  slot1_character_name TEXT NOT NULL,
+  slot1_role TEXT NOT NULL,
+  rolled_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS duo_assignment (
+  collab_id TEXT NOT NULL,
+  agent_type TEXT NOT NULL,
+  duo_id TEXT NOT NULL,
+  character_id TEXT NOT NULL,
+  character_name TEXT NOT NULL,
+  role TEXT NOT NULL,
+  assigned_at TEXT NOT NULL,
+  PRIMARY KEY (collab_id, agent_type)
 );
 
 `;
