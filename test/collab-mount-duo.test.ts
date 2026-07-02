@@ -15,7 +15,10 @@ import {
 	upsertWorkspace,
 } from "@ai-whisper/broker";
 import { runCollabMount } from "../packages/cli/src/commands/collab/mount.ts";
-import { createMountSessionRuntime } from "../packages/cli/src/runtime/mount-session-main.ts";
+import {
+	createMountSessionRuntime,
+	resolveTeammateCharacterFromAssignments,
+} from "../packages/cli/src/runtime/mount-session-main.ts";
 import { getSharedSqlitePath } from "../packages/cli/src/runtime/state-root.ts";
 import {
 	canonicalWorkspaceRoot,
@@ -132,11 +135,17 @@ function fakeBannerOut(columns: number, rows: number): {
 describe("runCollabMount duo banner (pre-spawn claim)", () => {
 	let prevStateRoot: string | undefined;
 	let prevDuo: string | undefined;
+	let prevCharacter: string | undefined;
+	let prevCharacterRole: string | undefined;
 
 	beforeEach(() => {
 		prevStateRoot = process.env.AI_WHISPER_STATE_ROOT;
 		prevDuo = process.env.AI_WHISPER_DUO;
+		prevCharacter = process.env.AI_WHISPER_CHARACTER;
+		prevCharacterRole = process.env.AI_WHISPER_CHARACTER_ROLE;
 		delete process.env.AI_WHISPER_DUO;
+		delete process.env.AI_WHISPER_CHARACTER;
+		delete process.env.AI_WHISPER_CHARACTER_ROLE;
 	});
 
 	afterEach(() => {
@@ -144,6 +153,10 @@ describe("runCollabMount duo banner (pre-spawn claim)", () => {
 		else process.env.AI_WHISPER_STATE_ROOT = prevStateRoot;
 		if (prevDuo === undefined) delete process.env.AI_WHISPER_DUO;
 		else process.env.AI_WHISPER_DUO = prevDuo;
+		if (prevCharacter === undefined) delete process.env.AI_WHISPER_CHARACTER;
+		else process.env.AI_WHISPER_CHARACTER = prevCharacter;
+		if (prevCharacterRole === undefined) delete process.env.AI_WHISPER_CHARACTER_ROLE;
+		else process.env.AI_WHISPER_CHARACTER_ROLE = prevCharacterRole;
 	});
 
 	it("duo-enabled mount draws the art banner, pushes exactly rows newlines, and claims a character", async () => {
@@ -154,7 +167,16 @@ describe("runCollabMount duo banner (pre-spawn claim)", () => {
 		const collabId = seedActiveCollab(workspaceRoot);
 
 		const { stream, writes } = fakeBannerOut(1000, 5);
-		const fakeRuntime = { start: vi.fn(async () => undefined) };
+		let capturedCharacterEnv: string | undefined;
+		let capturedCharacterRoleEnv: string | undefined;
+		const fakeRuntime = {
+			start: vi.fn(async () => {
+				// Env stamps are documented to land BEFORE runtime.start() — capture
+				// inside the stub so the assertion proves ordering, not just presence.
+				capturedCharacterEnv = process.env.AI_WHISPER_CHARACTER;
+				capturedCharacterRoleEnv = process.env.AI_WHISPER_CHARACTER_ROLE;
+			}),
+		};
 
 		await runCollabMount({
 			workspaceRoot,
@@ -190,6 +212,10 @@ describe("runCollabMount duo banner (pre-spawn claim)", () => {
 		expect(banner.endsWith(`${RESET}\n`)).toBe(true);
 		// Scrollback push: exactly `rows` newlines written AFTER the banner.
 		expect(writes[writes.length - 1]).toBe("\n".repeat(5));
+
+		// Env stamps: raw assignment fields (characterName/role), set before start().
+		expect(capturedCharacterEnv).toBe(assignment.characterName);
+		expect(capturedCharacterRoleEnv).toBe(assignment.role);
 	});
 
 	it("--no-duo mount writes no banner and claims nothing", async () => {
@@ -200,7 +226,14 @@ describe("runCollabMount duo banner (pre-spawn claim)", () => {
 		const collabId = seedActiveCollab(workspaceRoot);
 
 		const { stream, writes } = fakeBannerOut(1000, 5);
-		const fakeRuntime = { start: vi.fn(async () => undefined) };
+		let capturedCharacterEnv: string | undefined;
+		let capturedCharacterRoleEnv: string | undefined;
+		const fakeRuntime = {
+			start: vi.fn(async () => {
+				capturedCharacterEnv = process.env.AI_WHISPER_CHARACTER;
+				capturedCharacterRoleEnv = process.env.AI_WHISPER_CHARACTER_ROLE;
+			}),
+		};
 
 		await runCollabMount({
 			workspaceRoot,
@@ -216,6 +249,8 @@ describe("runCollabMount duo banner (pre-spawn claim)", () => {
 
 		expect(fakeRuntime.start).toHaveBeenCalledTimes(1);
 		expect(writes).toEqual([]);
+		expect(capturedCharacterEnv).toBeUndefined();
+		expect(capturedCharacterRoleEnv).toBeUndefined();
 
 		const db = openDatabase(getSharedSqlitePath());
 		try {
@@ -302,7 +337,14 @@ describe("runCollabMount duo banner (pre-spawn claim)", () => {
 		seedMountedAttachment(collabId, "claude", process.pid);
 
 		const { stream, writes } = fakeBannerOut(1000, 4);
-		const fakeRuntime = { start: vi.fn(async () => undefined) };
+		let capturedCharacterEnv: string | undefined;
+		let capturedCharacterRoleEnv: string | undefined;
+		const fakeRuntime = {
+			start: vi.fn(async () => {
+				capturedCharacterEnv = process.env.AI_WHISPER_CHARACTER;
+				capturedCharacterRoleEnv = process.env.AI_WHISPER_CHARACTER_ROLE;
+			}),
+		};
 
 		await runCollabMount({
 			workspaceRoot,
@@ -321,6 +363,9 @@ describe("runCollabMount duo banner (pre-spawn claim)", () => {
 		expect(banner.endsWith(`${RESET}\n`)).toBe(true);
 		// Scrollback push still applied uniformly for the fallback banner.
 		expect(writes[writes.length - 1]).toBe("\n".repeat(4));
+		// Fallback (no assignment) must NOT stamp the persona env vars.
+		expect(capturedCharacterEnv).toBeUndefined();
+		expect(capturedCharacterRoleEnv).toBeUndefined();
 
 		const db = openDatabase(getSharedSqlitePath());
 		try {
@@ -436,14 +481,28 @@ function baseRuntimeInput(overrides: {
 	collabId: string;
 	liveStart: () => Promise<void>;
 	duoDisabled: boolean;
+	/** Test seam: pick the visible-target provider (affects the persona-brief
+	 *  submit strategy — "claude" is a fixed 75ms delay, "codex" defaults to a
+	 *  per-character keystream, so tests use "claude" to stay fast). */
+	target?: "codex" | "claude";
+	/** Test seam: captures raw writeUserInput calls (persona-brief injection
+	 *  writes the brief text then "\r" through this same seam). */
+	writeUserInput?: (data: string) => void;
+	/** Test seam: the session-start persona-carry input (Task 4). */
+	duo?: {
+		character: string;
+		role: "reviewer" | "implementer";
+		teammate: { agentType: string; character: string | null } | null;
+	};
 }) {
 	return {
-		target: "codex" as const,
+		target: overrides.target ?? ("codex" as const),
 		ttyPath: "/dev/ttys031",
 		workspaceRoot: "/tmp/workspace-duo-release",
 		claimId: "claim_duo_release",
 		secret: "secret_duo_release",
 		duoDisabled: overrides.duoDisabled,
+		duo: overrides.duo,
 		broker: {
 			control: {
 				completeAttachClaim: vi.fn(() => ({
@@ -469,7 +528,7 @@ function baseRuntimeInput(overrides: {
 		createInteractiveSession: () => ({
 			start: () => Promise.resolve(),
 			stop: () => Promise.resolve(),
-			writeUserInput() {},
+			writeUserInput: overrides.writeUserInput ?? (() => {}),
 			sendLocalMessage() {},
 			onExit() {},
 		}),
@@ -625,5 +684,154 @@ describe("createMountSessionRuntime duo opt-out release (post-binding)", () => {
 		} finally {
 			db.close();
 		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Session-start persona brief (Task 4). Injected exactly once, post-binding,
+// via the runtime's existing injected-input machinery (writeUserInput on the
+// stubbed interactive session — the same seam relay handoffs write through).
+// ---------------------------------------------------------------------------
+
+describe("createMountSessionRuntime duo persona brief (post-binding)", () => {
+	let prevStateRoot: string | undefined;
+
+	beforeEach(() => {
+		prevStateRoot = process.env.AI_WHISPER_STATE_ROOT;
+	});
+
+	afterEach(() => {
+		if (prevStateRoot === undefined) delete process.env.AI_WHISPER_STATE_ROOT;
+		else process.env.AI_WHISPER_STATE_ROOT = prevStateRoot;
+	});
+
+	it("injects the pinned brief exactly once (write + submit), ≤ 3 lines", async () => {
+		const stateRoot = tempStateRoot();
+		process.env.AI_WHISPER_STATE_ROOT = stateRoot;
+		seedSharedMigrated();
+		const collabId = "collab_duo_brief_a";
+		const writeUserInput = vi.fn();
+
+		const runtime = createMountSessionRuntime(
+			baseRuntimeInput({
+				collabId,
+				duoDisabled: false,
+				liveStart: () => Promise.resolve(),
+				target: "claude",
+				writeUserInput,
+				duo: {
+					character: "HEISENBERG",
+					role: "implementer",
+					teammate: { agentType: "claude", character: "JESSE" },
+				},
+			}) as never,
+		);
+
+		await runtime.start();
+
+		// Claude's submit strategy is exactly two writes: full text, then "\r".
+		// Exactly two calls total proves the brief is injected exactly once.
+		expect(writeUserInput).toHaveBeenCalledTimes(2);
+		const briefText = writeUserInput.mock.calls[0]?.[0] as string;
+		expect(writeUserInput.mock.calls[1]?.[0]).toBe("\r");
+
+		const lines = briefText.split("\n");
+		expect(lines.length).toBeLessThanOrEqual(3);
+		expect(lines[0]).toBe(
+			"[ai-whisper duo] For this collab session you are HEISENBERG — the implementer of this duo. Your teammate claude is JESSE, the reviewer.",
+		);
+		expect(lines[1]).toBe(
+			"Stay in character in conversational prose only — never in code, commit messages, PR text, or file contents, and never alter workflow verdict labels.",
+		);
+	});
+
+	it("does NOT inject when duoDisabled is true", async () => {
+		const stateRoot = tempStateRoot();
+		process.env.AI_WHISPER_STATE_ROOT = stateRoot;
+		seedSharedMigrated();
+		const collabId = "collab_duo_brief_b";
+		const writeUserInput = vi.fn();
+
+		const runtime = createMountSessionRuntime(
+			baseRuntimeInput({
+				collabId,
+				duoDisabled: true,
+				liveStart: () => Promise.resolve(),
+				target: "claude",
+				writeUserInput,
+			}) as never,
+		);
+
+		await runtime.start();
+
+		expect(writeUserInput).not.toHaveBeenCalled();
+	});
+
+	it("does NOT inject when neither duo nor duoDisabled is set", async () => {
+		const stateRoot = tempStateRoot();
+		process.env.AI_WHISPER_STATE_ROOT = stateRoot;
+		seedSharedMigrated();
+		const collabId = "collab_duo_brief_c";
+		const writeUserInput = vi.fn();
+
+		const runtime = createMountSessionRuntime(
+			baseRuntimeInput({
+				collabId,
+				duoDisabled: false,
+				liveStart: () => Promise.resolve(),
+				target: "claude",
+				writeUserInput,
+			}) as never,
+		);
+
+		await runtime.start();
+
+		expect(writeUserInput).not.toHaveBeenCalled();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Pure resolver used by the per-handoff teammate freshness re-read (Task 4):
+// given a fresh list of duo_assignment rows, resolve the summonName claimed
+// by a specific agentType, or null when that agent has not claimed one.
+// ---------------------------------------------------------------------------
+
+describe("resolveTeammateCharacterFromAssignments", () => {
+	it("resolves the summonName for the matching agentType", () => {
+		expect(
+			resolveTeammateCharacterFromAssignments(
+				[
+					{
+						collabId: "c1",
+						agentType: "claude",
+						duoId: "walter-jesse",
+						characterId: "jesse",
+						characterName: "Jesse Pinkman",
+						role: "reviewer",
+						assignedAt: "2026-07-02T00:00:00.000Z",
+					},
+				],
+				"claude",
+			),
+		).toBe("JESSE");
+	});
+
+	it("returns null when no row matches the agentType", () => {
+		expect(
+			resolveTeammateCharacterFromAssignments(
+				[
+					{
+						collabId: "c1",
+						agentType: "codex",
+						duoId: "walter-jesse",
+						characterId: "walter",
+						characterName: "Walter White",
+						role: "implementer",
+						assignedAt: "2026-07-02T00:00:00.000Z",
+					},
+				],
+				"claude",
+			),
+		).toBeNull();
 	});
 });

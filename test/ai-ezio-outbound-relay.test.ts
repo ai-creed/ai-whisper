@@ -28,3 +28,69 @@ describe("ezio-originated @@ directive → handoff (M6 outbound)", () => {
 		expect(input).toMatchObject({ senderAgent: "codex", targetAgent: "ezio" });
 	});
 });
+
+describe("buildRelayHandoffInput duo persona fragment", () => {
+	it("omits the duo line entirely when no duo info is provided", () => {
+		const input = buildRelayHandoffInput({
+			mountTarget: "codex",
+			directive: { target: "claude", instruction: "review the diff" },
+			collabId: "collab_3",
+			now: "2026-07-02T00:00:00.000Z",
+		});
+		expect(input.requestText).toBe("review the diff");
+		expect(input.requestText.split("\n")).toHaveLength(1);
+	});
+
+	it("appends exactly one pinned duo line when the teammate has a character", () => {
+		const input = buildRelayHandoffInput({
+			mountTarget: "codex",
+			directive: { target: "claude", instruction: "review the diff" },
+			collabId: "collab_4",
+			now: "2026-07-02T00:00:01.000Z",
+			duo: {
+				character: "HEISENBERG",
+				role: "implementer",
+				teammateCharacter: "JESSE",
+			},
+		});
+		const lines = input.requestText.split("\n");
+		expect(lines).toHaveLength(2);
+		expect(lines[0]).toBe("review the diff");
+		expect(lines[1]).toBe(
+			"[duo] You are HEISENBERG (implementer); teammate claude is JESSE. Character flavor in prose only; never alter code, commits, or workflow verdict labels.",
+		);
+	});
+
+	it('falls back to the literal "unassigned" when the teammate has no character', () => {
+		const input = buildRelayHandoffInput({
+			mountTarget: "codex",
+			directive: { target: "claude", instruction: "review the diff" },
+			collabId: "collab_5",
+			now: "2026-07-02T00:00:02.000Z",
+			duo: {
+				character: "HEISENBERG",
+				role: "implementer",
+				teammateCharacter: null,
+			},
+		});
+		expect(input.requestText).toContain("teammate claude is unassigned.");
+		expect(input.requestText.split("\n")).toHaveLength(2);
+	});
+
+	it("the duo line always contains the character, the role, and the 'never alter' guardrail", () => {
+		const input = buildRelayHandoffInput({
+			mountTarget: "codex",
+			directive: { target: "claude", instruction: "go" },
+			collabId: "collab_6",
+			now: "2026-07-02T00:00:03.000Z",
+			duo: {
+				character: "BATMAN",
+				role: "reviewer",
+				teammateCharacter: "ROBIN",
+			},
+		});
+		expect(input.requestText).toContain("BATMAN");
+		expect(input.requestText).toContain("(reviewer)");
+		expect(input.requestText).toContain("never alter");
+	});
+});

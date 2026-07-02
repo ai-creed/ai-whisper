@@ -7,6 +7,7 @@ import {
 	openDatabase,
 	upsertRecoveryState,
 	upsertSessionAttachment,
+	type DuoAssignmentRecord,
 } from "@ai-whisper/broker";
 import {
 	assessBrokerDaemon,
@@ -17,7 +18,10 @@ import {
 	resolveCollab,
 } from "../../runtime/collab-resolver.js";
 import { resolveCurrentTty } from "../../runtime/current-tty.js";
-import { createMountSessionRuntime } from "../../runtime/mount-session-main.js";
+import {
+	createMountSessionRuntime,
+	type DuoPersonaInput,
+} from "../../runtime/mount-session-main.js";
 import { isPortFree } from "../../runtime/port-utils.js";
 import {
 	getSharedSqlitePath,
@@ -410,6 +414,14 @@ export async function runCollabMount(input: {
 		// createMountSessionRuntime (see `duoDisabled`) because deleting a stale
 		// row is destructive with no self-heal and must only fire once bound.
 		const duoEnabled = resolveDuoEnabled(input.duoFlag);
+		// Persona-carry inputs (env stamps + session brief), populated only on the
+		// has-assignment outcomes (claimed/existing/inherited) — NEVER fallback,
+		// NEVER --no-duo. Declared outside the try block and captured BEFORE the
+		// banner render below so a render-only failure (e.g. a bad art file write)
+		// does not also suppress persona carry — the assignment is already
+		// persisted by claimDuoCharacter regardless of banner outcome.
+		let duoAssignmentForEnv: DuoAssignmentRecord | null = null;
+		let duoRuntimeInput: DuoPersonaInput | undefined;
 		if (duoEnabled) {
 			try {
 				const bannerOut = input.bannerOut ?? process.stdout;
@@ -426,6 +438,25 @@ export async function runCollabMount(input: {
 								result.assignment.characterId,
 							)
 						: undefined;
+
+				if (result.assignment !== null) {
+					duoAssignmentForEnv = result.assignment;
+					const teammate = result.teammate;
+					duoRuntimeInput = {
+						character: character?.summonName ?? result.assignment.characterName,
+						role: result.assignment.role,
+						teammate:
+							teammate === null
+								? null
+								: {
+										agentType: teammate.agentType,
+										character:
+											getCharacter(teammate.duoId, teammate.characterId)
+												?.summonName ?? teammate.characterName,
+									},
+					};
+				}
+
 				const banner =
 					result.assignment !== null && character !== undefined
 						? renderDuoBanner({
@@ -451,6 +482,14 @@ export async function runCollabMount(input: {
 			}
 		}
 
+		// Env stamps (Task 4): raw assignment fields, set BEFORE runtime.start()
+		// so `baseEnv ?? process.env` inheritance in every adapter's PTY spawn
+		// helper carries them into the child with zero adapter edits.
+		if (duoAssignmentForEnv !== null) {
+			process.env.AI_WHISPER_CHARACTER = duoAssignmentForEnv.characterName;
+			process.env.AI_WHISPER_CHARACTER_ROLE = duoAssignmentForEnv.role;
+		}
+
 		const runtime = (input.createRuntime ?? createMountSessionRuntime)({
 			target: input.target,
 			ttyPath,
@@ -461,6 +500,7 @@ export async function runCollabMount(input: {
 			passthroughArgs: input.passthroughArgs ?? [],
 			turnEventsEnablement: enablement,
 			duoDisabled: !duoEnabled,
+			...(duoRuntimeInput !== undefined ? { duo: duoRuntimeInput } : {}),
 		});
 
 		brokerHandedOff = true;

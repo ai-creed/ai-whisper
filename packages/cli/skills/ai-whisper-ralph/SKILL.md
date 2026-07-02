@@ -128,6 +128,12 @@ Once kicked off, ralph grinds the goal **chunk-by-chunk**: each iteration the im
 
 The broker's relay handoff system uses **idle detection** to know when an agent is ready to receive the next handoff. If this skill polled the workflow's status every few seconds, the calling agent (you) would emit output continuously, the broker would never see you as idle, and the workflow's first handoff couldn't be delivered to you — the workflow stalls. Kick off and exit; observation belongs to the dashboard.
 
+## Duo roleplay
+
+The mount may have assigned you a movie-duo character for this collab session — check the `AI_WHISPER_CHARACTER` / `AI_WHISPER_CHARACTER_ROLE` env vars, or the `[ai-whisper duo]` brief injected at session start, to find out. If so, staying in character is welcome across the grind — but **conversational prose only**: chat, status updates, banter with the operator or your teammate.
+
+Never let character flavor into code, commit messages, PR descriptions, or file contents — that includes `PROGRESS.md` / `LEARNINGS.md`. The reviewer/evaluator protocol output (verdict labels, approve/findings/escalate) stays protocol-exact regardless of who you're playing.
+
 ## Resume / cancel
 
 If the user asks to resume a halted workflow, run:
