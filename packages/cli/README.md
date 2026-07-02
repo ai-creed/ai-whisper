@@ -117,7 +117,7 @@ whisper collab dashboard
 
 ## What happens if it fails?
 
-A run that stops short usually **escalates** — it does not crash. When the evaluator can't resolve a phase (the round budget is spent, an agent reports it's blocked, or confidence stays too low), the loop halts and turn ownership returns to you. That's a designed exit, not a failure: run state is durable, so you read the dashboard, fix the spec or unblock the agent, and `whisper workflow resume <id>` to pick up where it left off. Escalation is the system asking for a human exactly when it should — seeing it is normal, not a sign something broke.
+A run that stops short usually **escalates** — it does not crash. When the evaluator can't resolve a phase (the round budget is spent, an agent reports it's blocked, or confidence stays too low), the loop halts and turn ownership returns to you. That's a designed exit, not a failure: run state is durable, so you read the dashboard, fix the spec or unblock the agent, and `whisper workflow resume <id>` to pick up where it left off. If the work is actually complete and only the verification was environment-blocked, verify it yourself and mark the run done with `whisper workflow complete <id>` (or press `d` on its dashboard card). Escalation is the system asking for a human exactly when it should — seeing it is normal, not a sign something broke.
 
 ## Core concepts
 

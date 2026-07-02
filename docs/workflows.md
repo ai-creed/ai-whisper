@@ -159,6 +159,8 @@ Runs are durable, not fire-and-forget — but how you pick a run back up depends
 
 To stop a run for good: `whisper workflow cancel <workflowId>` (canceled workflows cannot be resumed).
 
+There is a third way out for an escalated run whose **work is actually complete**: sometimes a workflow halts only because the final verification was environment-blocked (an e2e suite that needs credentials or hardware the agents don't have). Verify the result yourself, then mark the run done — `whisper workflow complete <workflowId>`, or press `d` on the run's dashboard card. The run counts as done, with the operator completion recorded (`halt reason: marked done by operator`); resume/cancel semantics are untouched.
+
 ### Pausing a healthy run to fix an artifact
 
 Sometimes a run is healthy but heading the wrong way — a glitch in the spec, plan, or source has steered both agents, and you want to step in *without* the escalation semantics of `halt`. Pause it:
