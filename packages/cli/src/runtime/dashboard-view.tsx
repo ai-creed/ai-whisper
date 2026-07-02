@@ -32,6 +32,7 @@ const ACTION_VERB: Record<WorkflowAction, string> = {
 	pause: "Pause",
 	resume: "Resume",
 	cancel: "Cancel",
+	done: "Mark done",
 };
 
 // Shared by Wall and Inspector: render the pending confirm prompt, else the

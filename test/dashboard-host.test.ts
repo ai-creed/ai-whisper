@@ -29,6 +29,7 @@ function fakeBroker(summaries: unknown[] = []) {
 		pauseWorkflow: vi.fn(),
 		resumeWorkflow: vi.fn(),
 		cancelWorkflow: vi.fn(),
+		markWorkflowDone: vi.fn(),
 		getHandsOffStats: vi.fn(() => ({
 			totalMs: 0,
 			count: 0,
@@ -558,6 +559,48 @@ describe("dashboard host", () => {
 		expect(m.__pendingConfirm()).toBeNull();
 		expect(m.__actionFeedback()).toMatchObject({ kind: "hint" });
 		expect(broker.control.cancelWorkflow).not.toHaveBeenCalled();
+		await m.stop();
+	});
+
+	it("d on a halted card opens a Mark done confirm; y calls broker.markWorkflowDone", async () => {
+		const stdout = new PassThrough();
+		(stdout as unknown as { columns: number }).columns = 100;
+		(stdout as unknown as { rows: number }).rows = 24;
+		const broker = fakeBroker([S({ collabId: "c1", workflowId: "wf", workflowStatus: "halted", chainStatus: "escalated", currentRound: 1, maxRounds: 5 })]);
+		const m = createDashboardRuntime({ broker: broker as never, dashboardId: "d1", stdout: stdout as unknown as NodeJS.WritableStream, pollIntervalMs: 10 }) as never as {
+			start(): void; stop(): Promise<void>;
+			__handleKey(ev: { key?: string; escape?: boolean }): void;
+			__pendingConfirm(): { workflowId: string; action: string } | null;
+			__actionFeedback(): { kind: string; text: string } | null;
+		};
+		m.start();
+		await new Promise((r) => setTimeout(r, 30));
+		m.__handleKey({ key: "d" });
+		expect(m.__pendingConfirm()).toEqual({ workflowId: "wf", action: "done" });
+		m.__handleKey({ key: "y" });
+		expect(m.__pendingConfirm()).toBeNull();
+		expect(broker.control.markWorkflowDone).toHaveBeenCalledTimes(1);
+		expect(broker.control.markWorkflowDone.mock.calls[0]![0]).toMatchObject({ workflowId: "wf" });
+		expect(m.__actionFeedback()).toMatchObject({ kind: "ok" });
+		await m.stop();
+	});
+
+	it("d on a running card shows a hint and never calls the broker", async () => {
+		const stdout = new PassThrough();
+		(stdout as unknown as { columns: number }).columns = 100;
+		(stdout as unknown as { rows: number }).rows = 24;
+		const broker = fakeBroker([S({ collabId: "c1", workflowId: "wf", workflowStatus: "running", chainStatus: "active", currentRound: 1, maxRounds: 5 })]);
+		const m = createDashboardRuntime({ broker: broker as never, dashboardId: "d1", stdout: stdout as unknown as NodeJS.WritableStream, pollIntervalMs: 10 }) as never as {
+			start(): void; stop(): Promise<void>;
+			__handleKey(ev: { key?: string }): void;
+			__pendingConfirm(): unknown; __actionFeedback(): { kind: string } | null;
+		};
+		m.start();
+		await new Promise((r) => setTimeout(r, 30));
+		m.__handleKey({ key: "d" });
+		expect(m.__pendingConfirm()).toBeNull();
+		expect(m.__actionFeedback()).toMatchObject({ kind: "hint" });
+		expect(broker.control.markWorkflowDone).not.toHaveBeenCalled();
 		await m.stop();
 	});
 

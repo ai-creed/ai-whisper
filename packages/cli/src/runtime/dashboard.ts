@@ -399,8 +399,16 @@ export function createDashboardRuntime(input: {
 		try {
 			if (action === "pause") c.pauseWorkflow({ workflowId, now });
 			else if (action === "resume") c.resumeWorkflow({ workflowId, now });
+			else if (action === "done") c.markWorkflowDone({ workflowId, now });
 			else c.cancelWorkflow({ workflowId, now });
-			const verb = action === "pause" ? "paused" : action === "resume" ? "resumed" : "canceled";
+			const verb =
+				action === "pause"
+					? "paused"
+					: action === "resume"
+						? "resumed"
+						: action === "done"
+							? "marked done"
+							: "canceled";
 			setFeedback("ok", `${verb} ${workflowId}`);
 		} catch (err) {
 			setFeedback("err", err instanceof Error ? err.message : String(err));
@@ -412,6 +420,7 @@ export function createDashboardRuntime(input: {
 		if (key === "p") return "pause";
 		if (key === "r") return "resume";
 		if (key === "c") return "cancel";
+		if (key === "d") return "done";
 		return null;
 	}
 
