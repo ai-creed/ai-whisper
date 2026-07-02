@@ -16,6 +16,7 @@ import {
 } from "@ai-whisper/broker";
 import { runCollabMount } from "../packages/cli/src/commands/collab/mount.ts";
 import {
+	buildHandoffChromeLine,
 	createMountSessionRuntime,
 	resolveTeammateCharacterFromAssignments,
 } from "../packages/cli/src/runtime/mount-session-main.ts";
@@ -833,5 +834,29 @@ describe("resolveTeammateCharacterFromAssignments", () => {
 				"claude",
 			),
 		).toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Task 5: handoff chrome line. `onRelay` is an inline closure inside
+// createMountSessionRuntime's start() and is not independently drivable by
+// this harness (known Phase 4 limitation — see resolveTeammateCharacterFromAssignments
+// above, tested at the same pure/unit level). buildHandoffChromeLine is the
+// exported pure builder the closure calls with the target's characterName
+// already resolved from the SAME fresh listDuoAssignments read used for the
+// persona fragment.
+// ---------------------------------------------------------------------------
+
+describe("buildHandoffChromeLine (Task 5 handoff chrome)", () => {
+	it("renders the character display name when the target's assignment is present", () => {
+		expect(buildHandoffChromeLine("codex", "Robin")).toBe(
+			"[ai-whisper] Handed turn to Robin (codex).",
+		);
+	});
+
+	it("falls back to the raw agentType — today's exact text — when there is no assignment", () => {
+		expect(buildHandoffChromeLine("codex", null)).toBe(
+			"[ai-whisper] Handed turn to codex.",
+		);
 	});
 });

@@ -115,6 +115,24 @@ describe("deriveLogLines", () => {
 		expect(ev.text).toContain("codex→claude");
 		expect(ev.text).not.toMatch(/P\d·R\d/);
 	});
+
+	it("Task 5: route substitutes character labels when a charNames map is passed", () => {
+		const lines = deriveLogLines([row({})], phaseRuns, 4, { codex: "Bo", claude: "Al" });
+		const ev = lines.find((l) => l.kind === "event")!;
+		expect(ev.text).toContain("Bo (codex)");
+	});
+
+	it("Task 5: route is byte-identical to today when charNames is omitted (regression)", () => {
+		const lines = deriveLogLines([row({})], phaseRuns, 4);
+		const ev = lines.find((l) => l.kind === "event")!;
+		expect(ev.text).toContain("codex→claude");
+	});
+
+	it("Task 5: route is byte-identical to today when charNames is an empty map (regression)", () => {
+		const lines = deriveLogLines([row({})], phaseRuns, 4, {});
+		const ev = lines.find((l) => l.kind === "event")!;
+		expect(ev.text).toContain("codex→claude");
+	});
 });
 
 const baseSnapshot: RelayViewSnapshot = {
@@ -217,6 +235,33 @@ describe("buildRelayViewState — status", () => {
 		expect(tail && tail.kind === "phase-summary" ? tail.text : "").toBe(
 			"✖ workflow-canceled: wf_048c",
 		);
+	});
+
+	it("Task 5: turn row renders character labels when a characterNames map is provided", () => {
+		const s = buildRelayViewState({
+			...baseSnapshot,
+			characterNames: { codex: "Batman", claude: "Robin" },
+		});
+		expect(s.turn).toBe("Batman (codex) · waiting Robin (claude) · handoff accepted");
+	});
+
+	it("Task 5: turn row is byte-identical to today when characterNames is omitted (regression)", () => {
+		const s = buildRelayViewState(baseSnapshot);
+		expect(s.turn).toBe("codex · waiting claude · handoff accepted");
+	});
+
+	it("Task 5: turn row is byte-identical to today when characterNames is an empty map (regression)", () => {
+		const s = buildRelayViewState({ ...baseSnapshot, characterNames: {} });
+		expect(s.turn).toBe("codex · waiting claude · handoff accepted");
+	});
+
+	it("Task 5: turnOwner 'none' / waitingAgent null render 'none' even with a populated characterNames map", () => {
+		const s = buildRelayViewState({
+			...baseSnapshot,
+			turn: { turnOwner: "none", waitingAgent: null, handoffState: "idle" },
+			characterNames: { codex: "Batman", claude: "Robin" },
+		});
+		expect(s.turn).toBe("none · waiting none · handoff idle");
 	});
 
 	it("empty sessions → no health dots (no synthesized dead peers)", () => {

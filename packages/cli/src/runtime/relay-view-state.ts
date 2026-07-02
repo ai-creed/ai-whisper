@@ -1,5 +1,6 @@
 import type { RelayHandoffLogRow } from "@ai-whisper/broker";
 import { agentTypes, type AgentType } from "@ai-whisper/shared";
+import { characterDisplayName } from "./agent-display.js";
 
 // Fixed column widths for the workflow event line (kept here so Task 5/6
 // renderers stay aligned with this producer).
@@ -78,6 +79,10 @@ export function deriveLogLines(
 	handoffs: RelayHandoffLogRow[],
 	phaseRuns: PhaseRunRef[],
 	totalPhases: number,
+	// Task 5: agentType → characterName, applied to the sender/target route
+	// label. Optional, defaults to {} so every pre-existing 3-arg call site
+	// keeps rendering the raw "sender→target" text byte-for-byte.
+	charNames: Record<string, string> = {},
 ): LogLine[] {
 	const byPhaseRun = new Map(phaseRuns.map((p) => [p.phaseRunId, p]));
 	const out: LogLine[] = [];
@@ -122,7 +127,7 @@ export function deriveLogLines(
 		}
 
 		const time = hhmmss(h.createdAt);
-		const route = `${h.senderAgent}→${h.targetAgent}`;
+		const route = `${characterDisplayName(h.senderAgent, charNames[h.senderAgent])}→${characterDisplayName(h.targetAgent, charNames[h.targetAgent])}`;
 		const preview = (h.handbackText ?? "").replace(/\s+/g, " ").trim();
 
 		if (h.workflowId && phase && h.roundNumber != null) {
@@ -190,6 +195,10 @@ export type RelayViewSnapshot = {
 	sessions: Array<{ agentType: string; healthState: string; mountAlive?: boolean }>;
 	lastActivityAt: string | null;
 	handoffs: RelayHandoffLogRow[];
+	// Task 5: this collab's duo assignments (agentType → characterName),
+	// fetched fresh per tick by the host. Optional, defaults to {} — every
+	// caller that omits it renders the raw agentType text unchanged.
+	characterNames?: Record<string, string>;
 };
 
 // Decoupled stuck threshold (Bug C): independent of the turn-idle threshold,
@@ -379,7 +388,20 @@ export function buildRelayViewState(snap: RelayViewSnapshot): RelayViewState {
 	const phaseEl = elapsedSince(cur?.startedAt, snap.now);
 	const elapsed = `total ${totalEl} · phase ${phaseEl}`;
 
-	const turn = `${snap.turn.turnOwner} · waiting ${snap.turn.waitingAgent ?? "none"} · handoff ${snap.turn.handoffState}`;
+	// Task 5: character-substituted turn-owner/waiting labels. "none" (no
+	// current owner) and a null waitingAgent are placeholders, not real
+	// AgentTypes — they render as the literal "none", never through the
+	// character map.
+	const charNames = snap.characterNames ?? {};
+	const turnOwnerLabel =
+		snap.turn.turnOwner === "none"
+			? "none"
+			: characterDisplayName(snap.turn.turnOwner, charNames[snap.turn.turnOwner]);
+	const waitingLabel =
+		snap.turn.waitingAgent != null
+			? characterDisplayName(snap.turn.waitingAgent, charNames[snap.turn.waitingAgent])
+			: "none";
+	const turn = `${turnOwnerLabel} · waiting ${waitingLabel} · handoff ${snap.turn.handoffState}`;
 
 	// Bug A / agent identity: derive the health dots from the REAL session rows
 	// (so ezio shows and a never-present codex does not), filtering unknown
@@ -436,7 +458,7 @@ export function buildRelayViewState(snap: RelayViewSnapshot): RelayViewState {
 			}`
 		: "—";
 
-	const logLines = deriveLogLines(snap.handoffs, snap.phaseRuns, snap.totalPhases);
+	const logLines = deriveLogLines(snap.handoffs, snap.phaseRuns, snap.totalPhases, charNames);
 
 	// Spec §6: when the workflow is terminal, the log ends with an explicit
 	// terminal line.

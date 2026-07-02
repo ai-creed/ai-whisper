@@ -219,6 +219,20 @@ export function createDashboardRuntime(input: {
 		const chain = curRunChainId ? c.getRelayChain(curRunChainId) : null;
 		const turn = c.getRelayTurnState(collabId, isoNow);
 		const sessions = c.listSessions(collabId);
+		// Task 5: this collab's duo assignments, fetched fresh each tick (same
+		// per-tick broker-control-handle fetch pattern as turn/sessions above and
+		// getHandsOffStats on the Wall path) and reduced to agentType →
+		// characterName for the relay-view build. Never throws: a duo-lookup
+		// failure must not break the Inspector poll — degrades to an empty map
+		// (today's vendor-name rendering).
+		let characterNames: Record<string, string> = {};
+		try {
+			characterNames = Object.fromEntries(
+				c.listDuoAssignmentsForCollab(collabId).map((a) => [a.agentType, a.characterName]),
+			);
+		} catch {
+			characterNames = {};
+		}
 		// Per-agent pid-liveness (Bug C): probe each mounted agent's recorded pid.
 		const mountAliveOf = buildMountAliveByAgent(
 			c.listSessionAttachments(collabId),
@@ -307,6 +321,7 @@ export function createDashboardRuntime(input: {
 			})),
 			lastActivityAt,
 			handoffs,
+			characterNames,
 		};
 		const focusedPhaseRunId = curRun?.phaseRunId ?? null;
 		return buildInspectorState({

@@ -15,6 +15,7 @@ import {
 	type DuoRole,
 } from "@ai-whisper/broker";
 import { getCharacter } from "../duo/duo-table.js";
+import { characterDisplayName } from "./agent-display.js";
 import { getSharedSqlitePath, getStateSocketsDir, getStateLogsDir } from "./state-root.js";
 import { workspaceIdFromPath } from "./workspace-id.js";
 import {
@@ -185,6 +186,23 @@ export function resolveTeammateCharacterFromAssignments(
 	const row = assignments.find((r) => r.agentType === teammateAgentType);
 	if (!row) return null;
 	return getCharacter(row.duoId, row.characterId)?.summonName ?? row.characterName;
+}
+
+/**
+ * Build the relay handoff chrome line (Task 5): substitutes the target's duo
+ * character display name (`characterDisplayName`'s "<characterName>
+ * (<agentType>)" form) when known, else falls back to the raw agentType —
+ * today's exact text. Pure + exported so the substitution is unit-testable
+ * without driving the `onRelay` closure end-to-end (same precedent as
+ * `resolveTeammateCharacterFromAssignments` above). The caller (`onRelay`)
+ * resolves `characterName` from the SAME fresh `listDuoAssignments` read
+ * already performed for the persona fragment — no second DB read per handoff.
+ */
+export function buildHandoffChromeLine(
+	target: AgentType,
+	characterName: string | null,
+): string {
+	return `[ai-whisper] Handed turn to ${characterDisplayName(target, characterName)}.`;
 }
 
 /** Operator override for the codex submit strategy (AI_WHISPER_CODEX_SUBMIT_STRATEGY). */
@@ -584,21 +602,31 @@ export function createMountSessionRuntime(input: {
 					let duoForHandoff:
 						| { character: string; role: DuoRole; teammateCharacter: string | null }
 						| undefined;
+					// Task 5: the target's OWN raw characterName (display form, e.g.
+					// "Batman" — not the summonName resolveTeammateCharacterFromAssignments
+					// returns) for the chrome line below. Resolved from the SAME fresh
+					// read as the persona fragment — no second DB read per handoff.
+					let targetCharacterName: string | null = null;
 					if (input.duo) {
 						const snapshotTeammateCharacter = input.duo.teammate?.character ?? null;
 						let teammateCharacter = snapshotTeammateCharacter;
 						try {
 							const db = openDatabase(getSharedSqlitePath());
 							try {
+								const freshAssignments = listDuoAssignments(db, resolvedClaim.collabId);
 								teammateCharacter = resolveTeammateCharacterFromAssignments(
-									listDuoAssignments(db, resolvedClaim.collabId),
+									freshAssignments,
 									directive.target,
 								);
+								targetCharacterName =
+									freshAssignments.find((a) => a.agentType === directive.target)
+										?.characterName ?? null;
 							} finally {
 								db.close();
 							}
 						} catch {
 							teammateCharacter = snapshotTeammateCharacter;
+							// targetCharacterName stays null — chrome falls back to the vendor name.
 						}
 						duoForHandoff = {
 							character: input.duo.character,
@@ -621,7 +649,7 @@ export function createMountSessionRuntime(input: {
 						}),
 					);
 
-					sendNow(`[ai-whisper] Handed turn to ${directive.target}.`);
+					sendNow(buildHandoffChromeLine(directive.target, targetCharacterName));
 
 						return Promise.resolve(null);
 					};
