@@ -89,7 +89,7 @@ describe("cli command wiring", () => {
 		expect(verdicts.flags).toMatch(/\[/);
 	});
 
-	it("registers workflow subcommands: start, list, inspect, pause, resume, cancel, types, stats", () => {
+	it("registers workflow subcommands: start, list, inspect, pause, resume, cancel, complete, types, stats", () => {
 		const cli = createCli();
 		const workflow = cli.commands.find((c) => c.name() === "workflow");
 		expect(workflow).toBeDefined();
@@ -97,6 +97,7 @@ describe("cli command wiring", () => {
 		const subcommandNames = workflow!.commands.map((c) => c.name()).sort();
 		expect(subcommandNames).toEqual([
 			"cancel",
+			"complete",
 			"inspect",
 			"list",
 			"pause",
