@@ -49,7 +49,7 @@ describe("buildRelayHandoffInput duo persona fragment", () => {
 			now: "2026-07-02T00:00:01.000Z",
 			duo: {
 				character: "HEISENBERG",
-				role: "implementer",
+				role: "brain",
 				teammateCharacter: "JESSE",
 			},
 		});
@@ -57,7 +57,7 @@ describe("buildRelayHandoffInput duo persona fragment", () => {
 		expect(lines).toHaveLength(2);
 		expect(lines[0]).toBe("review the diff");
 		expect(lines[1]).toBe(
-			"[duo] You are HEISENBERG (implementer); teammate claude is JESSE. Character flavor in prose only; never alter code, commits, or workflow verdict labels.",
+			"[duo] You are HEISENBERG (brain); teammate claude is JESSE. Character flavor in prose only; never alter code, commits, or workflow verdict labels.",
 		);
 	});
 
@@ -69,7 +69,7 @@ describe("buildRelayHandoffInput duo persona fragment", () => {
 			now: "2026-07-02T00:00:02.000Z",
 			duo: {
 				character: "HEISENBERG",
-				role: "implementer",
+				role: "brain",
 				teammateCharacter: null,
 			},
 		});
@@ -85,12 +85,12 @@ describe("buildRelayHandoffInput duo persona fragment", () => {
 			now: "2026-07-02T00:00:03.000Z",
 			duo: {
 				character: "BATMAN",
-				role: "reviewer",
+				role: "brain",
 				teammateCharacter: "ROBIN",
 			},
 		});
 		expect(input.requestText).toContain("BATMAN");
-		expect(input.requestText).toContain("(reviewer)");
+		expect(input.requestText).toContain("(brain)");
 		expect(input.requestText).toContain("never alter");
 	});
 });

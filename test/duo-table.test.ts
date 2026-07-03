@@ -7,11 +7,14 @@ import {
 import { rollDuo } from "../packages/cli/src/duo/roll-duo.ts";
 
 // Authoritative table from the design spec — duoId order and character order
-// within each duo (reviewer-listed-first) mirror the spec exactly.
+// within each duo mirror the spec exactly. Each character carries its fixed
+// body/brain role: the body (sidekick/doer) is claimed by the first mount,
+// the brain by the second.
 const EXPECTED_CHARACTERS = [
 	{
 		duoId: "sherlock-watson",
 		id: "sherlock",
+		role: "brain",
 		displayName: "Sherlock",
 		summonName: "SHERLOCK",
 		punchline: "Elementary, my dear Watson.",
@@ -20,6 +23,7 @@ const EXPECTED_CHARACTERS = [
 	{
 		duoId: "sherlock-watson",
 		id: "watson",
+		role: "body",
 		displayName: "Watson",
 		summonName: "WATSON",
 		punchline: "By Jove, Holmes — it works!",
@@ -28,6 +32,7 @@ const EXPECTED_CHARACTERS = [
 	{
 		duoId: "frankenstein-igor",
 		id: "frankenstein",
+		role: "brain",
 		displayName: "Frankenstein",
 		summonName: "FRANKENSTEIN",
 		punchline: "It's alive! IT'S ALIVE!",
@@ -36,6 +41,7 @@ const EXPECTED_CHARACTERS = [
 	{
 		duoId: "frankenstein-igor",
 		id: "igor",
+		role: "body",
 		displayName: "Igor",
 		summonName: "IGOR",
 		punchline: "It's pronounced 'eye-gor'.",
@@ -44,6 +50,7 @@ const EXPECTED_CHARACTERS = [
 	{
 		duoId: "quixote-sancho",
 		id: "quixote",
+		role: "brain",
 		displayName: "Don Quixote",
 		summonName: "DON QUIXOTE",
 		punchline: "Those are not windmills — they are giants!",
@@ -52,6 +59,7 @@ const EXPECTED_CHARACTERS = [
 	{
 		duoId: "quixote-sancho",
 		id: "sancho",
+		role: "body",
 		displayName: "Sancho Panza",
 		summonName: "SANCHO PANZA",
 		punchline: "Señor... those are windmills.",
@@ -60,6 +68,7 @@ const EXPECTED_CHARACTERS = [
 	{
 		duoId: "c3po-r2d2",
 		id: "c3po",
+		role: "body",
 		displayName: "C-3PO",
 		summonName: "C-3PO",
 		punchline: "We're doomed!",
@@ -68,6 +77,7 @@ const EXPECTED_CHARACTERS = [
 	{
 		duoId: "c3po-r2d2",
 		id: "r2d2",
+		role: "brain",
 		displayName: "R2-D2",
 		summonName: "R2-D2",
 		punchline: "Beep boop bee-boop.",
@@ -76,6 +86,7 @@ const EXPECTED_CHARACTERS = [
 	{
 		duoId: "batman-robin",
 		id: "batman",
+		role: "brain",
 		displayName: "Batman",
 		summonName: "BATMAN",
 		punchline: "I'm Batman.",
@@ -84,6 +95,7 @@ const EXPECTED_CHARACTERS = [
 	{
 		duoId: "batman-robin",
 		id: "robin",
+		role: "body",
 		displayName: "Robin",
 		summonName: "ROBIN",
 		punchline: "Holy merge conflict, Batman!",
@@ -92,6 +104,7 @@ const EXPECTED_CHARACTERS = [
 	{
 		duoId: "rocket-groot",
 		id: "rocket",
+		role: "brain",
 		displayName: "Rocket",
 		summonName: "ROCKET",
 		punchline: "Ain't no thing like me, 'cept me!",
@@ -100,6 +113,7 @@ const EXPECTED_CHARACTERS = [
 	{
 		duoId: "rocket-groot",
 		id: "groot",
+		role: "body",
 		displayName: "Groot",
 		summonName: "GROOT",
 		punchline: "I am Groot.",
@@ -108,6 +122,7 @@ const EXPECTED_CHARACTERS = [
 	{
 		duoId: "walter-jesse",
 		id: "walter",
+		role: "brain",
 		displayName: "Walter White",
 		summonName: "HEISENBERG",
 		punchline: "I am the one who knocks.",
@@ -116,6 +131,7 @@ const EXPECTED_CHARACTERS = [
 	{
 		duoId: "walter-jesse",
 		id: "jesse",
+		role: "body",
 		displayName: "Jesse Pinkman",
 		summonName: "JESSE",
 		punchline: "That's science, b*tch!",
@@ -169,6 +185,15 @@ describe("DUOS data table", () => {
 		);
 		expect(actual).toEqual(EXPECTED_CHARACTERS);
 	});
+
+	it("gives every duo exactly one body and one brain", () => {
+		for (const duo of DUOS) {
+			expect(duo.characters.map((c) => c.role).sort()).toEqual([
+				"body",
+				"brain",
+			]);
+		}
+	});
 });
 
 describe("getDuo / getCharacter", () => {
@@ -202,22 +227,22 @@ describe("rollDuo", () => {
 		expect([...seen].sort()).toEqual([...EXPECTED_DUO_IDS].sort());
 	});
 
-	it("always assigns complementary roles to two distinct characters of the same duo", () => {
+	it("orders slots body-first with the table's fixed character roles (slot 0 = first claim)", () => {
 		for (let i = 0; i < DUOS.length; i++) {
-			for (const roleSeed of [0.25, 0.75]) {
-				const rolled = rollDuo(seqRng([(i + 0.5) / DUOS.length, roleSeed]));
-				const duo = getDuo(rolled.duoId);
-				expect(duo).toBeDefined();
-				const duoCharacterIds = duo!.characters.map((c) => c.id);
+			const rolled = rollDuo(seqRng([(i + 0.5) / DUOS.length]));
+			const duo = getDuo(rolled.duoId);
+			expect(duo).toBeDefined();
 
-				expect(rolled.slots).toHaveLength(2);
-				const [slotA, slotB] = rolled.slots;
-				expect(slotA.characterId).not.toBe(slotB.characterId);
-				expect(duoCharacterIds).toContain(slotA.characterId);
-				expect(duoCharacterIds).toContain(slotB.characterId);
-				expect(new Set([slotA.role, slotB.role])).toEqual(
-					new Set(["reviewer", "implementer"]),
-				);
+			expect(rolled.slots).toHaveLength(2);
+			const [bodySlot, brainSlot] = rolled.slots;
+			expect(bodySlot.role).toBe("body");
+			expect(brainSlot.role).toBe("brain");
+			expect(bodySlot.characterId).not.toBe(brainSlot.characterId);
+			for (const slot of rolled.slots) {
+				const character = getCharacter(rolled.duoId, slot.characterId);
+				expect(character).toBeDefined();
+				expect(slot.role).toBe(character!.role);
+				expect(slot.characterName).toBe(character!.displayName);
 			}
 		}
 	});

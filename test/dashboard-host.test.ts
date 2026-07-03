@@ -786,8 +786,8 @@ describe("dashboard host", () => {
 			unresolvedHandoffId: null, handoffState: "accepted", handoffAgeMs: null,
 		})) as never;
 		broker.control.listDuoAssignmentsForCollab = vi.fn(() => [
-			{ collabId: "c1", agentType: "codex", duoId: "batman-robin", characterId: "batman", characterName: "Batman", role: "reviewer", assignedAt: "2026-05-20T00:00:00.000Z" },
-			{ collabId: "c1", agentType: "claude", duoId: "batman-robin", characterId: "robin", characterName: "Robin", role: "implementer", assignedAt: "2026-05-20T00:00:00.000Z" },
+			{ collabId: "c1", agentType: "codex", duoId: "batman-robin", characterId: "batman", characterName: "Batman", role: "brain", assignedAt: "2026-05-20T00:00:00.000Z" },
+			{ collabId: "c1", agentType: "claude", duoId: "batman-robin", characterId: "robin", characterName: "Robin", role: "body", assignedAt: "2026-05-20T00:00:00.000Z" },
 		]) as never;
 		const m = createDashboardRuntime({
 			broker: broker as never,

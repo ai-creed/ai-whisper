@@ -35,8 +35,8 @@ const sampleRoll: DuoRollRecord = {
 	collabId: "c1",
 	duoId: "sherlock-watson",
 	slots: [
-		{ characterId: "sherlock", characterName: "Sherlock", role: "reviewer" },
-		{ characterId: "watson", characterName: "Watson", role: "implementer" },
+		{ characterId: "sherlock", characterName: "Sherlock", role: "brain" },
+		{ characterId: "watson", characterName: "Watson", role: "body" },
 	],
 	rolledAt: "2026-04-21T00:00:00Z",
 };
@@ -71,7 +71,7 @@ describe("duo-assignment-repository", () => {
 			duoId: "sherlock-watson",
 			characterId: "sherlock",
 			characterName: "Sherlock",
-			role: "reviewer",
+			role: "brain",
 			assignedAt: "2026-04-21T00:00:00Z",
 		};
 		upsertDuoAssignment(db, row);
@@ -91,7 +91,7 @@ describe("duo-assignment-repository", () => {
 			duoId: "sherlock-watson",
 			characterId: "sherlock",
 			characterName: "Sherlock",
-			role: "reviewer",
+			role: "brain",
 			assignedAt: "2026-04-21T00:00:00Z",
 		});
 		upsertDuoAssignment(db, {
@@ -100,7 +100,7 @@ describe("duo-assignment-repository", () => {
 			duoId: "batman-robin",
 			characterId: "batman",
 			characterName: "Batman",
-			role: "implementer",
+			role: "brain",
 			assignedAt: "2026-04-21T00:00:05Z",
 		});
 		const row = getDuoAssignment(db, "c1", "codex");
@@ -117,7 +117,7 @@ describe("duo-assignment-repository", () => {
 			duoId: "sherlock-watson",
 			characterId: "sherlock",
 			characterName: "Sherlock",
-			role: "reviewer",
+			role: "brain",
 			assignedAt: "2026-04-21T00:00:00Z",
 		});
 		upsertDuoAssignment(db, {
@@ -126,7 +126,7 @@ describe("duo-assignment-repository", () => {
 			duoId: "sherlock-watson",
 			characterId: "watson",
 			characterName: "Watson",
-			role: "implementer",
+			role: "body",
 			assignedAt: "2026-04-21T00:00:01Z",
 		});
 		const rows = listDuoAssignments(db, "c1");
@@ -141,7 +141,7 @@ describe("duo-assignment-repository", () => {
 			duoId: "sherlock-watson",
 			characterId: "sherlock",
 			characterName: "Sherlock",
-			role: "reviewer",
+			role: "brain",
 			assignedAt: "2026-04-21T00:00:00Z",
 		});
 		expect(deleteDuoAssignment(db, "c1", "codex")).toBe(1);
@@ -158,7 +158,7 @@ describe("duo-assignment-repository", () => {
 			duoId: "sherlock-watson",
 			characterId: "sherlock",
 			characterName: "Sherlock",
-			role: "reviewer",
+			role: "brain",
 			assignedAt: "2026-04-21T00:00:00Z",
 		});
 
@@ -166,6 +166,34 @@ describe("duo-assignment-repository", () => {
 
 		expect(getDuoRoll(db, "c1")).toBeNull();
 		expect(listDuoAssignments(db, "c1")).toHaveLength(0);
+	});
+
+	// Rows written by ≤0.12.0 carry the legacy "reviewer"/"implementer" role
+	// vocabulary. They are normalized on read (reviewer→brain,
+	// implementer→body) so live collabs keep working across the upgrade with
+	// no migration.
+	it("normalizes legacy reviewer/implementer role values on read", () => {
+		const { db } = bootstrap();
+		db.prepare(
+			`INSERT INTO duo_roll (
+				collab_id, duo_id,
+				slot0_character_id, slot0_character_name, slot0_role,
+				slot1_character_id, slot1_character_name, slot1_role,
+				rolled_at
+			) VALUES ('c1', 'sherlock-watson', 'sherlock', 'Sherlock', 'reviewer', 'watson', 'Watson', 'implementer', '2026-04-21T00:00:00Z')`,
+		).run();
+		db.prepare(
+			`INSERT INTO duo_assignment
+				(collab_id, agent_type, duo_id, character_id, character_name, role, assigned_at)
+			VALUES ('c1', 'codex', 'sherlock-watson', 'sherlock', 'Sherlock', 'reviewer', '2026-04-21T00:00:00Z')`,
+		).run();
+
+		const roll = getDuoRoll(db, "c1");
+		expect(roll?.slots[0].role).toBe("brain");
+		expect(roll?.slots[1].role).toBe("body");
+
+		const assignment = getDuoAssignment(db, "c1", "codex");
+		expect(assignment?.role).toBe("brain");
 	});
 
 	it("migration: fresh DB has both duo tables and user_version === 7", () => {

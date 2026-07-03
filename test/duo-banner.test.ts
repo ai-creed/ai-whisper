@@ -10,13 +10,13 @@ describe("renderDuoBanner", () => {
 	it("renders the summon line, art block, indented quoted punchline, and terminal reset", () => {
 		const banner = renderDuoBanner({
 			summonName: "HEISENBERG",
-			role: "reviewer",
+			role: "brain",
 			punchline: "I am the one who knocks.",
 			art,
 			columns: 80,
 		});
 
-		expect(banner).toContain("⚡ Summoning HEISENBERG as reviewer...");
+		expect(banner).toContain("⚡ Summoning HEISENBERG — the brain of this operation...");
 		expect(banner).toContain(art);
 		expect(banner).toContain('   "I am the one who knocks."');
 		// The child TUI must not inherit a dangling style: always terminate with
@@ -24,7 +24,7 @@ describe("renderDuoBanner", () => {
 		expect(banner.endsWith(`${RESET}\n`)).toBe(true);
 		// Blank line separating summon line from art and art from punchline.
 		expect(banner).toContain(
-			`⚡ Summoning HEISENBERG as reviewer...\n\n${art}\n\n   "I am the one who knocks."`,
+			`⚡ Summoning HEISENBERG — the brain of this operation...\n\n${art}\n\n   "I am the one who knocks."`,
 		);
 	});
 
@@ -32,14 +32,14 @@ describe("renderDuoBanner", () => {
 		const wideArt = "X".repeat(50);
 		const banner = renderDuoBanner({
 			summonName: "GROOT",
-			role: "implementer",
+			role: "body",
 			punchline: "I am Groot.",
 			art: wideArt,
 			columns: 10,
 		});
 
 		expect(banner).not.toContain(wideArt);
-		expect(banner).toContain("⚡ Summoning GROOT as implementer...");
+		expect(banner).toContain("⚡ Summoning GROOT — the body, the face, and the hair...");
 		expect(banner).toContain('   "I am Groot."');
 		expect(banner.endsWith(`${RESET}\n`)).toBe(true);
 	});
@@ -48,7 +48,7 @@ describe("renderDuoBanner", () => {
 		const exactArt = "Y".repeat(20);
 		const banner = renderDuoBanner({
 			summonName: "R2-D2",
-			role: "reviewer",
+			role: "brain",
 			punchline: "Beep boop bee-boop.",
 			art: exactArt,
 			columns: 20,

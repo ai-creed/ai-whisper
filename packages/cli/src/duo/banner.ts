@@ -1,6 +1,7 @@
 import type { AgentType } from "@ai-whisper/shared";
 import { agentDisplayName } from "../runtime/agent-display.js";
 import { maxDisplayWidth } from "./art-assets.js";
+import { duoRoleFlavor, type DuoRole } from "./duo-table.js";
 
 /** ANSI reset: the banner always terminates with this so the child TUI never
  * inherits a dangling style from the summon art. */
@@ -15,7 +16,7 @@ const PUNCHLINE_INDENT = "   ";
  * Layout:
  *
  * ```
- * ⚡ Summoning <SUMMONNAME> as <role>...
+ * ⚡ Summoning <SUMMONNAME> — <role flavor>...
  *
  * <art>
  *
@@ -30,12 +31,12 @@ const PUNCHLINE_INDENT = "   ";
  */
 export function renderDuoBanner(input: {
 	summonName: string;
-	role: string;
+	role: DuoRole;
 	punchline: string;
 	art: string;
 	columns: number;
 }): string {
-	const summonLine = `⚡ Summoning ${input.summonName} as ${input.role}...`;
+	const summonLine = `⚡ Summoning ${input.summonName} — ${duoRoleFlavor(input.role)}...`;
 	const punchlineLine = `${PUNCHLINE_INDENT}"${input.punchline}"`;
 	const showArt = input.columns >= maxDisplayWidth(input.art);
 	const parts = showArt

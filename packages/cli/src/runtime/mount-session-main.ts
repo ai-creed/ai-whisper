@@ -14,7 +14,7 @@ import {
 	type DuoAssignmentRecord,
 	type DuoRole,
 } from "@ai-whisper/broker";
-import { getCharacter } from "../duo/duo-table.js";
+import { duoRoleFlavor, getCharacter } from "../duo/duo-table.js";
 import { characterDisplayName } from "./agent-display.js";
 import { getSharedSqlitePath, getStateSocketsDir, getStateLogsDir } from "./state-root.js";
 import { workspaceIdFromPath } from "./workspace-id.js";
@@ -157,7 +157,7 @@ export function buildDuoHandoffFragment(input: {
  * rather than forcing a placeholder agentType that does not exist.
  */
 export function buildDuoPersonaBrief(duo: DuoPersonaInput): string {
-	const otherRole: DuoRole = duo.role === "reviewer" ? "implementer" : "reviewer";
+	const otherRole: DuoRole = duo.role === "brain" ? "body" : "brain";
 	const teammateClause =
 		duo.teammate === null
 			? " Your teammate has no character assigned yet."
@@ -165,7 +165,7 @@ export function buildDuoPersonaBrief(duo: DuoPersonaInput): string {
 				? ` Your teammate ${duo.teammate.agentType} has no character assigned.`
 				: ` Your teammate ${duo.teammate.agentType} is ${duo.teammate.character}, the ${otherRole}.`;
 	return (
-		`[ai-whisper duo] For this collab session you are ${duo.character} — the ${duo.role} of this duo.${teammateClause}\n` +
+		`[ai-whisper duo] For this collab session you are ${duo.character} — ${duoRoleFlavor(duo.role)}.${teammateClause}\n` +
 		"Stay in character in conversational prose only — never in code, commit messages, PR text, or file contents, and never alter workflow verdict labels."
 	);
 }

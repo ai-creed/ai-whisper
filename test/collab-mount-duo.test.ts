@@ -208,9 +208,11 @@ describe("runCollabMount duo banner (pre-spawn claim)", () => {
 		expect(assignment.agentType).toBe("codex");
 
 		const character = getCharacter(assignment.duoId, assignment.characterId)!;
+		// First mount always claims the body slot.
+		expect(assignment.role).toBe("body");
 		const banner = writes[0]!;
 		expect(banner).toContain(
-			`⚡ Summoning ${character.summonName} as ${assignment.role}...`,
+			`⚡ Summoning ${character.summonName} — the body, the face, and the hair...`,
 		);
 		expect(banner).toContain(`"${character.punchline}"`);
 		expect(banner).toContain(loadCharacterArt(character.artFile));
@@ -272,7 +274,7 @@ describe("runCollabMount duo banner (pre-spawn claim)", () => {
 		process.env.AI_WHISPER_STATE_ROOT = stateRoot;
 		// Simulate a parent shell that still carries another mount's stamps.
 		process.env.AI_WHISPER_CHARACTER = "Stale Batman";
-		process.env.AI_WHISPER_CHARACTER_ROLE = "reviewer";
+		process.env.AI_WHISPER_CHARACTER_ROLE = "brain";
 		const workspaceRoot = join(stateRoot, "ws-noduo-staleenv");
 		mkdirSync(workspaceRoot, { recursive: true });
 		seedActiveCollab(workspaceRoot);
@@ -352,8 +354,8 @@ describe("runCollabMount duo banner (pre-spawn claim)", () => {
 				collabId,
 				duoId: "batman-robin",
 				slots: [
-					{ characterId: "batman", characterName: "Batman", role: "reviewer" },
-					{ characterId: "robin", characterName: "Robin", role: "implementer" },
+					{ characterId: "batman", characterName: "Batman", role: "brain" },
+					{ characterId: "robin", characterName: "Robin", role: "body" },
 				],
 				rolledAt: now,
 			});
@@ -363,7 +365,7 @@ describe("runCollabMount duo banner (pre-spawn claim)", () => {
 				duoId: "batman-robin",
 				characterId: "batman",
 				characterName: "Batman",
-				role: "reviewer",
+				role: "brain",
 				assignedAt: now,
 			});
 			upsertDuoAssignment(db0, {
@@ -372,7 +374,7 @@ describe("runCollabMount duo banner (pre-spawn claim)", () => {
 				duoId: "batman-robin",
 				characterId: "robin",
 				characterName: "Robin",
-				role: "implementer",
+				role: "body",
 				assignedAt: now,
 			});
 		} finally {
@@ -477,7 +479,7 @@ describe("runCollabMount duo banner (pre-spawn claim)", () => {
 				duoId: "walter-jesse",
 				characterId: "walter",
 				characterName: "Walter White",
-				role: "reviewer",
+				role: "brain",
 				assignedAt: now,
 			});
 		} finally {
@@ -541,7 +543,7 @@ function baseRuntimeInput(overrides: {
 	/** Test seam: the session-start persona-carry input (Task 4). */
 	duo?: {
 		character: string;
-		role: "reviewer" | "implementer";
+		role: "body" | "brain";
 		teammate: { agentType: string; character: string | null } | null;
 	};
 }) {
@@ -638,7 +640,7 @@ describe("createMountSessionRuntime duo opt-out release (post-binding)", () => {
 				duoId: "walter-jesse",
 				characterId: "walter",
 				characterName: "Walter White",
-				role: "reviewer",
+				role: "brain",
 				assignedAt: new Date().toISOString(),
 			});
 		} finally {
@@ -676,7 +678,7 @@ describe("createMountSessionRuntime duo opt-out release (post-binding)", () => {
 				duoId: "walter-jesse",
 				characterId: "walter",
 				characterName: "Walter White",
-				role: "reviewer",
+				role: "brain",
 				assignedAt: new Date().toISOString(),
 			});
 		} finally {
@@ -714,7 +716,7 @@ describe("createMountSessionRuntime duo opt-out release (post-binding)", () => {
 				duoId: "walter-jesse",
 				characterId: "walter",
 				characterName: "Walter White",
-				role: "reviewer",
+				role: "brain",
 				assignedAt: new Date().toISOString(),
 			});
 		} finally {
@@ -774,7 +776,7 @@ describe("createMountSessionRuntime duo persona brief (post-binding)", () => {
 				writeUserInput,
 				duo: {
 					character: "HEISENBERG",
-					role: "implementer",
+					role: "brain",
 					teammate: { agentType: "claude", character: "JESSE" },
 				},
 			}) as never,
@@ -791,7 +793,7 @@ describe("createMountSessionRuntime duo persona brief (post-binding)", () => {
 		const lines = briefText.split("\n");
 		expect(lines.length).toBeLessThanOrEqual(3);
 		expect(lines[0]).toBe(
-			"[ai-whisper duo] For this collab session you are HEISENBERG — the implementer of this duo. Your teammate claude is JESSE, the reviewer.",
+			"[ai-whisper duo] For this collab session you are HEISENBERG — the brain of this operation. Your teammate claude is JESSE, the body.",
 		);
 		expect(lines[1]).toBe(
 			"Stay in character in conversational prose only — never in code, commit messages, PR text, or file contents, and never alter workflow verdict labels.",
@@ -875,7 +877,7 @@ describe("createMountSessionRuntime duo persona brief output-settle gating", () 
 
 	const duo = {
 		character: "HEISENBERG",
-		role: "implementer" as const,
+		role: "brain" as const,
 		teammate: { agentType: "claude", character: "JESSE" },
 	};
 
@@ -1044,7 +1046,7 @@ describe("resolveTeammateCharacterFromAssignments", () => {
 						duoId: "walter-jesse",
 						characterId: "jesse",
 						characterName: "Jesse Pinkman",
-						role: "reviewer",
+						role: "body",
 						assignedAt: "2026-07-02T00:00:00.000Z",
 					},
 				],
@@ -1063,7 +1065,7 @@ describe("resolveTeammateCharacterFromAssignments", () => {
 						duoId: "walter-jesse",
 						characterId: "walter",
 						characterName: "Walter White",
-						role: "implementer",
+						role: "brain",
 						assignedAt: "2026-07-02T00:00:00.000Z",
 					},
 				],
@@ -1157,7 +1159,7 @@ describe("createMountSessionRuntime handoff chrome (onRelay path)", () => {
 				duoId: "batman-robin",
 				characterId: "robin",
 				characterName: "Robin",
-				role: "implementer",
+				role: "body",
 				assignedAt: new Date().toISOString(),
 			});
 		} finally {

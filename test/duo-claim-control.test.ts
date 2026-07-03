@@ -22,8 +22,8 @@ function bootstrap() {
 const sherlockWatsonRoll: { duoId: string; slots: [DuoRollSlot, DuoRollSlot] } = {
 	duoId: "sherlock-watson",
 	slots: [
-		{ characterId: "sherlock", characterName: "Sherlock", role: "reviewer" },
-		{ characterId: "watson", characterName: "Watson", role: "implementer" },
+		{ characterId: "watson", characterName: "Watson", role: "body" },
+		{ characterId: "sherlock", characterName: "Sherlock", role: "brain" },
 	],
 };
 
@@ -32,8 +32,8 @@ const sherlockWatsonRoll: { duoId: string; slots: [DuoRollSlot, DuoRollSlot] } =
 const batmanRobinRoll: { duoId: string; slots: [DuoRollSlot, DuoRollSlot] } = {
 	duoId: "batman-robin",
 	slots: [
-		{ characterId: "batman", characterName: "Batman", role: "reviewer" },
-		{ characterId: "robin", characterName: "Robin", role: "implementer" },
+		{ characterId: "robin", characterName: "Robin", role: "body" },
+		{ characterId: "batman", characterName: "Batman", role: "brain" },
 	],
 };
 
@@ -70,9 +70,9 @@ describe("duo claim/release control", () => {
 			collabId: "collab_c1",
 			agentType: "codex",
 			duoId: "sherlock-watson",
-			characterId: "sherlock",
-			characterName: "Sherlock",
-			role: "reviewer",
+			characterId: "watson",
+			characterName: "Watson",
+			role: "body",
 		});
 		expect(result.teammate).toBeNull();
 
@@ -100,9 +100,9 @@ describe("duo claim/release control", () => {
 			collabId: "collab_c1",
 			agentType: "claude",
 			duoId: "sherlock-watson",
-			characterId: "watson",
-			characterName: "Watson",
-			role: "implementer",
+			characterId: "sherlock",
+			characterName: "Sherlock",
+			role: "brain",
 		});
 		// teammate populated: the first claimer's row.
 		expect(second.teammate).toEqual(first.assignment);
@@ -162,8 +162,8 @@ describe("duo claim/release control", () => {
 		});
 
 		expect(third.outcome).toBe("inherited");
-		expect(third.assignment).toMatchObject({ agentType: "ezio", characterId: "sherlock" });
-		expect(third.teammate).toMatchObject({ agentType: "claude", characterId: "watson" });
+		expect(third.assignment).toMatchObject({ agentType: "ezio", characterId: "watson" });
+		expect(third.teammate).toMatchObject({ agentType: "claude", characterId: "sherlock" });
 		expect(broker.control.listDuoAssignmentsForCollab("collab_c1").find((r) => r.agentType === "codex")).toBeUndefined();
 	});
 
@@ -183,7 +183,7 @@ describe("duo claim/release control", () => {
 		});
 
 		expect(third.outcome).toBe("inherited");
-		expect(third.assignment).toMatchObject({ agentType: "ezio", characterId: "sherlock" });
+		expect(third.assignment).toMatchObject({ agentType: "ezio", characterId: "watson" });
 	});
 
 	it("third agent inherits when the owner's attachment row has a null pid", () => {
@@ -202,7 +202,7 @@ describe("duo claim/release control", () => {
 		});
 
 		expect(third.outcome).toBe("inherited");
-		expect(third.assignment).toMatchObject({ agentType: "ezio", characterId: "sherlock" });
+		expect(third.assignment).toMatchObject({ agentType: "ezio", characterId: "watson" });
 	});
 
 	it("releaseDuoCharacter deletes the claim but leaves duo_roll intact; the freed slot re-claims identically", () => {
@@ -223,9 +223,27 @@ describe("duo claim/release control", () => {
 		expect(reclaim.outcome).toBe("claimed");
 		expect(reclaim.assignment).toMatchObject({
 			agentType: "claude",
-			characterId: "sherlock",
-			characterName: "Sherlock",
-			role: "reviewer",
+			characterId: "watson",
+			characterName: "Watson",
+			role: "body",
 		});
+	});
+
+	it("normalizes a legacy reviewer/implementer proposedRoll (mixed-version safety)", () => {
+		const { broker } = bootstrap();
+		const result = broker.control.claimDuoCharacter({
+			collabId: "collab_c1",
+			agentType: "codex",
+			proposedRoll: {
+				duoId: "sherlock-watson",
+				slots: [
+					{ characterId: "sherlock", characterName: "Sherlock", role: "reviewer" },
+					{ characterId: "watson", characterName: "Watson", role: "implementer" },
+				],
+			} as never,
+		});
+
+		expect(result.outcome).toBe("claimed");
+		expect(result.assignment?.role).toBe("brain");
 	});
 });

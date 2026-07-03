@@ -3,11 +3,21 @@ import { z } from "zod";
 import type { AgentType } from "@ai-whisper/shared";
 
 /** Cosmetic-only flavor for a claimed duo character; carries no behavioral
- * meaning beyond what is printed in the mount banner. Mirrors the CLI-side
- * `DuoRole` (packages/cli/src/duo/duo-table.ts) WITHOUT importing it — the
- * broker never depends on packages/cli. */
-export const duoRoleSchema = z.enum(["reviewer", "implementer"]);
-export type DuoRole = z.infer<typeof duoRoleSchema>;
+ * meaning beyond what is printed in the mount banner and persona text.
+ * Mirrors the CLI-side `DuoRole` (packages/cli/src/duo/duo-table.ts) WITHOUT
+ * importing it — the broker never depends on packages/cli.
+ *
+ * Legacy tolerance: rows and proposed rolls written by ≤0.12.0 carry the old
+ * "reviewer"/"implementer" vocabulary. Both read paths (`rowToDuoRoll`,
+ * `rowToDuoAssignment`) and the claim input parse through this schema, so
+ * legacy values are normalized in place (reviewer→brain, implementer→body)
+ * and live collabs keep working across the upgrade with no migration. */
+export const duoRoleSchema = z
+	.enum(["body", "brain", "reviewer", "implementer"])
+	.transform((value): "body" | "brain" =>
+		value === "reviewer" ? "brain" : value === "implementer" ? "body" : value,
+	);
+export type DuoRole = z.output<typeof duoRoleSchema>;
 
 export const duoRollSlotSchema = z.object({
 	characterId: z.string().min(1),

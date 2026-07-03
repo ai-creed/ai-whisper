@@ -37,11 +37,11 @@ describe("provider PTY spawn options stamp AI_WHISPER_AGENT", () => {
 			cwd: "/w",
 			baseEnv: {
 				AI_WHISPER_CHARACTER: "Batman",
-				AI_WHISPER_CHARACTER_ROLE: "reviewer",
+				AI_WHISPER_CHARACTER_ROLE: "brain",
 			},
 		});
 		expect(opts.env.AI_WHISPER_CHARACTER).toBe("Batman");
-		expect(opts.env.AI_WHISPER_CHARACTER_ROLE).toBe("reviewer");
+		expect(opts.env.AI_WHISPER_CHARACTER_ROLE).toBe("brain");
 	});
 
 	it("codex spawn options pass duo persona env vars through unchanged", () => {
@@ -51,10 +51,10 @@ describe("provider PTY spawn options stamp AI_WHISPER_AGENT", () => {
 			cwd: "/w",
 			baseEnv: {
 				AI_WHISPER_CHARACTER: "Heisenberg",
-				AI_WHISPER_CHARACTER_ROLE: "implementer",
+				AI_WHISPER_CHARACTER_ROLE: "body",
 			},
 		});
 		expect(opts.env.AI_WHISPER_CHARACTER).toBe("Heisenberg");
-		expect(opts.env.AI_WHISPER_CHARACTER_ROLE).toBe("implementer");
+		expect(opts.env.AI_WHISPER_CHARACTER_ROLE).toBe("body");
 	});
 });
