@@ -5,6 +5,13 @@ All notable changes to the `ai-whisper` package are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-07-03
+
+### Added
+
+- **Movie-duo characters at mount**: `whisper collab mount` now summons each agent as one half of a movie duo — an ASCII character banner, a themed summoning line, and the character's iconic punchline print before the agent CLI spawns. Seven duos ship baked in (Sherlock & Watson, Frankenstein & Igor, Don Quixote & Sancho Panza, C-3PO & R2-D2, Batman & Robin, Rocket & Groot, Walter White & Jesse Pinkman); the pair is rolled per collab and persisted as per-agent claim rows in the broker, so both terminals stay consistent and a re-mount inherits a character only from a dead owner session. The persona carries into the session — an `AI_WHISPER_CHARACTER`/`AI_WHISPER_CHARACTER_ROLE` env stamp, a ≤3-line session-start brief, and a relay-handoff fragment keep the agent in character (conversational prose only; code, commits, and workflow verdicts stay untouched) — and the dashboard and relay chrome display character names like `Batman (claude)`. Duo mode is on by default; opt out per mount with `--no-duo` or permanently with `AI_WHISPER_DUO=off`. Codex's viewport-clearing TUI gets a dramatic pause plus a scrollback-push so the art survives in history, and narrow terminals fall back to a name-only banner.
+- **Operator mark-done for escalated workflows**: when an escalated run's work is actually complete but the final verification was environment-blocked (e.g. the e2e suite needs credentials the collab machine lacks), the operator can verify manually and mark the workflow done — `whisper workflow complete <workflowId>` from the CLI, or the new `d` key on a halted run's dashboard card (behind the usual `(y/n)` confirm; the footer key legend reads `p/r/c/d act`). Only `halted` workflows are eligible; the broker's new `markWorkflowDone` runs its eligibility guards and the `halted → done` transition atomically in one immediate transaction and emits `workflow.done` only if the transition committed, so a raced or ineligible call throws instead of emitting a false completion event. The run keeps `halt reason: marked done by operator` as the audit trail distinguishing operator completion from natural completion, and any still-open phase runs are swept closed. No database migration.
+
 ## [0.11.0] - 2026-07-01
 
 ### Added
@@ -716,6 +723,7 @@ Requires `@ai-creed/ai-ezio` ≥ 0.2.0-beta.4 (the `@ai-ezio/surface` slash seam
   (Claude + Codex) driven by structured workflows, with npm metadata
   (description, repository, homepage).
 
+[0.12.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.12.0
 [0.11.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.11.0
 [0.10.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.10.0
 [0.9.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.9.0
