@@ -888,7 +888,11 @@ describe("createMountSessionRuntime duo persona brief output-settle gating", () 
 		process.env.AI_WHISPER_DUO_BRIEF_MAX_WAIT_MS = "5000";
 		seedSharedMigrated();
 		const writes: string[] = [];
-		let emitProviderOutput: ((data: string) => void) | null = null;
+		// No-op default (not `null`): the real handler is assigned from inside
+		// the onProviderOutput callback, which TS control-flow analysis cannot
+		// see — a `| null` variable would stay narrowed to null at the call
+		// site below and fail the root typecheck.
+		let emitProviderOutput: (data: string) => void = () => {};
 
 		const runtime = createMountSessionRuntime(
 			baseRuntimeInput({
@@ -912,7 +916,7 @@ describe("createMountSessionRuntime duo persona brief output-settle gating", () 
 		await new Promise((resolve) => setTimeout(resolve, 150));
 		expect(writes).toEqual([]);
 
-		emitProviderOutput?.("claude boot chrome");
+		emitProviderOutput("claude boot chrome");
 		await started;
 
 		expect(writes).toHaveLength(2);
