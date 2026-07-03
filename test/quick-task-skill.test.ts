@@ -66,6 +66,12 @@ describe("ai-whisper-quick-task skill", () => {
 		expect(md).toMatch(/spec-driven-development/i);
 	});
 
+	it("instructs writing .ai-whisper/.gitignore without clobbering an existing one", () => {
+		const md = readFileSync(quickTaskSkill, "utf8");
+		expect(md).toMatch(/\.ai-whisper\/\.gitignore/);
+		expect(md).toMatch(/never clobber/i);
+	});
+
 	it("ships into the post-build bundled dir, alongside ai-whisper-sdd", () => {
 		const bundled = copyRealSkills();
 		const bundledQuickTask = join(bundled, "ai-whisper-quick-task", "SKILL.md");

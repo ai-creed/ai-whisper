@@ -44,7 +44,14 @@ If the user gave a path to an existing brief, resolve it to an absolute path and
 
 > Task brief `<path>` is not readable. Check the path and try again.
 
-Otherwise, write the brief yourself from the approach approved in Step 1. Create the `.ai-whisper/tasks/` directory first if it doesn't already exist, then write the brief to `.ai-whisper/tasks/<YYYY-MM-DD>-<slug>.md` (slug derived from the task title, kebab-case).
+Otherwise, write the brief yourself from the approach approved in Step 1. Create the `.ai-whisper/tasks/` directory first if it doesn't already exist, and make sure `.ai-whisper/` is gitignored — this workflow has no broker setup step to do it for you, so do it here (create only if absent; never clobber an existing file):
+
+```bash
+mkdir -p .ai-whisper/tasks
+[ -f .ai-whisper/.gitignore ] || printf '*\n' > .ai-whisper/.gitignore
+```
+
+Then write the brief to `.ai-whisper/tasks/<YYYY-MM-DD>-<slug>.md` (slug derived from the task title, kebab-case).
 
 Embed this template VERBATIM:
 
@@ -66,7 +73,7 @@ Embed this template VERBATIM:
 - <how the reviewer verifies: commands to run, expected behavior>
 ```
 
-`whisper workflow start` enforces a hard gate on this brief: all four sections above (`## Task`, `## Approved approach`, `## Scope`, `## Acceptance checks`) are required and must be non-empty; `## Scope` must list every file the task touches, one bullet per file; and at most 5 non-test files count against the cap (test files are uncounted).
+`whisper workflow start` enforces a hard gate on this brief: all four sections above (`## Task`, `## Approved approach`, `## Scope`, `## Acceptance checks`) are required and must be non-empty; `## Scope` must list every file the task touches, one bullet per file; and at most 5 non-test files (test files are uncounted).
 
 ### 3. Verify collab readiness
 

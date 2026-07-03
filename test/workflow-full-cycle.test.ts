@@ -383,6 +383,11 @@ describe("workflow full cycle (mock orchestrator)", () => {
 		// handoff assertions below realistic.
 		const briefRelPath = ".ai-whisper/tasks/2026-04-21-parser-null-guard.md";
 		mkdirSync(join(repo, ".ai-whisper", "tasks"), { recursive: true });
+		// Mirror the real quick-task skill: quick-task has no broker setup step to
+		// gitignore .ai-whisper/ (unlike ralph/bugfix/deliberation), so the skill
+		// itself now writes this file — reproduce that here so `git add .` below
+		// behaves like the real workflow instead of silently staging the brief.
+		writeFileSync(join(repo, ".ai-whisper", ".gitignore"), "*\n");
 		writeFileSync(
 			join(repo, briefRelPath),
 			`## Task
@@ -487,6 +492,11 @@ Return early when the input is undefined instead of throwing.
 				let handbackText: string;
 				if (verdicts[i] === "delivered") {
 					const sha = makeRealCommit(`quick-${i}`);
+					// The task brief must stay untracked after the implementer's commit —
+					// the fixture's .ai-whisper/.gitignore (written above) is what keeps
+					// `git add .` in makeRealCommit from silently staging it.
+					const trackedFiles = execSync(`git -C "${repo}" ls-files`).toString();
+					expect(trackedFiles).not.toContain(briefRelPath);
 					handbackText = `Implemented. Latest commit: ${sha}`;
 				} else {
 					handbackText = `done step ${i}`;
