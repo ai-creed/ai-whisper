@@ -98,6 +98,12 @@ export {
 	listWorkflowTypes,
 } from "./runtime/workflow-registry.js";
 export {
+	validateTaskBrief,
+	isTestFilePath,
+	QUICK_TASK_SCOPE_CAP,
+	type TaskBriefValidation,
+} from "./runtime/task-brief.js";
+export {
 	upsertWorkspace,
 	getWorkspaceById,
 	getWorkspaceByRoot,
