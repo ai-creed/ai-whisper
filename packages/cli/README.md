@@ -100,7 +100,7 @@ whisper collab mount claude
 whisper collab mount codex
 ```
 
-The first `mount` creates the collab and starts the broker daemon for the workspace; the second binds the other agent. From either session, start a workflow against a spec or goal file — `spec-driven-development` for a spec, `ralph-loop` for an open-ended goal, plus `complex-bug-fixing` and `deliberation` (see [Workflows](docs/workflows.md)). Watch it run with:
+The first `mount` creates the collab and starts the broker daemon for the workspace; the second binds the other agent. From either session, start a workflow against a spec or goal file — `spec-driven-development` for a spec, `ralph-loop` for an open-ended goal, plus `quick-task`, `complex-bug-fixing`, and `deliberation` (see [Workflows](docs/workflows.md)). Watch it run with:
 
 ```bash
 whisper collab dashboard
@@ -136,7 +136,7 @@ It's cosmetic and entirely optional. Turn it off per mount with `--no-duo`, or p
 
 ## Learn more
 
-- [Workflows](docs/workflows.md) — how to use the four workflows well: choosing between `spec-driven-development`, `ralph-loop`, `complex-bug-fixing`, and `deliberation`, and authoring the spec, goal, bug report, or seed that drives the run.
+- [Workflows](docs/workflows.md) — how to use the five workflows well: choosing between `spec-driven-development`, `quick-task`, `ralph-loop`, `complex-bug-fixing`, and `deliberation`, and authoring the spec, task brief, goal, bug report, or seed that drives the run.
 - [Concepts](docs/concepts.md) — the mental model: baton handoff, real mounted sessions, supervised autonomy, workflow-first execution.
 - [Relay & handoff flows](docs/relay-handoff-flows.md) — the complete handoff state machine, capture-status table, hotkey reference, per-step verdicts, and troubleshooting.
 - [Evaluator configuration](docs/evaluator-configuration.md) — required credentials and options for the LLM evaluator that gates workflows.
