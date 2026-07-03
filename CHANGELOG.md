@@ -5,6 +5,16 @@ All notable changes to the `ai-whisper` package are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.1] - 2026-07-03
+
+### Changed
+
+- **Duo roles are now body/brain, assigned by mount order**: the cosmetic duo role vocabulary changes from `reviewer`/`implementer` to the metaphorical **body**/**brain** ("he got the brain, I got the body, the face, and the hair"), and the roll is no longer random within the pair — the first mounted agent always claims the duo's body character (the sidekick/doer: Watson, Igor, Sancho Panza, C-3PO, Robin, Groot, Jesse Pinkman) and the second gets the brain (Sherlock, Frankenstein, Don Quixote, R2-D2, Batman, Rocket, Walter White). This matches the natural flow where the first terminal you open does the hands-on spec work, and the metaphor can never be confused with the workflow's real implementer/reviewer role bindings. The new vocabulary flows through the summon banner (`⚡ Summoning WATSON — the body, the face, and the hair...`), the session-start persona brief, the relay-handoff persona fragment, and the `AI_WHISPER_CHARACTER_ROLE` env stamp. Assignments and rolls persisted by ≤0.12.0 are normalized on read (`reviewer`→`brain`, `implementer`→`body`) — live collabs keep working across the upgrade with no database migration.
+
+### Fixed
+
+- **Duo persona brief required a manual Enter on claude/codex mounts**: the session-start persona brief was injected within milliseconds of the agent PTY spawning — before the TUI started reading its tty — so the kernel coalesced the brief text and the trailing carriage-return submit beat into a single read, which claude's paste heuristic rendered as a literal newline. The brief sat unsubmitted in the composer until the operator pressed Enter. The injection now waits for the provider TUI to look ready (first output plus a quiet gap, default 500ms, capped at 10s so a silent provider can never hang the mount) before submitting; ezio's protocol-native submit path skips the wait. As a bonus, codex mounts now usually get the reliable bracketed-paste injection path, since by settle time the paste-mode detector has seen the TUI's boot output. Tunable via `AI_WHISPER_DUO_BRIEF_QUIET_MS` / `AI_WHISPER_DUO_BRIEF_MAX_WAIT_MS`.
+
 ## [0.12.0] - 2026-07-03
 
 ### Added
@@ -723,6 +733,7 @@ Requires `@ai-creed/ai-ezio` ≥ 0.2.0-beta.4 (the `@ai-ezio/surface` slash seam
   (Claude + Codex) driven by structured workflows, with npm metadata
   (description, repository, homepage).
 
+[0.12.1]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.12.1
 [0.12.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.12.0
 [0.11.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.11.0
 [0.10.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.10.0
