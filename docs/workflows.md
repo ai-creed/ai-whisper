@@ -4,11 +4,13 @@ A workflow is a structured loop: a sequence of phases, each with its own role as
 
 The outcome of a run is mostly decided by two choices you make before anything starts: which workflow you pick, and what you feed it. Everything else — mounting, kickoff, watching the dashboard — is mechanics. This guide spends most of its words on those two choices.
 
-ai-whisper ships four workflows today. All run an implementer and a reviewer that take turns — the agent you trigger the run from becomes the implementer and the other becomes the reviewer (override with `--implementer` / `--reviewer`) — and all are gated by the LLM evaluator that decides, after each handback, whether to advance, loop, or escalate.
+ai-whisper ships five workflows today. All run an implementer and a reviewer that take turns — the agent you trigger the run from becomes the implementer and the other becomes the reviewer (override with `--implementer` / `--reviewer`) — and all are gated by the LLM evaluator that decides, after each handback, whether to advance, loop, or escalate.
 
-## The four workflows at a glance
+## The five workflows at a glance
 
 **`spec-driven-development`** is a phased pipeline. It moves through spec-refining → plan-writing → plan-execution → code-review. Each phase has its own gate and loops until it is approved or it escalates, then the next phase begins. You give it a spec; it sharpens that spec into a plan and executes the plan under review. Use it when you can describe the deliverable up front.
+
+**`quick-task`** is a single phase, `implement-and-review`: the implementer executes a task brief you've already agreed the approach for, then a reviewer runs a full acceptance review of the whole deliverable — there is no separate plan phase. Before the workflow even starts, a hard gate checks the brief's shape (four required sections, a scope list capped at 5 non-test files) and rejects anything that doesn't fit, with no override. Use it for a small, already-scoped change where writing a full spec would be overkill.
 
 **`ralph-loop`** is a single open-ended phase. It reads a goal file as ground truth and grinds toward it chunk-by-chunk: each iteration the implementer picks the next smallest independently-verifiable chunk, delivers it, and a reviewer checks that chunk. When the implementer claims the whole goal is done, an acceptance review gates completion against the goal's criteria. Use it when the work is long-horizon or hard to fully plan in advance.
 
@@ -22,11 +24,18 @@ Ralph keeps durable memory under `.ai-whisper/ralph/<workflowId>/`: `PROGRESS.md
 
 The question to ask is: **can you describe "done" before you start?**
 
+Reach for **quick-task** when:
+
+- it's a small, pre-scoped task and the approach is already approved — in this conversation, or carried over from an earlier one;
+- there's no research, no unsettled design decision, and no schema/contract migration left to work out — just execution;
+- it fits in the brief's scope cap: 5 non-test files or fewer (test files don't count). If it needs more, split it or move to spec-driven-development.
+
 Reach for **spec-driven-development** when:
 
 - the deliverable is specifiable up front — a feature, an endpoint, a refactor with a clear target shape;
 - the work benefits from an explicit plan that a reviewer can approve before code is written;
 - it fits in roughly one plan's worth of work. If it sprawls across many independent subsystems, decompose it first and run SDD on each piece.
+- anything needing a spec or a plan belongs here, not in quick-task — quick-task has no plan phase and no room to redesign the approach mid-flight.
 
 Reach for **ralph-loop** when:
 
@@ -74,6 +83,21 @@ Avoid: a wishlist of loosely related features, "make it better" without a defini
 > **Strong:** "Replace the per-request token decode in `auth/verify.ts` with a cached verifier. Done when: tokens are verified against a key set cached for its TTL, a cache miss refetches once, expired/invalid tokens still 401, and the existing auth tests pass unchanged. Do not change the public `verifyRequest` signature."
 
 This is not hypothetical. ai-whisper itself was built this way — nearly every feature in this repo started as a spec run through `spec-driven-development`, and those specs are still in the tree under [`docs/superpowers/specs/`](superpowers/specs/). If you want to see what a spec that actually drove a run looks like — scope, acceptance criteria, the level of detail that converges rather than loops — read a few of them. They are battle-tested by the fact that the code they describe exists.
+
+### Writing a brief for quick-task
+
+Unlike the other artifacts here, the brief is not free-form prose you can get partly right — `whisper workflow start` hard-gates its shape before the workflow starts at all. Get the shape right and the gate is invisible; get it wrong and it hands back every violation at once, with no way to override it.
+
+A brief is a markdown file with four required, non-empty sections:
+
+- `## Task` — what + why, in a few lines;
+- `## Approved approach` — the approach already agreed (in this conversation, or carried over from an earlier one) — the implementer must implement it as written, not redesign it;
+- `## Scope` — every file the task touches, one path per bullet;
+- `## Acceptance checks` — how the reviewer verifies the work: commands to run, expected behavior.
+
+The gate caps `## Scope` at 5 non-test files; test files (anything under a `test/`/`tests/`/`__tests__/` path, or named `*.test.*`, `*.spec.*`, or `*_test.*`) don't count against that cap. There is no override flag and no env knob — a brief over the cap, missing a section, or with an empty section fails with every violation listed together and the remedy `Split the task or use spec-driven-development.` The fix is to shrink the task or move to a real spec, not to talk your way past the gate.
+
+By convention briefs live at `.ai-whisper/tasks/<YYYY-MM-DD>-<slug>.md` (gitignored — the brief itself is never committed). The `ai-whisper-quick-task` kickoff skill writes one for you from the approach you've already approved in chat, so you rarely author this file by hand.
 
 ### Writing a goal for ralph-loop
 
@@ -137,12 +161,13 @@ whisper collab mount claude
 
 # from either session
 whisper workflow start --type=spec-driven-development --spec=/abs/path/to/spec.md
+whisper workflow start --type=quick-task --spec=/abs/path/to/task-brief.md
 whisper workflow start --type=ralph-loop --spec=/abs/path/to/goal.md
 whisper workflow start --type=complex-bug-fixing --spec=/abs/path/to/bug-report.md
 whisper workflow start --type=deliberation --spec=/abs/path/to/seed.md
 ```
 
-The `/aiw-sdd <path>`, `/aiw-ralph <path>`, `/aiw-bugfix <path>`, and `/aiw-deliberation <path>` skills do the same thing with a readiness check first — they require the bundled skills to be installed once (`whisper skill install`; see the README quickstart). Roles follow the caller: the agent you start the run from is the implementer and the other agent reviews, so you do not normally pass `--implementer` / `--reviewer` — add them only to override. (Started outside a mounted session with no flags, the run falls back to the workflow type's default pairing and warns.)
+The `/aiw-sdd <path>`, `/aiw-quick-task <path>`, `/aiw-ralph <path>`, `/aiw-bugfix <path>`, and `/aiw-deliberation <path>` skills do the same thing with a readiness check first — they require the bundled skills to be installed once (`whisper skill install`; see the README quickstart). Roles follow the caller: the agent you start the run from is the implementer and the other agent reviews, so you do not normally pass `--implementer` / `--reviewer` — add them only to override. (Started outside a mounted session with no flags, the run falls back to the workflow type's default pairing and warns.) Unlike the other skills, `ai-whisper-quick-task` also writes the brief itself, from an approach approved earlier in the conversation — see the previous section.
 
 Then watch it run:
 
