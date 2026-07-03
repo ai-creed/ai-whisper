@@ -616,6 +616,54 @@ export const DELIBERATION: WorkflowDefinition = {
 	],
 };
 
+const QUICK_TASK_KICKOFF = `You are the implementer in an autonomous quick-task workflow. No human is in the loop — never ask for confirmation, permission, or clarification; do the work yourself.
+
+Read the task brief at {specPath}. It was written after a human approved the approach — treat it as the ratified contract: implement the "Approved approach" section as written; do NOT redesign it.
+
+1. The files under "Scope" are the declared blast radius. Implement the task, add or adjust the tests the brief's "Acceptance checks" imply, run the project's verification command and ensure it passes.
+2. Commit your changes (do NOT commit the task brief; .ai-whisper/ is gitignored).
+
+Scope guard: if the work is materially bigger than the brief — you need to touch non-test files beyond the "Scope" list, the approved approach does not survive contact with the code, or a hidden dependency/migration appears — do NOT push through. Hand back that you CANNOT PROCEED, naming what exploded; the run halts to the human, who re-scopes or escalates to spec-driven-development.
+
+Hand back the commit SHAs and the verification output, plus a 1-2 sentence summary; your reply must be at least two sentences, well over 100 characters — never hand back only a single word.`;
+
+const QUICK_TASK_REVIEW =
+	"The implementer claims the task in the brief at {specPath} is complete — the changes are commits {commitRange}. The upper bound is a LIVE `HEAD`: resolve it against the current repository at review time and INCLUDE any commits added during this review round (e.g. fixes for your prior findings); do not pin the review to an earlier tip. Verify against the brief's \"Acceptance checks\" and confirm the change stays inside the brief's \"Scope\": touching non-test files beyond the declared Scope list is a blocking finding — the implementer should have halted instead. Run the project's verification/tests yourself. This is an autonomous workflow with no human in the loop.\n\n" +
+	CODE_REVIEW_SKILL_GUIDANCE +
+	WORKFLOW_REVIEW_PROTOCOL;
+
+const QUICK_TASK_FIX =
+	"Apply the reviewer's findings to commits {commitRange} now (amend or add commits as needed). This is an autonomous workflow — no human will respond. Do the work yourself and hand back the updated commit SHAs and verification output; never ask for confirmation, permission, or clarification. End your handback with a 1-2 sentence summary of what you changed; your reply must be at least two sentences, well over 100 characters — never hand back only a single word.";
+
+export const QUICK_TASK: WorkflowDefinition = {
+	type: "quick-task",
+	displayName: "Quick Task",
+	description:
+		"Human-approved task brief → implement → acceptance review, hard-gated to small pre-scoped tasks",
+	defaultImplementer: "claude" as const,
+	defaultReviewer: "codex" as const,
+	phases: [
+		{
+			name: "implement-and-review",
+			implementerRole: "implementer",
+			reviewerRole: "reviewer",
+			maxRounds: 5,
+			initialHandoffStep: "implement",
+			kickoffTemplate: QUICK_TASK_KICKOFF,
+			stepTemplates: {
+				implement: QUICK_TASK_KICKOFF,
+				review: QUICK_TASK_REVIEW,
+				fix: QUICK_TASK_FIX,
+			},
+			reviewMode: "acceptance-review",
+			evaluatorPromptKey: "review-loop",
+			artifactOut: { kind: "commit-range" },
+			anchorCommitBaseOnEntry: true,
+			renderFixTemplateOnFindings: true,
+		},
+	],
+};
+
 /**
  * Append the operator-control fragment to every phase's kickoff template so the
  * mid-workflow "pause the workflow" guidance rides the handoff prompt the agent
@@ -638,6 +686,7 @@ const REGISTRY: Record<string, WorkflowDefinition> = {
 	[RALPH_LOOP.type]: withOperatorControl(RALPH_LOOP),
 	[COMPLEX_BUG_FIXING.type]: withOperatorControl(COMPLEX_BUG_FIXING),
 	[DELIBERATION.type]: withOperatorControl(DELIBERATION),
+	[QUICK_TASK.type]: withOperatorControl(QUICK_TASK),
 };
 
 export function ralphRunDir(workspaceRoot: string, workflowId: string): string {
