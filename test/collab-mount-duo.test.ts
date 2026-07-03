@@ -19,6 +19,7 @@ import {
 	buildHandoffChromeLine,
 	createMountSessionRuntime,
 	resolveTeammateCharacterFromAssignments,
+	waitForProviderOutputSettle,
 } from "../packages/cli/src/runtime/mount-session-main.ts";
 import { getSharedSqlitePath } from "../packages/cli/src/runtime/state-root.ts";
 import {
@@ -532,6 +533,11 @@ function baseRuntimeInput(overrides: {
 	/** Test seam: captures raw writeUserInput calls (persona-brief injection
 	 *  writes the brief text then "\r" through this same seam). */
 	writeUserInput?: (data: string) => void;
+	/** Test seam: registers the provider-output observer. When omitted the stub
+	 *  session exposes no onProviderOutput at all, so the persona-brief
+	 *  output-settle gate is skipped (nothing to consult) and injection is
+	 *  immediate — which keeps the pre-existing brief tests fast. */
+	onProviderOutput?: (handler: (data: string) => void) => void;
 	/** Test seam: the session-start persona-carry input (Task 4). */
 	duo?: {
 		character: string;
@@ -575,6 +581,9 @@ function baseRuntimeInput(overrides: {
 			writeUserInput: overrides.writeUserInput ?? (() => {}),
 			sendLocalMessage() {},
 			onExit() {},
+			...(overrides.onProviderOutput
+				? { onProviderOutput: overrides.onProviderOutput }
+				: {}),
 		}),
 		createLiveSession: () =>
 			({ start: overrides.liveStart, stop: () => Promise.resolve() }) as never,
@@ -831,6 +840,190 @@ describe("createMountSessionRuntime duo persona brief (post-binding)", () => {
 		await runtime.start();
 
 		expect(writeUserInput).not.toHaveBeenCalled();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Persona-brief output-settle gating. At mount time the provider TUI has only
+// just spawned and is not reading its tty yet: an immediate injection is
+// coalesced by the kernel with the trailing "\r" into one chunk, which
+// claude's paste heuristic renders as a literal newline instead of a submit —
+// the brief sits in the composer waiting for a manual Enter. The brief must
+// therefore wait for provider output to settle (first output + a quiet gap)
+// before injecting, capped so a silent provider can never hang the mount.
+// ---------------------------------------------------------------------------
+
+describe("createMountSessionRuntime duo persona brief output-settle gating", () => {
+	let prevStateRoot: string | undefined;
+	let prevQuietMs: string | undefined;
+	let prevMaxWaitMs: string | undefined;
+
+	beforeEach(() => {
+		prevStateRoot = process.env.AI_WHISPER_STATE_ROOT;
+		prevQuietMs = process.env.AI_WHISPER_DUO_BRIEF_QUIET_MS;
+		prevMaxWaitMs = process.env.AI_WHISPER_DUO_BRIEF_MAX_WAIT_MS;
+	});
+
+	afterEach(() => {
+		if (prevStateRoot === undefined) delete process.env.AI_WHISPER_STATE_ROOT;
+		else process.env.AI_WHISPER_STATE_ROOT = prevStateRoot;
+		if (prevQuietMs === undefined) delete process.env.AI_WHISPER_DUO_BRIEF_QUIET_MS;
+		else process.env.AI_WHISPER_DUO_BRIEF_QUIET_MS = prevQuietMs;
+		if (prevMaxWaitMs === undefined) delete process.env.AI_WHISPER_DUO_BRIEF_MAX_WAIT_MS;
+		else process.env.AI_WHISPER_DUO_BRIEF_MAX_WAIT_MS = prevMaxWaitMs;
+	});
+
+	const duo = {
+		character: "HEISENBERG",
+		role: "implementer" as const,
+		teammate: { agentType: "claude", character: "JESSE" },
+	};
+
+	it("holds the brief until provider output settles, then submits it (write + \\r)", async () => {
+		const stateRoot = tempStateRoot();
+		process.env.AI_WHISPER_STATE_ROOT = stateRoot;
+		process.env.AI_WHISPER_DUO_BRIEF_QUIET_MS = "40";
+		process.env.AI_WHISPER_DUO_BRIEF_MAX_WAIT_MS = "5000";
+		seedSharedMigrated();
+		const writes: string[] = [];
+		let emitProviderOutput: ((data: string) => void) | null = null;
+
+		const runtime = createMountSessionRuntime(
+			baseRuntimeInput({
+				collabId: "collab_duo_brief_settle_a",
+				duoDisabled: false,
+				liveStart: () => Promise.resolve(),
+				target: "claude",
+				writeUserInput: (data) => {
+					writes.push(data);
+				},
+				onProviderOutput: (handler) => {
+					emitProviderOutput = handler;
+				},
+				duo,
+			}) as never,
+		);
+
+		const started = runtime.start();
+		// Boot window: the provider has produced no output yet, so nothing may
+		// have been injected. (The pre-fix behavior injects immediately here.)
+		await new Promise((resolve) => setTimeout(resolve, 150));
+		expect(writes).toEqual([]);
+
+		emitProviderOutput?.("claude boot chrome");
+		await started;
+
+		expect(writes).toHaveLength(2);
+		expect(writes[0]).toContain("[ai-whisper duo]");
+		expect(writes[1]).toBe("\r");
+	});
+
+	// Deterministic fake-clock coverage of the settle predicate itself (the
+	// runtime-level tests above exercise the wiring with real timers).
+	describe("waitForProviderOutputSettle", () => {
+		function fakeClock() {
+			let t = 0;
+			return {
+				now: () => t,
+				sleep: (ms: number) => {
+					t += ms;
+					return Promise.resolve();
+				},
+			};
+		}
+
+		it("settles once output has stayed quiet for quietMs", async () => {
+			const clock = fakeClock();
+			const result = await waitForProviderOutputSettle({
+				getLastOutputAt: () => 0,
+				quietMs: 100,
+				maxWaitMs: 1000,
+				pollMs: 50,
+				now: clock.now,
+				sleep: clock.sleep,
+			});
+			expect(result).toBe("settled");
+			expect(clock.now()).toBe(100);
+		});
+
+		it("keeps waiting while output keeps bursting, then settles after the last burst", async () => {
+			const clock = fakeClock();
+			// Bursts at t=0,60,120; quiet after that.
+			const getLastOutputAt = () => {
+				const t = clock.now();
+				if (t >= 120) return 120;
+				if (t >= 60) return 60;
+				return 0;
+			};
+			const result = await waitForProviderOutputSettle({
+				getLastOutputAt,
+				quietMs: 100,
+				maxWaitMs: 1000,
+				pollMs: 50,
+				now: clock.now,
+				sleep: clock.sleep,
+			});
+			expect(result).toBe("settled");
+			// First poll tick at which now - 120 >= 100.
+			expect(clock.now()).toBe(250);
+		});
+
+		it("times out when no output ever arrives", async () => {
+			const clock = fakeClock();
+			const result = await waitForProviderOutputSettle({
+				getLastOutputAt: () => null,
+				quietMs: 100,
+				maxWaitMs: 500,
+				pollMs: 50,
+				now: clock.now,
+				sleep: clock.sleep,
+			});
+			expect(result).toBe("timeout");
+			expect(clock.now()).toBe(500);
+		});
+
+		it("times out when output never goes quiet", async () => {
+			const clock = fakeClock();
+			const result = await waitForProviderOutputSettle({
+				getLastOutputAt: () => clock.now(),
+				quietMs: 100,
+				maxWaitMs: 500,
+				pollMs: 50,
+				now: clock.now,
+				sleep: clock.sleep,
+			});
+			expect(result).toBe("timeout");
+			expect(clock.now()).toBe(500);
+		});
+	});
+
+	it("gives up at the max-wait cap and injects anyway when the provider stays silent", async () => {
+		const stateRoot = tempStateRoot();
+		process.env.AI_WHISPER_STATE_ROOT = stateRoot;
+		process.env.AI_WHISPER_DUO_BRIEF_QUIET_MS = "40";
+		process.env.AI_WHISPER_DUO_BRIEF_MAX_WAIT_MS = "120";
+		seedSharedMigrated();
+		const writes: string[] = [];
+
+		const runtime = createMountSessionRuntime(
+			baseRuntimeInput({
+				collabId: "collab_duo_brief_settle_b",
+				duoDisabled: false,
+				liveStart: () => Promise.resolve(),
+				target: "claude",
+				writeUserInput: (data) => {
+					writes.push(data);
+				},
+				onProviderOutput: () => {},
+				duo,
+			}) as never,
+		);
+
+		await runtime.start();
+
+		expect(writes).toHaveLength(2);
+		expect(writes[0]).toContain("[ai-whisper duo]");
+		expect(writes[1]).toBe("\r");
 	});
 });
 

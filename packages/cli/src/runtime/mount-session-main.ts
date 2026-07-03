@@ -171,6 +171,49 @@ export function buildDuoPersonaBrief(duo: DuoPersonaInput): string {
 }
 
 /**
+ * Wait until the provider TUI looks ready for injected input: at least one
+ * provider-output chunk has arrived AND output has stayed quiet for `quietMs`.
+ *
+ * Input written to the pty before the provider starts reading its tty is
+ * coalesced by the kernel into a single chunk together with the trailing
+ * "\r" submit beat; claude's paste heuristic then renders that "\r" as a
+ * literal newline instead of a submit, leaving the injected text sitting in
+ * the composer waiting for a manual Enter. First-output-plus-quiet-gap is the
+ * readiness proxy that makes the write and the "\r" land as separate
+ * real-time reads.
+ *
+ * Resolves "settled" on readiness and "timeout" once `maxWaitMs` elapses
+ * without it — the caller injects anyway on timeout (best-effort; a silent
+ * provider must never hang the mount). Clock/sleep are injectable for tests.
+ */
+export async function waitForProviderOutputSettle(input: {
+	getLastOutputAt: () => number | null;
+	quietMs: number;
+	maxWaitMs: number;
+	pollMs?: number;
+	now?: () => number;
+	sleep?: (ms: number) => Promise<void>;
+}): Promise<"settled" | "timeout"> {
+	const now = input.now ?? Date.now;
+	const sleep =
+		input.sleep ??
+		((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+	const pollMs = input.pollMs ?? 50;
+	const deadline = now() + input.maxWaitMs;
+	for (;;) {
+		const lastOutputAt = input.getLastOutputAt();
+		const t = now();
+		if (lastOutputAt !== null && t - lastOutputAt >= input.quietMs) {
+			return "settled";
+		}
+		if (t >= deadline) {
+			return "timeout";
+		}
+		await sleep(Math.min(pollMs, deadline - t));
+	}
+}
+
+/**
  * Pure resolver for the per-handoff teammate freshness re-read (Task 4): given
  * a fresh `listDuoAssignments` snapshot, find the summonName claimed by
  * `teammateAgentType`, or `null` when that agent has not claimed one yet.
@@ -511,6 +554,11 @@ export function createMountSessionRuntime(input: {
 				Number(process.env.AI_WHISPER_IDLE_THRESHOLD_MS ?? "") || 30_000,
 			);
 			let lastActivityAt = Date.now();
+			// null until the FIRST provider-output chunk — distinguishes "provider
+			// has not painted anything yet" from "quiet since <timestamp>" for the
+			// persona-brief output-settle gate (lastActivityAt can't: it starts at
+			// Date.now() before the provider even spawns).
+			let lastProviderOutputAt: number | null = null;
 			let agyToolInFlight = false;
 
 			try {
@@ -553,6 +601,7 @@ export function createMountSessionRuntime(input: {
 				};
 				interactiveSession.onProviderOutput?.((data: string) => {
 					lastActivityAt = Date.now();
+					lastProviderOutputAt = Date.now();
 					turnCapture.recordProviderOutput(data);
 					bracketedPaste.observe(data);
 				});
@@ -746,10 +795,35 @@ export function createMountSessionRuntime(input: {
 				// same provider-aware write-then-submit machinery relay handoffs use
 				// (`turnRelay`'s `submitUserInput`) — rather than a raw write, because
 				// the brief is multi-line and a bare write without the provider-correct
-				// submit strategy risks codex splitting it into two turns. Best-effort:
-				// an injection failure must never break the mount.
+				// submit strategy risks codex splitting it into two turns.
+				//
+				// Output-settle gate first: at this point the provider has only just
+				// spawned and is not reading its tty yet, so an immediate write is
+				// coalesced with the "\r" submit beat into one read (see
+				// waitForProviderOutputSettle) and the brief lands unsubmitted in the
+				// composer. ezio skips the gate (protocol-native submit, no tty race);
+				// so does a session with no output observer (nothing to consult).
+				// Best-effort throughout: the wait is capped and an injection failure
+				// must never break the mount.
 				if (input.duo) {
 					try {
+						if (
+							input.target !== "ezio" &&
+							typeof interactiveSession.onProviderOutput === "function"
+						) {
+							await waitForProviderOutputSettle({
+								getLastOutputAt: () => lastProviderOutputAt,
+								quietMs: Math.max(
+									0,
+									Number(process.env.AI_WHISPER_DUO_BRIEF_QUIET_MS ?? "") || 500,
+								),
+								maxWaitMs: Math.max(
+									0,
+									Number(process.env.AI_WHISPER_DUO_BRIEF_MAX_WAIT_MS ?? "") ||
+										10_000,
+								),
+							});
+						}
 						await submitInjectedInput(buildDuoPersonaBrief(input.duo));
 					} catch (err) {
 						console.error(
