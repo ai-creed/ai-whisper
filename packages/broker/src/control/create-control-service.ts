@@ -64,6 +64,18 @@ import {
 	type SessionAttachmentRecord,
 } from "../storage/repositories/session-attachment-repository.js";
 import {
+	getDuoAssignment,
+	getDuoRoll,
+	insertDuoRoll,
+	listDuoAssignments,
+	upsertDuoAssignment,
+	deleteDuoAssignment,
+	proposedDuoRollSchema,
+	type DuoAssignmentRecord,
+	type DuoRollSlot,
+} from "../storage/repositories/duo-assignment-repository.js";
+import { isPidAlive as defaultIsPidAlive } from "../runtime/broker-daemon-sweep.js";
+import {
 	insertSession,
 	getSession,
 	listSessionsForCollab as listSessions,
@@ -1006,6 +1018,117 @@ export function createControlService(db: Database.Database, events: BrokerEventB
 		},
 		listSessionAttachments(collabId: string): SessionAttachmentRecord[] {
 			return listSessionAttachmentsByCollab(db, collabId);
+		},
+		claimDuoCharacter(input: {
+			collabId: string;
+			agentType: AgentType;
+			proposedRoll: { duoId: string; slots: [DuoRollSlot, DuoRollSlot] };
+			isPidAlive?: (pid: number) => boolean;
+		}): {
+			outcome: "existing" | "claimed" | "inherited" | "fallback";
+			assignment: DuoAssignmentRecord | null;
+			teammate: DuoAssignmentRecord | null;
+		} {
+			const proposedRoll = proposedDuoRollSchema.parse(input.proposedRoll);
+			const isAlive = input.isPidAlive ?? defaultIsPidAlive;
+
+			// The other agent's assignment row for this collab, if any — used to
+			// populate `teammate` on every outcome that leaves an assignment behind.
+			const findTeammate = (): DuoAssignmentRecord | null =>
+				listDuoAssignments(db, input.collabId).find(
+					(row) => row.agentType !== input.agentType,
+				) ?? null;
+
+			// True only when a "mounted" session_attachment exists for the owner
+			// with a non-null pid whose isAlive probe returns true. A missing
+			// attachment row, a null pid, or a failed probe all count as dead.
+			const isOwnerLive = (agentType: AgentType): boolean => {
+				const mounted = listSessionAttachmentsByCollab(db, input.collabId).find(
+					(a) => a.agentType === agentType && a.attachmentKind === "mounted",
+				);
+				if (!mounted || mounted.pid === null) return false;
+				return isAlive(mounted.pid);
+			};
+
+			const txn = db.transaction(() => {
+				const now = new Date().toISOString();
+
+				const existing = getDuoAssignment(db, input.collabId, input.agentType);
+				if (existing) {
+					return { outcome: "existing" as const, assignment: existing, teammate: findTeammate() };
+				}
+
+				let roll = getDuoRoll(db, input.collabId);
+				if (!roll) {
+					const collab = getCollab(db, input.collabId);
+					if (!collab) {
+						throw new Error(`Unknown collab: ${input.collabId}`);
+					}
+					roll = { collabId: input.collabId, duoId: proposedRoll.duoId, slots: proposedRoll.slots, rolledAt: now };
+					insertDuoRoll(db, roll);
+
+					const slot0 = roll.slots[0];
+					const assignment: DuoAssignmentRecord = {
+						collabId: input.collabId,
+						agentType: input.agentType,
+						duoId: roll.duoId,
+						characterId: slot0.characterId,
+						characterName: slot0.characterName,
+						role: slot0.role,
+						assignedAt: now,
+					};
+					upsertDuoAssignment(db, assignment);
+					return { outcome: "claimed" as const, assignment, teammate: findTeammate() };
+				}
+
+				const claimedCharacterIds = new Set(
+					listDuoAssignments(db, input.collabId).map((row) => row.characterId),
+				);
+				const unclaimedSlot = roll.slots.find(
+					(slot) => !claimedCharacterIds.has(slot.characterId),
+				);
+				if (unclaimedSlot) {
+					const assignment: DuoAssignmentRecord = {
+						collabId: input.collabId,
+						agentType: input.agentType,
+						duoId: roll.duoId,
+						characterId: unclaimedSlot.characterId,
+						characterName: unclaimedSlot.characterName,
+						role: unclaimedSlot.role,
+						assignedAt: now,
+					};
+					upsertDuoAssignment(db, assignment);
+					return { outcome: "claimed" as const, assignment, teammate: findTeammate() };
+				}
+
+				// Both slots claimed: inherit from the first dead owner found.
+				for (const owner of listDuoAssignments(db, input.collabId)) {
+					if (isOwnerLive(owner.agentType)) continue;
+					deleteDuoAssignment(db, input.collabId, owner.agentType);
+					const assignment: DuoAssignmentRecord = {
+						collabId: input.collabId,
+						agentType: input.agentType,
+						duoId: roll.duoId,
+						characterId: owner.characterId,
+						characterName: owner.characterName,
+						role: owner.role,
+						assignedAt: now,
+					};
+					upsertDuoAssignment(db, assignment);
+					return { outcome: "inherited" as const, assignment, teammate: findTeammate() };
+				}
+
+				// Both owners live: vendor-name fallback, no trios, nothing written.
+				return { outcome: "fallback" as const, assignment: null, teammate: null };
+			});
+
+			return txn.immediate();
+		},
+		releaseDuoCharacter(input: { collabId: string; agentType: AgentType }): void {
+			deleteDuoAssignment(db, input.collabId, input.agentType);
+		},
+		listDuoAssignmentsForCollab(collabId: string): DuoAssignmentRecord[] {
+			return listDuoAssignments(db, collabId);
 		},
 		resolveBoundSession(collabId: string, agentType: AgentType): string {
 			const binding = getSessionBinding(db, collabId, agentType);

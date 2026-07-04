@@ -103,7 +103,7 @@ whisper collab mount claude
 whisper collab mount codex
 ```
 
-The first `mount` creates the collab and starts the broker daemon for the workspace; the second binds the other agent. From either session, start a workflow against a spec or goal file — `spec-driven-development` for a spec, `ralph-loop` for an open-ended goal, plus `complex-bug-fixing` and `deliberation` (see [Workflows](docs/workflows.md)). Watch it run with:
+The first `mount` creates the collab and starts the broker daemon for the workspace; the second binds the other agent. From either session, start a workflow against a spec or goal file — `spec-driven-development` for a spec, `ralph-loop` for an open-ended goal, plus `quick-task`, `complex-bug-fixing`, and `deliberation` (see [Workflows](docs/workflows.md)). Watch it run with:
 
 ```bash
 whisper collab dashboard
@@ -112,15 +112,16 @@ whisper collab dashboard
 - `whisper collab dashboard` — live wall of recently-active collabs + per-run inspector.
   Add `--all` to show every workflow run (no per-collab masking); combine with
   `--window all` for the full run ledger.
-- From the dashboard you can pause/resume/cancel a workflow run in place
-  (`p`/`r`/`c`, each confirmed), and a header bar shows live counts of running /
-  paused / stuck / done / canceled / idle runs.
+- From the dashboard you can pause/resume/cancel a workflow run in place, or
+  mark an escalated one done (`p`/`r`/`c`/`d`, each confirmed), and a header
+  bar shows live counts of running / paused / stuck / done / canceled / idle
+  runs.
 
 > Running from a repo checkout instead of a packaged install? Build first (`pnpm build`) and invoke the CLI as `node packages/cli/dist/bin/whisper.js ...` wherever these examples say `whisper ...`.
 
 ## What happens if it fails?
 
-A run that stops short usually **escalates** — it does not crash. When the evaluator can't resolve a phase (the round budget is spent, an agent reports it's blocked, or confidence stays too low), the loop halts and turn ownership returns to you. That's a designed exit, not a failure: run state is durable, so you read the dashboard, fix the spec or unblock the agent, and `whisper workflow resume <id>` to pick up where it left off. Escalation is the system asking for a human exactly when it should — seeing it is normal, not a sign something broke.
+A run that stops short usually **escalates** — it does not crash. When the evaluator can't resolve a phase (the round budget is spent, an agent reports it's blocked, or confidence stays too low), the loop halts and turn ownership returns to you. That's a designed exit, not a failure: run state is durable, so you read the dashboard, fix the spec or unblock the agent, and `whisper workflow resume <id>` to pick up where it left off. If the work is actually complete and only the verification was environment-blocked, verify it yourself and mark the run done with `whisper workflow complete <id>` (or press `d` on its dashboard card). Escalation is the system asking for a human exactly when it should — seeing it is normal, not a sign something broke.
 
 ## Core concepts
 
@@ -130,9 +131,15 @@ Claude, Codex, ezio, agy, and Cursor are supported today — you mount any two o
 
 For the full mental model, read [Concepts](docs/concepts.md).
 
+## Duo characters
+
+Every collab casts its two agents as a classic movie duo. The first `whisper collab mount` rolls a pair — Sherlock & Watson, Batman & Robin, Walter White & Jesse Pinkman, and four more — and each mount summons its character with ASCII art and an iconic one-liner before the agent CLI starts. The assignment sticks for the lifetime of the collab: the dashboard and relay chrome show `Batman (claude)` instead of a bare vendor name, and the agents themselves are told who they are (character flavor stays in conversational prose only — never in code, commits, or workflow verdicts).
+
+It's cosmetic and entirely optional. Turn it off per mount with `--no-duo`, or permanently with `AI_WHISPER_DUO=off` in your environment; an opted-out mount rolls nothing, shows nothing, and falls back to plain vendor names everywhere.
+
 ## Learn more
 
-- [Workflows](docs/workflows.md) — how to use the four workflows well: choosing between `spec-driven-development`, `ralph-loop`, `complex-bug-fixing`, and `deliberation`, and authoring the spec, goal, bug report, or seed that drives the run.
+- [Workflows](docs/workflows.md) — how to use the five workflows well: choosing between `spec-driven-development`, `quick-task`, `ralph-loop`, `complex-bug-fixing`, and `deliberation`, and authoring the spec, task brief, goal, bug report, or seed that drives the run.
 - [Concepts](docs/concepts.md) — the mental model: baton handoff, real mounted sessions, supervised autonomy, workflow-first execution.
 - [Relay & handoff flows](docs/relay-handoff-flows.md) — the complete handoff state machine, capture-status table, hotkey reference, per-step verdicts, and troubleshooting.
 - [Evaluator configuration](docs/evaluator-configuration.md) — required credentials and options for the LLM evaluator that gates workflows.

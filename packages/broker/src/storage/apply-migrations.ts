@@ -7,7 +7,7 @@ import { sweepStaleCaptureLease } from "./clipboard-capture-lease.js";
 // ALTERs), so a persisted DB at an older user_version safely re-runs it and
 // picks up the additions. Forgetting to bump means a persisted DB never gets
 // the new schema (it only worked for freshly-created DBs).
-export const CURRENT_SCHEMA_VERSION = 6;
+export const CURRENT_SCHEMA_VERSION = 7;
 
 const initMigrationSql = `
 CREATE TABLE IF NOT EXISTS broker_state (
@@ -303,6 +303,28 @@ CREATE TABLE IF NOT EXISTS clipboard_capture_lease (
   acquired_at       TEXT
 );
 
+CREATE TABLE IF NOT EXISTS duo_roll (
+  collab_id TEXT PRIMARY KEY,
+  duo_id TEXT NOT NULL,
+  slot0_character_id TEXT NOT NULL,
+  slot0_character_name TEXT NOT NULL,
+  slot0_role TEXT NOT NULL,
+  slot1_character_id TEXT NOT NULL,
+  slot1_character_name TEXT NOT NULL,
+  slot1_role TEXT NOT NULL,
+  rolled_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS duo_assignment (
+  collab_id TEXT NOT NULL,
+  agent_type TEXT NOT NULL,
+  duo_id TEXT NOT NULL,
+  character_id TEXT NOT NULL,
+  character_name TEXT NOT NULL,
+  role TEXT NOT NULL,
+  assigned_at TEXT NOT NULL,
+  PRIMARY KEY (collab_id, agent_type)
+);
+
 `;
 
 function ensureBrokerStateRow(db: Database.Database): void {
@@ -323,10 +345,10 @@ function ensureBrokerStateRow(db: Database.Database): void {
 // Created UNGATED (run on every applyMigrations call, like the enforcement/sweep
 // helpers below) rather than inside runMigrationBody. This is deliberate: it is
 // an INTERNAL table — not part of the state-db read contract — so we must NOT
-// bump CURRENT_SCHEMA_VERSION (external consumers gate on the contract version,
-// currently 6). A gated addition would never reach an already-persisted v6 DB;
-// the ungated idempotent CREATE lands it on fresh AND existing DBs without a
-// version bump.
+// bump CURRENT_SCHEMA_VERSION (external consumers gate on the contract
+// version). A gated addition would never reach a DB already persisted at the
+// current version; the ungated idempotent CREATE lands it on fresh AND existing
+// DBs without a version bump.
 function ensureWorkflowEventOutbox(db: Database.Database): void {
 	db.exec(`
 		CREATE TABLE IF NOT EXISTS workflow_event_outbox (

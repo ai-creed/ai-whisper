@@ -1,6 +1,6 @@
 # ai-whisper state-db read contract
 
-<!-- contract-version: 6 -->
+<!-- contract-version: 7 -->
 <!-- protocol-version: 1 -->
 
 **Status:** Stable, versioned. This document is the explicit, versioned list of
@@ -23,7 +23,7 @@ one supervisor.
 
 ## 2. Version gate
 
-- `PRAGMA user_version` is the contract version. It currently reads **6**
+- `PRAGMA user_version` is the contract version. It currently reads **7**
   (`CURRENT_SCHEMA_VERSION`).
 - Readers declare a supported version range and refuse to read a database whose
   `user_version` is outside that range.

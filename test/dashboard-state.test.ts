@@ -690,7 +690,7 @@ describe("actionsForStatus", () => {
 	it("mirrors broker guards", () => {
 		expect(actionsForStatus("running")).toEqual(["pause", "cancel"]);
 		expect(actionsForStatus("paused")).toEqual(["resume", "cancel"]);
-		expect(actionsForStatus("halted")).toEqual(["resume", "cancel"]);
+		expect(actionsForStatus("halted")).toEqual(["resume", "done", "cancel"]);
 		expect(actionsForStatus("done")).toEqual([]);
 		expect(actionsForStatus("canceled")).toEqual([]);
 		expect(actionsForStatus(null)).toEqual([]);

@@ -45,7 +45,7 @@ Read the plan once; extract every task with its full text. Then:
 
 Invariants: **reviewer tier ≥ implementer tier, always.** On the **2nd failed review of the same task**, bump the task implementer one tier and pass the failure history into the new dispatch.
 
-## Path B — no subagent dispatch (e.g. Codex, ezio)
+## Path B — no subagent dispatch (e.g. Codex, ezio, agy)
 
 Execute the plan inline: task-by-task in plan order, run per-task verification, commit as the plan specifies, and hand back per the workflow prompt with the mode line `Execution mode: inline (no subagent dispatch)`. Path A does not apply to you — nothing in this skill blocks or changes your handback.
 

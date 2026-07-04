@@ -1,6 +1,7 @@
+import { readFileSync } from "node:fs";
 import type Database from "better-sqlite3";
 import { agentTypes, type AgentType } from "@ai-whisper/shared";
-import { getBrokerDaemonByCollab, getWorkflowDefinition } from "@ai-whisper/broker";
+import { getBrokerDaemonByCollab, getWorkflowDefinition, validateTaskBrief } from "@ai-whisper/broker";
 import {
 	isEvaluatorPreflightBlocked,
 	type EvaluatorStatus,
@@ -28,6 +29,8 @@ export interface WorkflowStartDeps {
 	collabId: string;
 	workflowType: string;
 	specPath: string;
+	/** Reads the task-brief file at `specPath` for the quick-task scope gate; defaults to `readFileSync(path, "utf8")`. */
+	readTaskBrief?: (path: string) => string;
 	implementer?: AgentType;
 	reviewer?: AgentType;
 	/** The agent that triggered this run (from AI_WHISPER_AGENT); null when unknown. */
@@ -76,6 +79,29 @@ export async function runWorkflowStart(
 					"for provider=agent-cli set the agent (AI_WHISPER_EVALUATOR_AGENT_CLI_AGENT). " +
 					"Fix the config, then restart the daemon: whisper collab stop and re-mount. " +
 					EVALUATOR_README_HINT,
+			);
+		}
+	}
+
+	// Hard scope gate: quick-task briefs must pass validateTaskBrief before
+	// anything is persisted. Runs after the evaluator preflight and before role
+	// resolution so brief problems surface first with no half-created workflow.
+	if (deps.workflowType === "quick-task") {
+		const read = deps.readTaskBrief ?? ((p: string) => readFileSync(p, "utf8"));
+		let briefContent: string;
+		try {
+			briefContent = read(deps.specPath);
+		} catch {
+			throw new Error(
+				`Task brief not readable at ${deps.specPath}. Check the path and try again.`,
+			);
+		}
+		const brief = validateTaskBrief(briefContent);
+		if (!brief.ok) {
+			throw new Error(
+				"Task brief failed the quick-task scope gate:\n" +
+					brief.violations.map((v) => `  - ${v}`).join("\n") +
+					"\nSplit the task or use spec-driven-development.",
 			);
 		}
 	}

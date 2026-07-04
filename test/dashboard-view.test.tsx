@@ -1279,12 +1279,12 @@ describe("Wall action status line", () => {
 		expect(lastFrame() ?? "").toContain("paused wf_abc");
 	});
 
-	it("footer help advertises p/r/c", () => {
+	it("footer help advertises p/r/c/d", () => {
 		const state = mkWallState({
 			sections: [mkSection({ group: "active", panes: [mkPane({ collabId: "c1", statusKey: "running" })] })],
 		});
 		const { lastFrame } = render(<Wall state={state} cols={120} rows={24} />);
-		expect(lastFrame() ?? "").toContain("p/r/c act");
+		expect(lastFrame() ?? "").toContain("p/r/c/d act");
 	});
 });
 
@@ -1339,7 +1339,7 @@ describe("Wall summary bar", () => {
 });
 
 describe("Inspector action status line", () => {
-	it("renders the confirm prompt and p/r/c help", () => {
+	it("renders the confirm prompt and p/r/c/d help", () => {
 		const { lastFrame } = render(
 			<Inspector
 				state={mkInspectorState({ stuck: false })}
@@ -1355,6 +1355,6 @@ describe("Inspector action status line", () => {
 		);
 		const frame = lastFrame() ?? "";
 		expect(frame).toContain("Pause wf_z? (y/n)");
-		expect(frame).toContain("p/r/c act");
+		expect(frame).toContain("p/r/c/d act");
 	});
 });

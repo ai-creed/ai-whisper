@@ -247,7 +247,7 @@ export function summarizeWall(summaries: CollabSummary[]): WallSummaryCounts {
 	return counts;
 }
 
-export type WorkflowAction = "pause" | "resume" | "cancel";
+export type WorkflowAction = "pause" | "resume" | "cancel" | "done";
 
 // Which actions the dashboard may offer for a workflow status. Mirrors the
 // broker's own guards (workflow-control.ts) so the UI never opens a confirm for
@@ -256,7 +256,8 @@ export function actionsForStatus(
 	status: "running" | "paused" | "done" | "halted" | "canceled" | null,
 ): WorkflowAction[] {
 	if (status === "running") return ["pause", "cancel"];
-	if (status === "paused" || status === "halted") return ["resume", "cancel"];
+	if (status === "paused") return ["resume", "cancel"];
+	if (status === "halted") return ["resume", "done", "cancel"];
 	return [];
 }
 

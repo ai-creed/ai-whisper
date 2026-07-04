@@ -34,6 +34,7 @@ import { runWorkflowInspect } from "./commands/workflow/inspect.js";
 import { runWorkflowResume } from "./commands/workflow/resume.js";
 import { runWorkflowPause } from "./commands/workflow/pause.js";
 import { runWorkflowCancel } from "./commands/workflow/cancel.js";
+import { runWorkflowComplete } from "./commands/workflow/complete.js";
 import { runWorkflowTypes } from "./commands/workflow/types.js";
 import { runWorkflowStats } from "./commands/workflow/stats.js";
 import { runSkillInstall } from "./commands/skill/install.js";
@@ -287,11 +288,19 @@ export function createCli(): Command {
 			"--turn-events <providers>",
 			"Scope the push turn-completion event path to the given providers (comma-separated providers with turn-end hooks: claude,codex,agy), or disable it with `off`/`none` to revert to pure clipboard capture. Overrides AI_WHISPER_TURN_EVENTS. Default: on (claude,codex,agy).",
 		)
+		.option(
+			"--no-duo",
+			"disable the duo character banner and persona for this mount",
+		)
 		.action(
 			async (
 				target: AgentType,
 				passthroughArgs: string[],
-				opts: WorkspaceOpts & { collab?: string; turnEvents?: string },
+				opts: WorkspaceOpts & {
+					collab?: string;
+					turnEvents?: string;
+					duo: boolean;
+				},
 			) => {
 				await runCollabMount({
 					workspaceRoot: opts.workspace,
@@ -299,6 +308,7 @@ export function createCli(): Command {
 					...(opts.turnEvents !== undefined
 						? { turnEventsFlag: opts.turnEvents }
 						: {}),
+					duoFlag: opts.duo,
 					target,
 					passthroughArgs,
 					now: new Date().toISOString(),
@@ -648,6 +658,27 @@ export function createCli(): Command {
 					now: new Date().toISOString(),
 				});
 				console.log(`Workflow canceled: ${workflowId}`);
+			} finally {
+				await broker.stop();
+			}
+		});
+
+	workflow
+		.command("complete")
+		.description("Mark a halted (escalated) workflow as done after manual verification")
+		.argument("<workflowId>", "Workflow ID")
+		.option("--workspace <path>", "Workspace root", process.cwd())
+		.action(async (workflowId: string, opts: WorkspaceOpts) => {
+			const { broker } = await connectToWorkspaceBroker({
+				cwd: opts.workspace,
+			});
+			try {
+				await runWorkflowComplete({
+					broker,
+					workflowId,
+					now: new Date().toISOString(),
+				});
+				console.log(`Workflow marked done: ${workflowId}`);
 			} finally {
 				await broker.stop();
 			}

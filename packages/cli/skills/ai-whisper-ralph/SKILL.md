@@ -46,7 +46,8 @@ Parse the JSON. The expected shape is:
   "agents": [
     { "agentType": "codex",  "bindingState": "bound" | "pending_attach" | "unbound" | null },
     { "agentType": "claude", "bindingState": "bound" | "pending_attach" | "unbound" | null },
-    { "agentType": "ezio",   "bindingState": "bound" | "pending_attach" | "unbound" | null }
+    { "agentType": "ezio",   "bindingState": "bound" | "pending_attach" | "unbound" | null },
+    { "agentType": "agy",    "bindingState": "bound" | "pending_attach" | "unbound" | null }
   ],
   "recovery": { "state": "normal" | "recovery_required" | "recovered" },
   "evaluator": { "ready": true | false, "status": "ready" | "missing_anthropic_key" | "invalid_config" | "disabled" | "unknown" }
@@ -57,17 +58,17 @@ Required for readiness:
 - `daemon !== null`
 - `status === "active"`
 - `recovery.state === "normal"`
-- **EXACTLY TWO agents bound** — among `codex`, `claude`, and `ezio`, exactly two
-  must have `bindingState === "bound"` (the implementer + reviewer pair). **`ezio`
-  is a replacement role**: it stands in for `codex` or `claude`, so do NOT require
-  `codex` and `claude` specifically. A pair of `ezio` + `claude`, `ezio` + `codex`,
-  or `codex` + `claude` all pass. (The displaced slot reads `null`/`unbound` and
-  that is expected when `ezio` replaces it.)
+- **EXACTLY TWO agents bound** — among the supported agent types (`codex`, `claude`,
+  `ezio`, `agy`), exactly two must have `bindingState === "bound"` (the implementer +
+  reviewer pair). **`ezio` and `agy` are replacement roles**: either stands in for
+  `codex` or `claude`, so do NOT require `codex` and `claude` specifically — any
+  pair of two distinct supported agents passes. (The displaced slots read `null`/`unbound`
+  and that is expected when a replacement agent takes a seat.)
 - `evaluator.status` is NOT `"missing_anthropic_key"` or `"invalid_config"` (i.e., `ready`, `disabled`, and `unknown` all pass this gate; only the two true-misconfiguration statuses block)
 
 If the JSON has `{ "error": "no_collab_for_cwd", ... }`:
 
-> No collab found in this workspace. Mount any **two** agents (e.g. `whisper collab mount ezio` in one terminal and `whisper collab mount codex` — or `claude` — in another), then re-run this skill.
+> No collab found in this workspace. Mount any **two** agents (e.g. `whisper collab mount ezio` in one terminal and `whisper collab mount codex` — or `claude` / `agy` — in another), then re-run this skill.
 
 If `recovery.state === "recovery_required"`:
 
@@ -75,14 +76,14 @@ If `recovery.state === "recovery_required"`:
 
 If `recovery.state === "recovered"`:
 
-> The collab has been recovered and still needs reconnect. Run `whisper collab reconnect codex` and `whisper collab reconnect claude`, then re-run this skill.
+> The collab has been recovered and still needs reconnect. Run `whisper collab reconnect <agent>` for each bound agent, then re-run this skill.
 
 If FEWER than two agents are bound (count `bindingState === "bound"` across
-`codex`/`claude`/`ezio`):
+the supported agent types):
 
 > Only <N> agent(s) bound (<list bound agentTypes>). A workflow needs two — an
-> implementer and a reviewer. Mount another agent (`whisper collab mount <codex|claude|ezio>`)
-> in a separate terminal, then re-run this skill. `ezio` may replace `codex` or `claude`.
+> implementer and a reviewer. Mount another agent (`whisper collab mount <codex|claude|ezio|agy>`)
+> in a separate terminal, then re-run this skill. `ezio` or `agy` may replace `codex` or `claude`.
 
 (Do NOT append permission flags — mount already spawns the agent in full-permission mode; passing `--dangerously-skip-permissions` / `--dangerously-bypass-approvals-and-sandbox` again can crash the agent on a duplicate-argument error.)
 
@@ -127,6 +128,12 @@ Once kicked off, ralph grinds the goal **chunk-by-chunk**: each iteration the im
 ## Why fire-and-forget
 
 The broker's relay handoff system uses **idle detection** to know when an agent is ready to receive the next handoff. If this skill polled the workflow's status every few seconds, the calling agent (you) would emit output continuously, the broker would never see you as idle, and the workflow's first handoff couldn't be delivered to you — the workflow stalls. Kick off and exit; observation belongs to the dashboard.
+
+## Duo roleplay
+
+The mount may have assigned you a movie-duo character for this collab session — check the `AI_WHISPER_CHARACTER` / `AI_WHISPER_CHARACTER_ROLE` env vars, or the `[ai-whisper duo]` brief injected at session start, to find out. If so, staying in character is welcome across the grind — but **conversational prose only**: chat, status updates, banter with the operator or your teammate.
+
+Never let character flavor into code, commit messages, PR descriptions, or file contents — that includes `PROGRESS.md` / `LEARNINGS.md`. The reviewer/evaluator protocol output (verdict labels, approve/findings/escalate) stays protocol-exact regardless of who you're playing.
 
 ## Resume / cancel
 

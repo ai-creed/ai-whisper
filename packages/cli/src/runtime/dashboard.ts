@@ -219,6 +219,20 @@ export function createDashboardRuntime(input: {
 		const chain = curRunChainId ? c.getRelayChain(curRunChainId) : null;
 		const turn = c.getRelayTurnState(collabId, isoNow);
 		const sessions = c.listSessions(collabId);
+		// Task 5: this collab's duo assignments, fetched fresh each tick (same
+		// per-tick broker-control-handle fetch pattern as turn/sessions above and
+		// getHandsOffStats on the Wall path) and reduced to agentType →
+		// characterName for the relay-view build. Never throws: a duo-lookup
+		// failure must not break the Inspector poll — degrades to an empty map
+		// (today's vendor-name rendering).
+		let characterNames: Record<string, string> = {};
+		try {
+			characterNames = Object.fromEntries(
+				c.listDuoAssignmentsForCollab(collabId).map((a) => [a.agentType, a.characterName]),
+			);
+		} catch {
+			characterNames = {};
+		}
 		// Per-agent pid-liveness (Bug C): probe each mounted agent's recorded pid.
 		const mountAliveOf = buildMountAliveByAgent(
 			c.listSessionAttachments(collabId),
@@ -307,6 +321,7 @@ export function createDashboardRuntime(input: {
 			})),
 			lastActivityAt,
 			handoffs,
+			characterNames,
 		};
 		const focusedPhaseRunId = curRun?.phaseRunId ?? null;
 		return buildInspectorState({
@@ -384,8 +399,16 @@ export function createDashboardRuntime(input: {
 		try {
 			if (action === "pause") c.pauseWorkflow({ workflowId, now });
 			else if (action === "resume") c.resumeWorkflow({ workflowId, now });
+			else if (action === "done") c.markWorkflowDone({ workflowId, now });
 			else c.cancelWorkflow({ workflowId, now });
-			const verb = action === "pause" ? "paused" : action === "resume" ? "resumed" : "canceled";
+			const verb =
+				action === "pause"
+					? "paused"
+					: action === "resume"
+						? "resumed"
+						: action === "done"
+							? "marked done"
+							: "canceled";
 			setFeedback("ok", `${verb} ${workflowId}`);
 		} catch (err) {
 			setFeedback("err", err instanceof Error ? err.message : String(err));
@@ -397,6 +420,7 @@ export function createDashboardRuntime(input: {
 		if (key === "p") return "pause";
 		if (key === "r") return "resume";
 		if (key === "c") return "cancel";
+		if (key === "d") return "done";
 		return null;
 	}
 

@@ -5,6 +5,33 @@ All notable changes to the `ai-whisper` package are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-07-04
+
+### Added
+
+- **`quick-task` workflow — the lightweight sibling of spec-driven-development**: for small, pre-scoped tasks where the human approves the approach in chat and a formal spec would be ceremony. The workflow runs a single `implement-and-review` phase — implementer builds the whole brief and commits, reviewer acceptance-reviews the live commit range against the brief, findings loop back as fix rounds (max 5). A **hard scope gate** at `whisper workflow start` refuses any brief that is not demonstrably small: the brief must carry four sections (`## Task`, `## Approved approach`, `## Scope`, `## Acceptance checks`) and declare every file it touches under `## Scope`, capped at **5 non-test files** (test files are uncounted). There is no override flag — if the gate trips, split the task or use spec-driven-development; all violations are reported at once so a malformed brief converges in one retry. The new `ai-whisper-quick-task` kickoff skill writes the brief from the approved chat discussion into the gitignored `.ai-whisper/tasks/` (creating `.ai-whisper/.gitignore` when absent), pre-checks that the task is executable right away (research or design smell → it recommends spec-driven-development or deliberation instead), and must relay gate violations verbatim — never silently shrink the scope list. Mid-flight the implementer is held to the declared scope: work materially exceeding it hands back CANNOT PROCEED and the run halts to the human. Purely declarative on the existing driver — no schema or evaluator changes.
+
+### Changed
+
+- **Kickoff skills now document every supported agent type**: the collab-readiness sections of all five kickoff skills (`sdd`, `ralph`, `bugfix`, `deliberation`, `quick-task`) still described the `codex`/`claude`/`ezio` trio; `agy` (Antigravity) has been a supported adapter for a while. The readiness rule now reads "exactly two of the supported agent types", `ezio` and `agy` are both documented as replacement roles, the status JSON example includes the `agy` row, and the reconnect remediation is agent-agnostic. A new sweep test derives the expected mentions from the canonical `agentTypes` list, so the next adapter (cursor is on the horizon) fails CI until every kickoff skill catches up.
+
+## [0.12.1] - 2026-07-03
+
+### Changed
+
+- **Duo roles are now body/brain, assigned by mount order**: the cosmetic duo role vocabulary changes from `reviewer`/`implementer` to the metaphorical **body**/**brain** ("he got the brain, I got the body, the face, and the hair"), and the roll is no longer random within the pair — the first mounted agent always claims the duo's body character (the sidekick/doer: Watson, Igor, Sancho Panza, C-3PO, Robin, Groot, Jesse Pinkman) and the second gets the brain (Sherlock, Frankenstein, Don Quixote, R2-D2, Batman, Rocket, Walter White). This matches the natural flow where the first terminal you open does the hands-on spec work, and the metaphor can never be confused with the workflow's real implementer/reviewer role bindings. The new vocabulary flows through the summon banner (`⚡ Summoning WATSON — the body, the face, and the hair...`), the session-start persona brief, the relay-handoff persona fragment, and the `AI_WHISPER_CHARACTER_ROLE` env stamp. Assignments and rolls persisted by ≤0.12.0 are normalized on read (`reviewer`→`brain`, `implementer`→`body`) — live collabs keep working across the upgrade with no database migration.
+
+### Fixed
+
+- **Duo persona brief required a manual Enter on claude/codex mounts**: the session-start persona brief was injected within milliseconds of the agent PTY spawning — before the TUI started reading its tty — so the kernel coalesced the brief text and the trailing carriage-return submit beat into a single read, which claude's paste heuristic rendered as a literal newline. The brief sat unsubmitted in the composer until the operator pressed Enter. The injection now waits for the provider TUI to look ready (first output plus a quiet gap, default 500ms, capped at 10s so a silent provider can never hang the mount) before submitting; ezio's protocol-native submit path skips the wait. As a bonus, codex mounts now usually get the reliable bracketed-paste injection path, since by settle time the paste-mode detector has seen the TUI's boot output. Tunable via `AI_WHISPER_DUO_BRIEF_QUIET_MS` / `AI_WHISPER_DUO_BRIEF_MAX_WAIT_MS`.
+
+## [0.12.0] - 2026-07-03
+
+### Added
+
+- **Movie-duo characters at mount**: `whisper collab mount` now summons each agent as one half of a movie duo — an ASCII character banner, a themed summoning line, and the character's iconic punchline print before the agent CLI spawns. Seven duos ship baked in (Sherlock & Watson, Frankenstein & Igor, Don Quixote & Sancho Panza, C-3PO & R2-D2, Batman & Robin, Rocket & Groot, Walter White & Jesse Pinkman); the pair is rolled per collab and persisted as per-agent claim rows in the broker, so both terminals stay consistent and a re-mount inherits a character only from a dead owner session. The persona carries into the session — an `AI_WHISPER_CHARACTER`/`AI_WHISPER_CHARACTER_ROLE` env stamp, a ≤3-line session-start brief, and a relay-handoff fragment keep the agent in character (conversational prose only; code, commits, and workflow verdicts stay untouched) — and the dashboard and relay chrome display character names like `Batman (claude)`. Duo mode is on by default; opt out per mount with `--no-duo` or permanently with `AI_WHISPER_DUO=off`. Codex's viewport-clearing TUI gets a dramatic pause plus a scrollback-push so the art survives in history, and narrow terminals fall back to a name-only banner.
+- **Operator mark-done for escalated workflows**: when an escalated run's work is actually complete but the final verification was environment-blocked (e.g. the e2e suite needs credentials the collab machine lacks), the operator can verify manually and mark the workflow done — `whisper workflow complete <workflowId>` from the CLI, or the new `d` key on a halted run's dashboard card (behind the usual `(y/n)` confirm; the footer key legend reads `p/r/c/d act`). Only `halted` workflows are eligible; the broker's new `markWorkflowDone` runs its eligibility guards and the `halted → done` transition atomically in one immediate transaction and emits `workflow.done` only if the transition committed, so a raced or ineligible call throws instead of emitting a false completion event. The run keeps `halt reason: marked done by operator` as the audit trail distinguishing operator completion from natural completion, and any still-open phase runs are swept closed. No database migration.
+
 ## [0.11.0] - 2026-07-01
 
 ### Added
@@ -716,6 +743,9 @@ Requires `@ai-creed/ai-ezio` ≥ 0.2.0-beta.4 (the `@ai-ezio/surface` slash seam
   (Claude + Codex) driven by structured workflows, with npm metadata
   (description, repository, homepage).
 
+[0.13.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.13.0
+[0.12.1]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.12.1
+[0.12.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.12.0
 [0.11.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.11.0
 [0.10.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.10.0
 [0.9.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.9.0

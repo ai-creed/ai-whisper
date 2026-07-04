@@ -29,6 +29,7 @@ function fakeBroker(summaries: unknown[] = []) {
 		pauseWorkflow: vi.fn(),
 		resumeWorkflow: vi.fn(),
 		cancelWorkflow: vi.fn(),
+		markWorkflowDone: vi.fn(),
 		getHandsOffStats: vi.fn(() => ({
 			totalMs: 0,
 			count: 0,
@@ -36,6 +37,7 @@ function fakeBroker(summaries: unknown[] = []) {
 			earliestKickoffAt: null,
 			skipped: 0,
 		})),
+		listDuoAssignmentsForCollab: vi.fn(() => []),
 	};
 	return { db: {}, control };
 }
@@ -560,6 +562,48 @@ describe("dashboard host", () => {
 		await m.stop();
 	});
 
+	it("d on a halted card opens a Mark done confirm; y calls broker.markWorkflowDone", async () => {
+		const stdout = new PassThrough();
+		(stdout as unknown as { columns: number }).columns = 100;
+		(stdout as unknown as { rows: number }).rows = 24;
+		const broker = fakeBroker([S({ collabId: "c1", workflowId: "wf", workflowStatus: "halted", chainStatus: "escalated", currentRound: 1, maxRounds: 5 })]);
+		const m = createDashboardRuntime({ broker: broker as never, dashboardId: "d1", stdout: stdout as unknown as NodeJS.WritableStream, pollIntervalMs: 10 }) as never as {
+			start(): void; stop(): Promise<void>;
+			__handleKey(ev: { key?: string; escape?: boolean }): void;
+			__pendingConfirm(): { workflowId: string; action: string } | null;
+			__actionFeedback(): { kind: string; text: string } | null;
+		};
+		m.start();
+		await new Promise((r) => setTimeout(r, 30));
+		m.__handleKey({ key: "d" });
+		expect(m.__pendingConfirm()).toEqual({ workflowId: "wf", action: "done" });
+		m.__handleKey({ key: "y" });
+		expect(m.__pendingConfirm()).toBeNull();
+		expect(broker.control.markWorkflowDone).toHaveBeenCalledTimes(1);
+		expect(broker.control.markWorkflowDone.mock.calls[0]![0]).toMatchObject({ workflowId: "wf" });
+		expect(m.__actionFeedback()).toMatchObject({ kind: "ok" });
+		await m.stop();
+	});
+
+	it("d on a running card shows a hint and never calls the broker", async () => {
+		const stdout = new PassThrough();
+		(stdout as unknown as { columns: number }).columns = 100;
+		(stdout as unknown as { rows: number }).rows = 24;
+		const broker = fakeBroker([S({ collabId: "c1", workflowId: "wf", workflowStatus: "running", chainStatus: "active", currentRound: 1, maxRounds: 5 })]);
+		const m = createDashboardRuntime({ broker: broker as never, dashboardId: "d1", stdout: stdout as unknown as NodeJS.WritableStream, pollIntervalMs: 10 }) as never as {
+			start(): void; stop(): Promise<void>;
+			__handleKey(ev: { key?: string }): void;
+			__pendingConfirm(): unknown; __actionFeedback(): { kind: string } | null;
+		};
+		m.start();
+		await new Promise((r) => setTimeout(r, 30));
+		m.__handleKey({ key: "d" });
+		expect(m.__pendingConfirm()).toBeNull();
+		expect(m.__actionFeedback()).toMatchObject({ kind: "hint" });
+		expect(broker.control.markWorkflowDone).not.toHaveBeenCalled();
+		await m.stop();
+	});
+
 	it("a broker throw on execute becomes err feedback", async () => {
 		const stdout = new PassThrough();
 		(stdout as unknown as { columns: number }).columns = 100;
@@ -726,5 +770,78 @@ describe("dashboard host", () => {
 		expect((broker.control.getHandsOffStats as { mock: { calls: unknown[] } }).mock.calls.length).toBeGreaterThan(0);
 		// ...and that its NON-ZERO return reached the rendered frame (not the default 0m (or 0h) (0 wf runs)).
 		expect(buf).toContain("hands-off saved 13d 4h (or 316h) (112 wf runs)");
+	});
+
+	it("Task 5: Inspector poll sources duo assignments via listDuoAssignmentsForCollab and renders character labels", async () => {
+		const stdout = new PassThrough();
+		(stdout as unknown as { columns: number }).columns = 120;
+		(stdout as unknown as { rows: number }).rows = 24;
+		let buf = "";
+		stdout.on("data", (c) => (buf += String(c)));
+		const broker = fakeBroker([S({})]);
+		// getRelayTurnState (not the Wall-summary S().turn) drives the Inspector's
+		// turn row — override it to real agent types so the substitution is visible.
+		broker.control.getRelayTurnState = vi.fn(() => ({
+			collabId: "c1", turnOwner: "codex", waitingAgent: "claude",
+			unresolvedHandoffId: null, handoffState: "accepted", handoffAgeMs: null,
+		})) as never;
+		broker.control.listDuoAssignmentsForCollab = vi.fn(() => [
+			{ collabId: "c1", agentType: "codex", duoId: "batman-robin", characterId: "batman", characterName: "Batman", role: "brain", assignedAt: "2026-05-20T00:00:00.000Z" },
+			{ collabId: "c1", agentType: "claude", duoId: "batman-robin", characterId: "robin", characterName: "Robin", role: "body", assignedAt: "2026-05-20T00:00:00.000Z" },
+		]) as never;
+		const m = createDashboardRuntime({
+			broker: broker as never,
+			dashboardId: "d1",
+			stdout: stdout as unknown as NodeJS.WritableStream,
+			pollIntervalMs: 10,
+		}) as never as {
+			start(): void; stop(): Promise<void>;
+			__handleKey(ev: { key?: string }): void;
+		};
+		m.start();
+		await new Promise((r) => setTimeout(r, 30));
+		m.__handleKey({ key: "\r" }); // wall → inspector (default section "live")
+		await new Promise((r) => setTimeout(r, 30));
+		await m.stop();
+		expect(
+			(broker.control.listDuoAssignmentsForCollab as { mock: { calls: unknown[] } }).mock
+				.calls.length,
+		).toBeGreaterThan(0);
+		expect(buf).toContain("Batman (codex)");
+		expect(buf).toContain("Robin (claude)");
+	});
+
+	it("Task 5: a listDuoAssignmentsForCollab failure degrades to vendor agent-type labels (poll never throws)", async () => {
+		const stdout = new PassThrough();
+		(stdout as unknown as { columns: number }).columns = 120;
+		(stdout as unknown as { rows: number }).rows = 24;
+		let buf = "";
+		stdout.on("data", (c) => (buf += String(c)));
+		const broker = fakeBroker([S({})]);
+		broker.control.getRelayTurnState = vi.fn(() => ({
+			collabId: "c1", turnOwner: "codex", waitingAgent: "claude",
+			unresolvedHandoffId: null, handoffState: "accepted", handoffAgeMs: null,
+		})) as never;
+		broker.control.listDuoAssignmentsForCollab = vi.fn(() => {
+			throw new Error("db locked");
+		}) as never;
+		const m = createDashboardRuntime({
+			broker: broker as never,
+			dashboardId: "d1",
+			stdout: stdout as unknown as NodeJS.WritableStream,
+			pollIntervalMs: 10,
+		}) as never as {
+			start(): void; stop(): Promise<void>;
+			__handleKey(ev: { key?: string }): void;
+			__pollHealth(): { consecutiveErrors: number; lastError: string | null };
+		};
+		m.start();
+		await new Promise((r) => setTimeout(r, 30));
+		m.__handleKey({ key: "\r" }); // wall → inspector
+		await new Promise((r) => setTimeout(r, 30));
+		await m.stop();
+		// today's exact turn-row text — the fetch failure never surfaces to the render.
+		expect(buf).toContain("codex · waiting claude");
+		expect(m.__pollHealth().consecutiveErrors).toBe(0);
 	});
 });

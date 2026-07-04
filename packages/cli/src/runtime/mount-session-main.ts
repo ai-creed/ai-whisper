@@ -3,13 +3,19 @@ import type { AgentType,  BrokerRuntime } from "@ai-whisper/broker";
 import type { OverlayIO, RelayDirective } from "@ai-whisper/shared";
 import {
 	openDatabase,
+	deleteDuoAssignment,
 	deleteSessionAttachment,
 	DEFAULT_LEASE_TTL_MS,
 	getRecoveryState,
+	listDuoAssignments,
 	reapSupersededSessions,
 	releaseCaptureLeaseForHolderPid,
 	upsertRecoveryState,
+	type DuoAssignmentRecord,
+	type DuoRole,
 } from "@ai-whisper/broker";
+import { duoRoleFlavor, getCharacter } from "../duo/duo-table.js";
+import { characterDisplayName } from "./agent-display.js";
 import { getSharedSqlitePath, getStateSocketsDir, getStateLogsDir } from "./state-root.js";
 import { workspaceIdFromPath } from "./workspace-id.js";
 import {
@@ -63,12 +69,24 @@ import { createRuntimeDebugLogger } from "./runtime-debug-log.js";
  * target is the directive's recipient. Pure + exported so the sender contract is
  * unit-testable (the inline `onRelay` closure calls this). The `pull` directive is
  * handled earlier and never reaches here, so `directive.target` is an `AgentType`.
+ *
+ * `duo` (Task 4, persona carry): when present, appends exactly ONE persona line
+ * to `requestText` via {@link buildDuoHandoffFragment}. Deliberately takes an
+ * already-resolved `teammateCharacter` rather than reading the DB itself — the
+ * caller (the `onRelay` closure) re-reads `listDuoAssignments` fresh at handoff
+ * time and falls back to the mount-time snapshot on failure, keeping this
+ * function pure and unit-testable without a DB.
  */
 export function buildRelayHandoffInput(input: {
 	mountTarget: AgentType;
 	directive: { target: AgentType; instruction: string };
 	collabId: string;
 	now: string;
+	duo?: {
+		character: string;
+		role: DuoRole;
+		teammateCharacter: string | null;
+	};
 }): {
 	handoffId: string;
 	collabId: string;
@@ -77,14 +95,159 @@ export function buildRelayHandoffInput(input: {
 	requestText: string;
 	now: string;
 } {
+	const requestText =
+		input.duo === undefined
+			? input.directive.instruction
+			: `${input.directive.instruction}\n${buildDuoHandoffFragment({
+					character: input.duo.character,
+					role: input.duo.role,
+					teammateAgentType: input.directive.target,
+					teammateCharacter: input.duo.teammateCharacter,
+				})}`;
 	return {
 		handoffId: `handoff_${input.now.replace(/[^0-9]/g, "")}`,
 		collabId: input.collabId,
 		senderAgent: input.mountTarget,
 		targetAgent: input.directive.target,
-		requestText: input.directive.instruction,
+		requestText,
 		now: input.now,
 	};
+}
+
+/**
+ * The session-start persona-carry input (Task 4), threaded onto
+ * `createMountSessionRuntime` by mount.ts on the duo-enabled-with-assignment
+ * path. `character`/teammate `character` are summonNames ("BATMAN"), not the
+ * raw `DuoAssignmentRecord.characterName` display form ("Batman") — that raw
+ * form is what the env stamps (mount.ts) use instead.
+ */
+export type DuoPersonaInput = {
+	character: string;
+	role: DuoRole;
+	teammate: { agentType: AgentType; character: string | null } | null;
+};
+
+/**
+ * Build the ONE per-handoff persona fragment line (Task 4). `teammateAgentType`
+ * is always the handoff's actual recipient (`directive.target`) — known
+ * unconditionally, unlike the session-brief's teammate (which may be entirely
+ * unknown before a second agent mounts). `teammateCharacter` is `null` when
+ * that agent has not claimed a duo character, rendered as the literal
+ * "unassigned".
+ */
+export function buildDuoHandoffFragment(input: {
+	character: string;
+	role: DuoRole;
+	teammateAgentType: AgentType;
+	teammateCharacter: string | null;
+}): string {
+	const teammateDisplay = input.teammateCharacter ?? "unassigned";
+	return `[duo] You are ${input.character} (${input.role}); teammate ${input.teammateAgentType} is ${teammateDisplay}. Character flavor in prose only; never alter code, commits, or workflow verdict labels.`;
+}
+
+/**
+ * Build the ONE-TIME, ≤3-line session-start persona brief (Task 4). Pure text
+ * builder — the caller (createMountSessionRuntime's `start()`) delivers it via
+ * the existing injected-input machinery.
+ *
+ * Teammate-clause: the literal two-branch template from the design spec covers
+ * "teammate known with a character" and "teammate known but characterless".
+ * When `duo.teammate` is entirely `null` (no other agent has claimed a
+ * character in this collab yet — the common case for the FIRST duo-enabled
+ * mount), there is no agentType to report at all; that third case renders a
+ * short agentType-free variant of the same "no character assigned" wording
+ * rather than forcing a placeholder agentType that does not exist.
+ */
+export function buildDuoPersonaBrief(duo: DuoPersonaInput): string {
+	const otherRole: DuoRole = duo.role === "brain" ? "body" : "brain";
+	const teammateClause =
+		duo.teammate === null
+			? " Your teammate has no character assigned yet."
+			: duo.teammate.character === null
+				? ` Your teammate ${duo.teammate.agentType} has no character assigned.`
+				: ` Your teammate ${duo.teammate.agentType} is ${duo.teammate.character}, the ${otherRole}.`;
+	return (
+		`[ai-whisper duo] For this collab session you are ${duo.character} — ${duoRoleFlavor(duo.role)}.${teammateClause}\n` +
+		"Stay in character in conversational prose only — never in code, commit messages, PR text, or file contents, and never alter workflow verdict labels."
+	);
+}
+
+/**
+ * Wait until the provider TUI looks ready for injected input: at least one
+ * provider-output chunk has arrived AND output has stayed quiet for `quietMs`.
+ *
+ * Input written to the pty before the provider starts reading its tty is
+ * coalesced by the kernel into a single chunk together with the trailing
+ * "\r" submit beat; claude's paste heuristic then renders that "\r" as a
+ * literal newline instead of a submit, leaving the injected text sitting in
+ * the composer waiting for a manual Enter. First-output-plus-quiet-gap is the
+ * readiness proxy that makes the write and the "\r" land as separate
+ * real-time reads.
+ *
+ * Resolves "settled" on readiness and "timeout" once `maxWaitMs` elapses
+ * without it — the caller injects anyway on timeout (best-effort; a silent
+ * provider must never hang the mount). Clock/sleep are injectable for tests.
+ */
+export async function waitForProviderOutputSettle(input: {
+	getLastOutputAt: () => number | null;
+	quietMs: number;
+	maxWaitMs: number;
+	pollMs?: number;
+	now?: () => number;
+	sleep?: (ms: number) => Promise<void>;
+}): Promise<"settled" | "timeout"> {
+	const now = input.now ?? Date.now;
+	const sleep =
+		input.sleep ??
+		((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+	const pollMs = input.pollMs ?? 50;
+	const deadline = now() + input.maxWaitMs;
+	for (;;) {
+		const lastOutputAt = input.getLastOutputAt();
+		const t = now();
+		if (lastOutputAt !== null && t - lastOutputAt >= input.quietMs) {
+			return "settled";
+		}
+		if (t >= deadline) {
+			return "timeout";
+		}
+		await sleep(Math.min(pollMs, deadline - t));
+	}
+}
+
+/**
+ * Pure resolver for the per-handoff teammate freshness re-read (Task 4): given
+ * a fresh `listDuoAssignments` snapshot, find the summonName claimed by
+ * `teammateAgentType`, or `null` when that agent has not claimed one yet.
+ * Exported so the resolution logic is unit-testable without a DB; the actual
+ * DB read + fallback-to-snapshot degrade lives at the `onRelay` call site
+ * (mirrors the Phase 3 `duoDisabled` release hook's short-lived DB-handle
+ * pattern).
+ */
+export function resolveTeammateCharacterFromAssignments(
+	assignments: DuoAssignmentRecord[],
+	teammateAgentType: AgentType,
+): string | null {
+	const row = assignments.find((r) => r.agentType === teammateAgentType);
+	if (!row) return null;
+	return getCharacter(row.duoId, row.characterId)?.summonName ?? row.characterName;
+}
+
+/**
+ * Build the relay handoff chrome line (Task 5): substitutes the target's duo
+ * character display name (`characterDisplayName`'s "<characterName>
+ * (<agentType>)" form) when known, else falls back to the raw agentType —
+ * today's exact text. Pure + exported so the substitution is unit-testable
+ * without driving the `onRelay` closure end-to-end (same precedent as
+ * `resolveTeammateCharacterFromAssignments` above). The caller (`onRelay`)
+ * resolves `characterName` from the SAME fresh `listDuoAssignments` read
+ * already performed for the persona fragment — no second DB read per handoff.
+ */
+export function buildHandoffChromeLine(
+	target: AgentType,
+	characterName: string | null,
+): string {
+	return `[ai-whisper] Handed turn to ${characterDisplayName(target, characterName)}.`;
 }
 
 /** Operator override for the codex submit strategy (AI_WHISPER_CODEX_SUBMIT_STRATEGY). */
@@ -195,6 +358,24 @@ export function createMountSessionRuntime(input: {
 	 * a socket listener is started to receive the shim's forwarded events.
 	 */
 	turnEventsEnablement?: TurnEventsEnablement;
+	/**
+	 * Set by runCollabMount to `true` when `resolveDuoEnabled` returned false
+	 * (`--no-duo` / `AI_WHISPER_DUO=off`). Triggers the post-binding opt-out
+	 * release: after this mount is genuinely bound (completeAttachClaim succeeds),
+	 * any stale duo assignment row for this agent is deleted. Deliberately
+	 * post-binding — the release is destructive with no self-heal, so a mount that
+	 * dies during spawn or claim completion must leave the prior row untouched.
+	 */
+	duoDisabled?: boolean;
+	/**
+	 * Set by runCollabMount on the duo-enabled-with-assignment path (outcomes
+	 * `claimed`/`existing`/`inherited` — NEVER `fallback`, mutually exclusive
+	 * with `duoDisabled` by construction). Drives two persona-carry surfaces:
+	 * a one-time session-start brief injected post-binding (same region as the
+	 * `duoDisabled` release hook), and the per-handoff fragment appended via
+	 * `buildRelayHandoffInput`.
+	 */
+	duo?: DuoPersonaInput;
 	createProvider?: typeof createProviderForTarget;
 	createInteractiveSession?: typeof createInteractiveSessionForTarget;
 	createLiveSession?: typeof createLiveSessionRuntime;
@@ -375,6 +556,11 @@ export function createMountSessionRuntime(input: {
 				Number(process.env.AI_WHISPER_IDLE_THRESHOLD_MS ?? "") || 30_000,
 			);
 			let lastActivityAt = Date.now();
+			// null until the FIRST provider-output chunk — distinguishes "provider
+			// has not painted anything yet" from "quiet since <timestamp>" for the
+			// persona-brief output-settle gate (lastActivityAt can't: it starts at
+			// Date.now() before the provider even spawns).
+			let lastProviderOutputAt: number | null = null;
 			let agyToolInFlight = false;
 
 			try {
@@ -421,6 +607,7 @@ export function createMountSessionRuntime(input: {
 				};
 				interactiveSession.onProviderOutput?.((data: string) => {
 					lastActivityAt = Date.now();
+					lastProviderOutputAt = Date.now();
 					turnCapture.recordProviderOutput(data);
 					bracketedPaste.observe(data);
 				});
@@ -458,6 +645,58 @@ export function createMountSessionRuntime(input: {
 					});
 
 					const handoffNow = new Date().toISOString();
+
+					// Per-handoff persona fragment (Task 4): re-read the collab's duo
+					// assignments fresh so a teammate that mounted AFTER this session
+					// started is picked up, falling back to the mount-time `duo.teammate`
+					// snapshot on any read failure. Kept out of buildRelayHandoffInput
+					// (which stays pure) — the DB read happens here, at the call site,
+					// mirroring the Phase 3 `duoDisabled` release hook's short-lived
+					// DB-handle pattern. Never throws: a duo-carry glitch must not break
+					// the handoff.
+					let duoForHandoff:
+						| { character: string; role: DuoRole; teammateCharacter: string | null }
+						| undefined;
+					// Task 5 (+review fix): the target's OWN raw characterName (display
+					// form, e.g. "Batman" — not the summonName
+					// resolveTeammateCharacterFromAssignments returns) for the chrome
+					// line below. The read is NOT gated on this mount's own persona
+					// (`input.duo`): opt-out is per mount, so an unassigned/opted-out
+					// sender must still render a charactered target in chrome. One read
+					// serves both chrome and the persona fragment — no second DB read.
+					let targetCharacterName: string | null = null;
+					let freshAssignments: ReturnType<typeof listDuoAssignments> | null = null;
+					try {
+						const db = openDatabase(getSharedSqlitePath());
+						try {
+							freshAssignments = listDuoAssignments(db, resolvedClaim.collabId);
+							targetCharacterName =
+								freshAssignments.find((a) => a.agentType === directive.target)
+									?.characterName ?? null;
+						} finally {
+							db.close();
+						}
+					} catch {
+						// freshAssignments/targetCharacterName stay null — the persona
+						// fragment falls back to the mount-time snapshot and the chrome
+						// falls back to the vendor name.
+					}
+					if (input.duo) {
+						const snapshotTeammateCharacter = input.duo.teammate?.character ?? null;
+						const teammateCharacter =
+							freshAssignments !== null
+								? resolveTeammateCharacterFromAssignments(
+										freshAssignments,
+										directive.target,
+									)
+								: snapshotTeammateCharacter;
+						duoForHandoff = {
+							character: input.duo.character,
+							role: input.duo.role,
+							teammateCharacter,
+						};
+					}
+
 					input.broker.control.createRelayHandoff(
 						buildRelayHandoffInput({
 							mountTarget: input.target,
@@ -468,10 +707,11 @@ export function createMountSessionRuntime(input: {
 							},
 							collabId: resolvedClaim.collabId,
 							now: handoffNow,
+							...(duoForHandoff !== undefined ? { duo: duoForHandoff } : {}),
 						}),
 					);
 
-					sendNow(`[ai-whisper] Handed turn to ${directive.target}.`);
+					sendNow(buildHandoffChromeLine(directive.target, targetCharacterName));
 
 						return Promise.resolve(null);
 					};
@@ -528,6 +768,77 @@ export function createMountSessionRuntime(input: {
 					now: new Date().toISOString(),
 					bindingSource: "mounted",
 				});
+
+				// Duo opt-out release (post-binding). A `--no-duo` mount deletes any
+				// stale duo assignment row for its agent type now that it is genuinely
+				// bound — fires ONLY here (after completeAttachClaim), never on the
+				// pre-spawn path, so a mount that dies before binding leaves the prior
+				// row untouched. Best-effort: a release failure must not kill the
+				// session (one [ai-whisper]-prefixed stderr line, then continue).
+				if (input.duoDisabled === true) {
+					try {
+						const db = openDatabase(getSharedSqlitePath());
+						try {
+							deleteDuoAssignment(db, resolvedClaim.collabId, input.target);
+						} finally {
+							db.close();
+						}
+					} catch (err) {
+						console.error(
+							`[ai-whisper] duo: opt-out release failed (non-fatal): ${
+								err instanceof Error ? err.message : String(err)
+							}`,
+						);
+					}
+				}
+
+				// Duo persona brief (post-binding, ONE-TIME). Fires only on the
+				// enabled-with-assignment path (mount.ts sets `duo` only for outcomes
+				// claimed/existing/inherited — never fallback, never --no-duo). Same
+				// post-completeAttachClaim region as the opt-out release hook above, for
+				// the same reason: a mount that dies before genuine binding must not
+				// have injected anything. Delivered via `submitInjectedInput` — the
+				// same provider-aware write-then-submit machinery relay handoffs use
+				// (`turnRelay`'s `submitUserInput`) — rather than a raw write, because
+				// the brief is multi-line and a bare write without the provider-correct
+				// submit strategy risks codex splitting it into two turns.
+				//
+				// Output-settle gate first: at this point the provider has only just
+				// spawned and is not reading its tty yet, so an immediate write is
+				// coalesced with the "\r" submit beat into one read (see
+				// waitForProviderOutputSettle) and the brief lands unsubmitted in the
+				// composer. ezio skips the gate (protocol-native submit, no tty race);
+				// so does a session with no output observer (nothing to consult).
+				// Best-effort throughout: the wait is capped and an injection failure
+				// must never break the mount.
+				if (input.duo) {
+					try {
+						if (
+							input.target !== "ezio" &&
+							typeof interactiveSession.onProviderOutput === "function"
+						) {
+							await waitForProviderOutputSettle({
+								getLastOutputAt: () => lastProviderOutputAt,
+								quietMs: Math.max(
+									0,
+									Number(process.env.AI_WHISPER_DUO_BRIEF_QUIET_MS ?? "") || 500,
+								),
+								maxWaitMs: Math.max(
+									0,
+									Number(process.env.AI_WHISPER_DUO_BRIEF_MAX_WAIT_MS ?? "") ||
+										10_000,
+								),
+							});
+						}
+						await submitInjectedInput(buildDuoPersonaBrief(input.duo));
+					} catch (err) {
+						console.error(
+							`[ai-whisper] duo: persona brief injection failed (non-fatal): ${
+								err instanceof Error ? err.message : String(err)
+							}`,
+						);
+					}
+				}
 
 				relayPaneWriter = createRelayPaneWriter({
 					broker: input.broker,

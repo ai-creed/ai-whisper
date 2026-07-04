@@ -1,14 +1,18 @@
 import type Database from "better-sqlite3";
 
-// The only event names the outbox carries: the four CLI-originated workflow
-// lifecycle events that run on a transient BrokerRuntime and so never reach the
-// daemon's in-process bus. Driver-native events (phase/round/halted/done) are
-// emitted in the daemon and are NOT outboxed.
+// The event names the outbox carries: the CLI-originated workflow lifecycle
+// events that run on a transient BrokerRuntime and so never reach the daemon's
+// in-process bus. Driver-native events (phase/round/halted, and the driver's
+// own natural workflow.done) are emitted in the daemon and are NOT outboxed.
+// "workflow.done" appears here ONLY for operator mark-done (markWorkflowDone),
+// which runs CLI-side like pause/resume/cancel; the natural completion path
+// never writes an outbox row, so the socket still sees each event exactly once.
 export type WorkflowOutboxEventName =
 	| "workflow.created"
 	| "workflow.paused"
 	| "workflow.resumed"
-	| "workflow.canceled";
+	| "workflow.canceled"
+	| "workflow.done";
 
 export interface WorkflowOutboxRow {
 	id: number;

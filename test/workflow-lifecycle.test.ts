@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createBrokerRuntime } from "../packages/broker/src/index.ts";
+import { listWorkflowEventsAfter } from "../packages/broker/src/storage/repositories/workflow-event-outbox-repository.ts";
 
 function setup(workspaceRoot = "/tmp") {
 	const broker = createBrokerRuntime({
@@ -74,6 +75,14 @@ afterEach(() => {
 		rmSync(tempGitDirs.pop()!, { recursive: true, force: true });
 	}
 });
+
+/** Persisted workflow.done rows in the event outbox — the "recorded" half of
+ *  markWorkflowDone's emit-iff-transition contract. */
+function recordedDoneEvents(broker: ReturnType<typeof createBrokerRuntime>) {
+	return listWorkflowEventsAfter(broker.db, { collabId: "collab_c1", afterId: 0 }).filter(
+		(r) => r.eventName === "workflow.done",
+	);
+}
 
 // helper for tests that need an active phase run
 function setupWithPhase() {
@@ -490,5 +499,136 @@ describe("workflow lifecycle (halt/resume/cancel)", () => {
 				now: "2026-04-21T00:06:00Z",
 			}),
 		).toThrow();
+	});
+});
+
+describe("markWorkflowDone (operator completes an escalated run)", () => {
+	it("throws on unknown workflowId, emits nothing, records nothing", () => {
+		const { broker } = setup();
+		const done: unknown[] = [];
+		broker.events.on("workflow.done", (e) => done.push(e));
+		expect(() =>
+			broker.control.markWorkflowDone({
+				workflowId: "wf_nonexistent",
+				now: "2026-04-21T00:05:00Z",
+			}),
+		).toThrow("markWorkflowDone: unknown workflowId wf_nonexistent");
+		expect(done).toEqual([]);
+		expect(recordedDoneEvents(broker)).toEqual([]);
+	});
+
+	it.each(["running", "paused", "done", "canceled"] as const)(
+		"throws for %s status, writes nothing, emits nothing, records nothing",
+		(status) => {
+			const { broker, workflowId } = setup();
+			forceStatus(broker, workflowId, status, "2026-04-21T00:04:00Z");
+			const done: unknown[] = [];
+			broker.events.on("workflow.done", (e) => done.push(e));
+			expect(() =>
+				broker.control.markWorkflowDone({
+					workflowId,
+					now: "2026-04-21T00:05:00Z",
+				}),
+			).toThrow(
+				`markWorkflowDone: workflow ${workflowId} is ${status}, only halted (escalated) workflows can be marked done`,
+			);
+			expect(broker.control.getWorkflow(workflowId)?.status).toBe(status);
+			expect(done).toEqual([]);
+			expect(recordedDoneEvents(broker)).toEqual([]);
+		},
+	);
+
+	it("halted (no open phase runs) → done with operator halt reason, emits and records workflow.done once", () => {
+		const { broker, workflowId } = setup();
+		broker.control.haltWorkflow({
+			workflowId,
+			reason: "escalated: env blocker",
+			now: "2026-04-21T00:04:00Z",
+		});
+		const done: unknown[] = [];
+		broker.events.on("workflow.done", (e) => done.push(e));
+		broker.control.markWorkflowDone({
+			workflowId,
+			now: "2026-04-21T00:05:00Z",
+		});
+		const wf = broker.control.getWorkflow(workflowId);
+		expect(wf?.status).toBe("done");
+		expect(wf?.haltReason).toBe("marked done by operator");
+		expect(done).toEqual([{ workflowId }]);
+		const recorded = recordedDoneEvents(broker);
+		expect(recorded).toHaveLength(1);
+		expect(recorded[0]!.payload).toEqual({ workflowId });
+	});
+
+	it("bare-halt with an open phase run → run closed superseded, chain abandoned with operator reason, turn state idles with chainStatus done", () => {
+		const { broker, workflowId, chainId } = setupWithPhase();
+		broker.control.haltWorkflow({
+			workflowId,
+			reason: "No handback text captured",
+			now: "2026-04-21T00:04:00Z",
+		});
+		const openRun = broker.control
+			.getWorkflowPhaseRuns(workflowId)
+			.find((r) => r.endedAt === null);
+		expect(openRun).toBeDefined(); // bare haltWorkflow leaves the run open
+		broker.control.markWorkflowDone({
+			workflowId,
+			now: "2026-04-21T00:05:00Z",
+		});
+		expect(broker.control.getWorkflow(workflowId)?.status).toBe("done");
+		const after = broker.control
+			.getWorkflowPhaseRuns(workflowId)
+			.find((r) => r.phaseRunId === openRun!.phaseRunId);
+		expect(after?.endedAt).toBe("2026-04-21T00:05:00Z");
+		expect(after?.outcome).toBe("superseded");
+		const chain = broker.control.getRelayChain(chainId);
+		expect(chain?.status).toBe("abandoned");
+		expect(chain?.terminalReason).toBe("marked done by operator");
+		const turnState = broker.control.getRelayTurnState("collab_c1");
+		expect(turnState?.unresolvedHandoffId).toBeNull();
+		expect(turnState?.turnOwner).toBe("none");
+		expect(turnState?.waitingAgent).toBeNull();
+		expect(turnState?.handoffState).toBe("idle");
+		expect(turnState?.chainStatus).toBe("done");
+	});
+
+	it("a chain already terminal (escalated) is left untouched — only open runs are swept", () => {
+		const { broker, workflowId, chainId } = setupWithPhase();
+		// Simulate the escalation-verdict path having closed everything:
+		const now = "2026-04-21T00:03:00Z";
+		broker.db
+			.prepare(
+				"UPDATE workflow_phases SET ended_at = ?, outcome = 'escalated' WHERE workflow_id = ?",
+			)
+			.run(now, workflowId);
+		broker.db
+			.prepare("UPDATE relay_chains SET status = 'escalated' WHERE chain_id = ?")
+			.run(chainId);
+		forceStatus(broker, workflowId, "halted", now);
+		broker.control.markWorkflowDone({
+			workflowId,
+			now: "2026-04-21T00:05:00Z",
+		});
+		expect(broker.control.getWorkflow(workflowId)?.status).toBe("done");
+		expect(broker.control.getRelayChain(chainId)?.status).toBe("escalated");
+	});
+
+	it("double mark-done: second call throws (now done), emits nothing more, records nothing more", () => {
+		const { broker, workflowId } = setup();
+		broker.control.haltWorkflow({
+			workflowId,
+			reason: "escalated",
+			now: "2026-04-21T00:04:00Z",
+		});
+		const done: unknown[] = [];
+		broker.events.on("workflow.done", (e) => done.push(e));
+		broker.control.markWorkflowDone({ workflowId, now: "2026-04-21T00:05:00Z" });
+		expect(() =>
+			broker.control.markWorkflowDone({ workflowId, now: "2026-04-21T00:06:00Z" }),
+		).toThrow(
+			`markWorkflowDone: workflow ${workflowId} is done, only halted (escalated) workflows can be marked done`,
+		);
+		expect(done).toEqual([{ workflowId }]);
+		expect(recordedDoneEvents(broker)).toHaveLength(1);
 	});
 });

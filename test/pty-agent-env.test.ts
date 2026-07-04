@@ -29,4 +29,32 @@ describe("provider PTY spawn options stamp AI_WHISPER_AGENT", () => {
 		expect(opts.env.AI_WHISPER_AGENT).toBe("codex");
 		expect(opts.env.AI_WHISPER_COLLAB_ID).toBe("c1");
 	});
+
+	it("claude spawn options pass duo persona env vars through unchanged", () => {
+		const opts = buildClaudePtySpawnOptions({
+			cols: 100,
+			rows: 40,
+			cwd: "/w",
+			baseEnv: {
+				AI_WHISPER_CHARACTER: "Batman",
+				AI_WHISPER_CHARACTER_ROLE: "brain",
+			},
+		});
+		expect(opts.env.AI_WHISPER_CHARACTER).toBe("Batman");
+		expect(opts.env.AI_WHISPER_CHARACTER_ROLE).toBe("brain");
+	});
+
+	it("codex spawn options pass duo persona env vars through unchanged", () => {
+		const opts = buildCodexPtySpawnOptions({
+			cols: 80,
+			rows: 24,
+			cwd: "/w",
+			baseEnv: {
+				AI_WHISPER_CHARACTER: "Heisenberg",
+				AI_WHISPER_CHARACTER_ROLE: "body",
+			},
+		});
+		expect(opts.env.AI_WHISPER_CHARACTER).toBe("Heisenberg");
+		expect(opts.env.AI_WHISPER_CHARACTER_ROLE).toBe("body");
+	});
 });
