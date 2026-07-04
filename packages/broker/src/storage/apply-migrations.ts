@@ -345,10 +345,10 @@ function ensureBrokerStateRow(db: Database.Database): void {
 // Created UNGATED (run on every applyMigrations call, like the enforcement/sweep
 // helpers below) rather than inside runMigrationBody. This is deliberate: it is
 // an INTERNAL table — not part of the state-db read contract — so we must NOT
-// bump CURRENT_SCHEMA_VERSION (external consumers gate on the contract version,
-// currently 6). A gated addition would never reach an already-persisted v6 DB;
-// the ungated idempotent CREATE lands it on fresh AND existing DBs without a
-// version bump.
+// bump CURRENT_SCHEMA_VERSION (external consumers gate on the contract
+// version). A gated addition would never reach a DB already persisted at the
+// current version; the ungated idempotent CREATE lands it on fresh AND existing
+// DBs without a version bump.
 function ensureWorkflowEventOutbox(db: Database.Database): void {
 	db.exec(`
 		CREATE TABLE IF NOT EXISTS workflow_event_outbox (
