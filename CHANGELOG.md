@@ -5,6 +5,16 @@ All notable changes to the `ai-whisper` package are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-07-04
+
+### Added
+
+- **`quick-task` workflow — the lightweight sibling of spec-driven-development**: for small, pre-scoped tasks where the human approves the approach in chat and a formal spec would be ceremony. The workflow runs a single `implement-and-review` phase — implementer builds the whole brief and commits, reviewer acceptance-reviews the live commit range against the brief, findings loop back as fix rounds (max 5). A **hard scope gate** at `whisper workflow start` refuses any brief that is not demonstrably small: the brief must carry four sections (`## Task`, `## Approved approach`, `## Scope`, `## Acceptance checks`) and declare every file it touches under `## Scope`, capped at **5 non-test files** (test files are uncounted). There is no override flag — if the gate trips, split the task or use spec-driven-development; all violations are reported at once so a malformed brief converges in one retry. The new `ai-whisper-quick-task` kickoff skill writes the brief from the approved chat discussion into the gitignored `.ai-whisper/tasks/` (creating `.ai-whisper/.gitignore` when absent), pre-checks that the task is executable right away (research or design smell → it recommends spec-driven-development or deliberation instead), and must relay gate violations verbatim — never silently shrink the scope list. Mid-flight the implementer is held to the declared scope: work materially exceeding it hands back CANNOT PROCEED and the run halts to the human. Purely declarative on the existing driver — no schema or evaluator changes.
+
+### Changed
+
+- **Kickoff skills now document every supported agent type**: the collab-readiness sections of all five kickoff skills (`sdd`, `ralph`, `bugfix`, `deliberation`, `quick-task`) still described the `codex`/`claude`/`ezio` trio; `agy` (Antigravity) has been a supported adapter for a while. The readiness rule now reads "exactly two of the supported agent types", `ezio` and `agy` are both documented as replacement roles, the status JSON example includes the `agy` row, and the reconnect remediation is agent-agnostic. A new sweep test derives the expected mentions from the canonical `agentTypes` list, so the next adapter (cursor is on the horizon) fails CI until every kickoff skill catches up.
+
 ## [0.12.1] - 2026-07-03
 
 ### Changed
@@ -733,6 +743,7 @@ Requires `@ai-creed/ai-ezio` ≥ 0.2.0-beta.4 (the `@ai-ezio/surface` slash seam
   (Claude + Codex) driven by structured workflows, with npm metadata
   (description, repository, homepage).
 
+[0.13.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.13.0
 [0.12.1]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.12.1
 [0.12.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.12.0
 [0.11.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.11.0
