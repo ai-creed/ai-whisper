@@ -37,6 +37,11 @@ describe("resolveTurnEvents (flag > env > default ON)", () => {
     expect(resolveTurnEvents(undefined)).toEqual({ claude: true, codex: false, agy: false });
   });
 
+  it("a cursor-only allow-list leaves both event providers off (cursor uses clipboard, not events)", () => {
+    delete process.env.AI_WHISPER_TURN_EVENTS;
+    expect(resolveTurnEvents("cursor")).toEqual({ claude: false, codex: false, agy: false });
+  });
+
   it("flag overrides env", () => {
     process.env.AI_WHISPER_TURN_EVENTS = "claude,codex";
     expect(resolveTurnEvents("codex")).toEqual({ claude: false, codex: true, agy: false });
@@ -80,6 +85,11 @@ describe("unrecognizedTurnEventsTokens (typo guard)", () => {
   it("returns [] for all recognized provider and control tokens", () => {
     delete process.env.AI_WHISPER_TURN_EVENTS;
     expect(unrecognizedTurnEventsTokens("claude,codex,off,none")).toEqual([]);
+  });
+
+  it("treats 'cursor' as a recognized token (no typo warning) even though it is never event-enabled", () => {
+    delete process.env.AI_WHISPER_TURN_EVENTS;
+    expect(unrecognizedTurnEventsTokens("cursor")).toEqual([]);
   });
 
   it("flags an unrecognized token (the typo footgun)", () => {

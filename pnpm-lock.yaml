@@ -129,6 +129,15 @@ importers:
         specifier: ^1.1.0
         version: 1.1.0
 
+  packages/adapter-cursor:
+    dependencies:
+      '@ai-whisper/shared':
+        specifier: workspace:*
+        version: link:../shared
+      node-pty:
+        specifier: ^1.1.0
+        version: 1.1.0
+
   packages/broker:
     dependencies:
       '@ai-whisper/shared':
@@ -214,6 +223,9 @@ importers:
       '@ai-whisper/adapter-codex':
         specifier: workspace:*
         version: link:../adapter-codex
+      '@ai-whisper/adapter-cursor':
+        specifier: workspace:*
+        version: link:../adapter-cursor
       '@ai-whisper/broker':
         specifier: workspace:*
         version: link:../broker

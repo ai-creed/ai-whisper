@@ -21,6 +21,10 @@ describe("interactive session launch config", () => {
 			"--dangerously-skip-permissions",
 		]);
 	});
+
+	it("runs cursor with full autonomy and no broker add-dir (--force grants file access)", () => {
+		expect(getInteractiveSessionExecArgsForTarget("cursor")).toEqual(["--force"]);
+	});
 });
 
 describe("one-shot provider launch config", () => {
@@ -39,6 +43,15 @@ describe("one-shot provider launch config", () => {
 			"--add-dir",
 			getLiveSessionBrokerTempRoot(),
 			"--dangerously-skip-permissions",
+		]);
+	});
+
+	it("runs cursor one-shot headless with json output and no broker add-dir", () => {
+		expect(getProviderExecArgsForTarget("cursor")).toEqual([
+			"-p",
+			"--force",
+			"--output-format",
+			"json",
 		]);
 	});
 });

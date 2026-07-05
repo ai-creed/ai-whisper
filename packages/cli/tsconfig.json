@@ -14,6 +14,7 @@
 		{ "path": "../broker" },
 		{ "path": "../companion-core" },
 		{ "path": "../adapter-codex" },
-		{ "path": "../adapter-claude" }
+		{ "path": "../adapter-claude" },
+		{ "path": "../adapter-cursor" }
 	]
 }

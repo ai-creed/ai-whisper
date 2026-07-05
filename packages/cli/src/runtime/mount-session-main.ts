@@ -53,6 +53,8 @@ import {
 import { createAssistantTurnCapture } from "./assistant-turn-capture.js";
 import { captureClipboardHandback } from "./clipboard-handback-capture.js";
 import { captureHandbackText as runLeasedCapture } from "./capture-handback-text.js";
+import { captureCursorHandback } from "./cursor-transcript-capture.js";
+import { appendCursorCaptureLog } from "./cursor-capture-log.js";
 import { makeChangeCountReader } from "./clipboard-change-count.js";
 import {
 	submitInjectedProviderInput,
@@ -568,6 +570,10 @@ export function createMountSessionRuntime(input: {
 				// Persists across captures so a multi-write /copy isn't mistaken for a
 				// foreign write. See captureHandbackText.
 				const copySignature: { delta: number | null } = { delta: null };
+				// Per-mount freshness marker for the cursor transcript capture: the hash
+				// of the last delivered handback, so a re-poll / tool-only turn isn't
+				// re-handed back. See captureCursorHandback.
+				const cursorLastDelivered: { hash: string | null } = { hash: null };
 				const bracketedPaste = createBracketedPasteDetector();
 				const codexStrategyOverride = resolveCodexSubmitStrategyOverride();
 				const debugLog = createRuntimeDebugLogger({
@@ -894,8 +900,32 @@ export function createMountSessionRuntime(input: {
 						}
 						return runComposer();
 					},
-					captureHandbackText: async (turnText: string) => {
+					captureHandbackText: async (
+						turnText: string,
+						meta?: { expectedPrompt?: string; promptDeliveredAtMs?: number },
+					) => {
 						if (!resolvedClaim) return null;
+						// Cursor: its `/copy` is an interactive picker the relay can't drive,
+						// so capture the handback by reading Cursor's session transcript
+						// instead of the clipboard. No lease/changeCount — the transcript read
+						// touches no shared global resource. Same CaptureHandbackResult shape.
+						// The relay-supplied prompt anchors transcript selection; onTrace
+						// leaves a debuggable breadcrumb of each capture decision.
+						if (input.target === "cursor") {
+							const claim = resolvedClaim;
+							return await captureCursorHandback({
+								turnText,
+								lastDelivered: cursorLastDelivered,
+								onTrace: (trace) =>
+									appendCursorCaptureLog({ collabId: claim.collabId, ...trace }),
+								...(meta?.expectedPrompt !== undefined
+									? { expectedPrompt: meta.expectedPrompt }
+									: {}),
+								...(meta?.promptDeliveredAtMs !== undefined
+									? { promptDeliveredAtMs: meta.promptDeliveredAtMs }
+									: {}),
+							});
+						}
 						const db = openDatabase(getSharedSqlitePath());
 						try {
 							// Serialize the /copy capture host-wide via the capture lease so

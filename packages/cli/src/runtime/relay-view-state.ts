@@ -241,8 +241,15 @@ export type RelayViewState = {
 // `fmtDur` is already defined in this file (Task 4) — do NOT redefine it here.
 
 // Display order for the per-agent health dots: the driver agent (codex|ezio)
-// first, then claude. Stable tiebreak by agentType keeps output deterministic.
-const AGENT_DISPLAY_RANK: Record<AgentType, number> = { codex: 0, ezio: 0, claude: 1, agy: 1 };
+// first, then the implementer/reviewer agents (claude|agy|cursor). Stable
+// tiebreak by agentType keeps output deterministic.
+const AGENT_DISPLAY_RANK: Record<AgentType, number> = {
+	codex: 0,
+	ezio: 0,
+	claude: 1,
+	agy: 1,
+	cursor: 1,
+};
 
 function isAgentType(s: string): s is AgentType {
 	return (agentTypes as readonly string[]).includes(s);

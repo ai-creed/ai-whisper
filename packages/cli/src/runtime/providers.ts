@@ -7,6 +7,10 @@ import {
 	createCodexProvider,
 } from "@ai-whisper/adapter-codex";
 import {
+	createCursorLiveSession,
+	createCursorProvider,
+} from "@ai-whisper/adapter-cursor";
+import {
 	createAiEzioLiveSession,
 	createAiEzioProvider,
 } from "@ai-whisper/adapter-ai-ezio";
@@ -45,6 +49,14 @@ export function getInteractiveSessionExecArgsForTarget(
 		return ["--add-dir", tempRoot, "--dangerously-skip-permissions"];
 	}
 
+	if (target === "cursor") {
+		// Full autonomy: --force (Cursor's --dangerously-* equivalent) lets the
+		// relay drive `agent` unattended. Cursor has no --add-dir; --force already
+		// grants unrestricted file access, so the broker temp root is reachable
+		// without an allowlist flag. No turn-event hook flags (clipboard path).
+		return ["--force"];
+	}
+
 	// Full autonomy: bypass all permission checks so the relay can drive
 	// claude unattended (file writes + bash).
 	const base = ["--add-dir", tempRoot, "--dangerously-skip-permissions"];
@@ -73,6 +85,13 @@ export function getProviderExecArgsForTarget(target: MountTarget): string[] {
 		return ["-p", "--add-dir", tempRoot, "--dangerously-skip-permissions"];
 	}
 
+	if (target === "cursor") {
+		// Headless one-shot: -p prints the result, --force grants full autonomy,
+		// and --output-format json emits the single result envelope parse-cursor-
+		// output consumes. No --add-dir (see interactive args above).
+		return ["-p", "--force", "--output-format", "json"];
+	}
+
 	return ["-p", "--add-dir", tempRoot, "--dangerously-skip-permissions"];
 }
 
@@ -90,6 +109,12 @@ export function createProviderForTarget(target: MountTarget) {
 		return createAntigravityProvider({
 			executable: process.env.AI_WHISPER_AGY_CMD ?? "agy",
 			execArgs: getProviderExecArgsForTarget("agy"),
+		});
+	}
+	if (target === "cursor") {
+		return createCursorProvider({
+			executable: process.env.AI_WHISPER_CURSOR_CMD ?? "agent",
+			execArgs: getProviderExecArgsForTarget("cursor"),
 		});
 	}
 	return createClaudeProvider({
@@ -150,6 +175,19 @@ export function createInteractiveSessionForTarget(input: {
 		return createAntigravityLiveSession({
 			config: {
 				executable: process.env.AI_WHISPER_AGY_CMD ?? "agy",
+				execArgs,
+			},
+			cwd: input.cwd,
+			stdout: input.stdout,
+			...(input.replyTimeoutMs !== undefined
+				? { replyTimeoutMs: input.replyTimeoutMs }
+				: {}),
+		});
+	}
+	if (input.target === "cursor") {
+		return createCursorLiveSession({
+			config: {
+				executable: process.env.AI_WHISPER_CURSOR_CMD ?? "agent",
 				execArgs,
 			},
 			cwd: input.cwd,

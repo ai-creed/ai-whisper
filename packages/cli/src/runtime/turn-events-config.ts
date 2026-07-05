@@ -43,8 +43,20 @@ export function claudeSettingsArgs(settingsFile: string): string[] {
 
 export type TurnEventsEnablement = { claude: boolean; codex: boolean; agy: boolean };
 
-/** Tokens `resolveTurnEvents` acts on: provider names + the disable controls. */
-const RECOGNIZED_TURN_EVENTS_TOKENS = new Set(["claude", "codex", "agy", "off", "none"]);
+/**
+ * Tokens `resolveTurnEvents` acts on: provider names + the disable controls.
+ * "cursor" is recognized (so listing it is not flagged as a typo) but is never
+ * event-enabled — Cursor has no per-turn hook, so it stays on the clipboard
+ * capture path and never appears in TurnEventsEnablement.
+ */
+const RECOGNIZED_TURN_EVENTS_TOKENS = new Set([
+	"claude",
+	"codex",
+	"agy",
+	"cursor",
+	"off",
+	"none",
+]);
 
 function parseTurnEventsTokens(raw: string): string[] {
 	return raw.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);

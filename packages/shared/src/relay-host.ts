@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const relayTargets = ["codex", "claude", "ezio", "agy", "pull"] as const;
+export const relayTargets = ["codex", "claude", "ezio", "agy", "cursor", "pull"] as const;
 
 export const relayDirectiveSchema = z.object({
 	raw: z.string().min(1),

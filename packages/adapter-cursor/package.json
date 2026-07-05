@@ -1,0 +1,23 @@
+{
+	"name": "@ai-whisper/adapter-cursor",
+	"version": "0.0.0",
+	"private": true,
+	"license": "Apache-2.0",
+	"type": "module",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc -b --emitDeclarationOnly"
+	},
+	"dependencies": {
+		"@ai-whisper/shared": "workspace:*",
+		"node-pty": "^1.1.0"
+	}
+}

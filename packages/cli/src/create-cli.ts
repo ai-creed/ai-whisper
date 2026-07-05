@@ -169,7 +169,7 @@ export function createCli(): Command {
 		.description("Send an instruction to an agent")
 		.requiredOption(
 			"--target <agent>",
-			"Target agent: codex, claude, ezio, or agy",
+			"Target agent: codex, claude, ezio, agy, or cursor",
 		)
 		.option(
 			"--collab <id>",
@@ -252,7 +252,7 @@ export function createCli(): Command {
 		.description(
 			"Reconnect a remembered role after broker recovery (mount mode)",
 		)
-		.argument("<agent>", "Target agent: codex, claude, ezio, or agy")
+		.argument("<agent>", "Target agent: codex, claude, ezio, agy, or cursor")
 		.option("--workspace <path>", "Workspace root", process.cwd())
 		.option(
 			"--collab <id>",
@@ -274,7 +274,7 @@ export function createCli(): Command {
 		.description(
 			"Mount the current terminal as the managed session surface for a role",
 		)
-		.argument("<agent>", "Target agent: codex, claude, ezio, or agy")
+		.argument("<agent>", "Target agent: codex, claude, ezio, agy, or cursor")
 		.argument(
 			"[passthroughArgs...]",
 			"Args forwarded after `--` to the agent binary spawn (e.g. `mount codex -- --full-auto`)",
@@ -508,11 +508,11 @@ export function createCli(): Command {
 		.requiredOption("--spec <path>", "Spec file path")
 		.option(
 			"--implementer <agent>",
-			"Implementer agent: claude, codex, ezio, or agy (defaults to the workflow type's defaultImplementer)",
+			"Implementer agent: claude, codex, ezio, agy, or cursor (defaults to the workflow type's defaultImplementer)",
 		)
 		.option(
 			"--reviewer <agent>",
-			"Reviewer agent: claude, codex, ezio, or agy (defaults to the workflow type's defaultReviewer)",
+			"Reviewer agent: claude, codex, ezio, agy, or cursor (defaults to the workflow type's defaultReviewer)",
 		)
 		.option("--name <name>", "Optional workflow display name")
 		.option("--workspace <path>", "Workspace root", process.cwd())
@@ -728,7 +728,7 @@ export function createCli(): Command {
 		)
 		.addOption(
 			new Option("--target <target>", "Agent install target")
-				.choices(["claude", "codex", "ezio", "agy", "all"])
+				.choices(["claude", "codex", "cursor", "ezio", "agy", "all"])
 				.default("all"),
 		)
 		.option("--force", "Overwrite existing skill destinations")

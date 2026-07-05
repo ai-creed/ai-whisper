@@ -61,6 +61,22 @@ describe("runSkillInstall", () => {
 		expect(existsSync(join(s.home, ".claude"))).toBe(false);
 	});
 
+	it("--target=cursor copies to only ~/.cursor/skills/ (not ~/.codex)", async () => {
+		const s = sandbox();
+		await runSkillInstall({
+			target: "cursor",
+			fakeHome: s.home,
+			bundledSkillsDir: join(s.cliDist, "skills"),
+		});
+		expect(
+			existsSync(join(s.home, ".cursor", "skills", "ai-whisper-sdd", "SKILL.md")),
+		).toBe(true);
+		// Regression guard: the old homeForTarget ternary routed any non-claude
+		// target into ~/.codex; cursor must NOT leak there.
+		expect(existsSync(join(s.home, ".codex"))).toBe(false);
+		expect(existsSync(join(s.home, ".claude"))).toBe(false);
+	});
+
 	it("without --force, existing destinations are NOT overwritten and the command reports the conflict", async () => {
 		const s = sandbox();
 		mkdirSync(join(s.home, ".claude", "skills", "ai-whisper-sdd"), { recursive: true });
@@ -174,6 +190,7 @@ describe("runSkillInstall — ezio target (M6)", () => {
 			const joined = result.installedAt.join("\n");
 			expect(joined).toMatch(/[/\\]\.claude[/\\]skills/);
 			expect(joined).toMatch(/[/\\]\.codex[/\\]skills/);
+			expect(joined).toMatch(/[/\\]\.cursor[/\\]skills/);
 			expect(joined).toMatch(/ai-ezio[/\\]skills/);
 		} finally {
 			if (prevXdg !== undefined) process.env.XDG_CONFIG_HOME = prevXdg;
