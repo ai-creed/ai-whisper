@@ -95,7 +95,8 @@ Parse the JSON. The expected shape is:
     { "agentType": "codex",  "bindingState": "bound" | "pending_attach" | "unbound" | null },
     { "agentType": "claude", "bindingState": "bound" | "pending_attach" | "unbound" | null },
     { "agentType": "ezio",   "bindingState": "bound" | "pending_attach" | "unbound" | null },
-    { "agentType": "agy",    "bindingState": "bound" | "pending_attach" | "unbound" | null }
+    { "agentType": "agy",    "bindingState": "bound" | "pending_attach" | "unbound" | null },
+    { "agentType": "cursor", "bindingState": "bound" | "pending_attach" | "unbound" | null }
   ],
   "recovery": { "state": "normal" | "recovery_required" | "recovered" },
   "evaluator": { "ready": true | false, "status": "ready" | "missing_anthropic_key" | "invalid_config" | "disabled" | "unknown" }
@@ -107,17 +108,18 @@ Required for readiness:
 - `status === "active"`
 - `recovery.state === "normal"`
 - **EXACTLY TWO agents bound** — among the supported agent types (`codex`, `claude`,
-  `ezio`, `agy`), exactly two must have `bindingState === "bound"` (the implementer +
-  reviewer pair). **`ezio` and `agy` are replacement roles**: either stands in for
-  `codex` or `claude`, so do NOT require `codex` and `claude` specifically — any
-  pair of two distinct supported agents passes. (The `agents` array may list all
-  supported types; the displaced slots read `null`/`unbound` and that is expected
-  when a replacement agent takes a seat.)
+  `ezio`, `agy`, `cursor`), exactly two must have `bindingState === "bound"` (the
+  implementer + reviewer pair). **`ezio`, `agy`, and `cursor` are replacement
+  roles**: any of them stands in for `codex` or `claude`, so do NOT require
+  `codex` and `claude` specifically — any pair of two distinct supported agents
+  passes. (The `agents` array may list all supported types; the displaced slots
+  read `null`/`unbound` and that is expected when a replacement agent takes a
+  seat.)
 - `evaluator.status` is NOT `"missing_anthropic_key"` or `"invalid_config"` (i.e., `ready`, `disabled`, and `unknown` all pass this gate; only the two true-misconfiguration statuses block)
 
 If the JSON has `{ "error": "no_collab_for_cwd", ... }`:
 
-> No collab found in this workspace. Mount any **two** agents (e.g. `whisper collab mount ezio` in one terminal and `whisper collab mount codex` — or `claude` / `agy` — in another), then re-run this skill.
+> No collab found in this workspace. Mount any **two** agents (e.g. `whisper collab mount ezio` in one terminal and `whisper collab mount codex` — or `claude` / `agy` / `cursor` — in another), then re-run this skill.
 
 If `recovery.state === "recovery_required"`:
 
@@ -131,8 +133,8 @@ If FEWER than two agents are bound (count `bindingState === "bound"` across
 the supported agent types):
 
 > Only <N> agent(s) bound (<list bound agentTypes>). A workflow needs two — an
-> implementer and a reviewer. Mount another agent (`whisper collab mount <codex|claude|ezio|agy>`)
-> in a separate terminal, then re-run this skill. `ezio` or `agy` may replace `codex` or `claude`.
+> implementer and a reviewer. Mount another agent (`whisper collab mount <codex|claude|ezio|agy|cursor>`)
+> in a separate terminal, then re-run this skill. `ezio`, `agy`, or `cursor` may replace `codex` or `claude`.
 
 (Do NOT append permission flags — mount already spawns the agent in full-permission mode; passing `--dangerously-skip-permissions` / `--dangerously-bypass-approvals-and-sandbox` again can crash the agent on a duplicate-argument error.)
 
