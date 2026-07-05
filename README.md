@@ -133,9 +133,9 @@ For the full mental model, read [Concepts](docs/concepts.md).
 
 ## Duo characters
 
-Every collab casts its two agents as a classic movie duo. The first `whisper collab mount` rolls a pair — Sherlock & Watson, Batman & Robin, Walter White & Jesse Pinkman, and four more — and each mount summons its character with ASCII art and an iconic one-liner before the agent CLI starts. The assignment sticks for the lifetime of the collab: the dashboard and relay chrome show `Batman (claude)` instead of a bare vendor name, and the agents themselves are told who they are (character flavor stays in conversational prose only — never in code, commits, or workflow verdicts).
+When enabled, a collab casts its two agents as a classic movie duo. The first `whisper collab mount` rolls a pair — Sherlock & Watson, Batman & Robin, Walter White & Jesse Pinkman, and four more — and each mount summons its character with ASCII art and an iconic one-liner before the agent CLI starts. The assignment sticks for the lifetime of the collab: the dashboard and relay chrome show `Batman (claude)` instead of a bare vendor name, and the agents themselves are told who they are (character flavor stays in conversational prose only — never in code, commits, or workflow verdicts).
 
-It's cosmetic and entirely optional. Turn it off per mount with `--no-duo`, or permanently with `AI_WHISPER_DUO=off` in your environment; an opted-out mount rolls nothing, shows nothing, and falls back to plain vendor names everywhere.
+It's cosmetic and **off by default** — a plain `whisper collab mount` rolls nothing, shows nothing, and uses plain vendor names everywhere. Opt in by setting `AI_WHISPER_DUO=on` (also accepts `1`, `true`, `yes`) in your environment; once enabled, silence a single mount with `--no-duo`, which overrides the environment for that mount.
 
 ## Learn more
 

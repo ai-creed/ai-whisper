@@ -17,44 +17,55 @@ describe("resolveDuoEnabled", () => {
 		}
 	});
 
-	it("flag false disables regardless of env (unset)", () => {
-		expect(resolveDuoEnabled(false)).toBe(false);
+	it("unset env with flag undefined is disabled (default OFF)", () => {
+		expect(resolveDuoEnabled(undefined)).toBe(false);
 	});
 
-	it("flag false disables even when env would enable", () => {
-		process.env.AI_WHISPER_DUO = "on";
-		expect(resolveDuoEnabled(false)).toBe(false);
-	});
-
-	it("env off/0/false/none (mixed case, trimmed) disables when flag absent", () => {
+	it("env on/1/true/yes (mixed case, trimmed) enables when flag absent", () => {
 		for (const value of [
-			"off",
-			"0",
-			"false",
-			"none",
-			"OFF",
-			"Off",
-			"FALSE",
-			"None",
-			"  off  ",
-			" none ",
+			"on",
+			"1",
+			"true",
+			"yes",
+			"ON",
+			"On",
+			"TRUE",
+			"Yes",
+			"  on  ",
+			" true ",
 		]) {
+			process.env.AI_WHISPER_DUO = value;
+			expect(resolveDuoEnabled(undefined)).toBe(true);
+		}
+	});
+
+	it("env off/0/false/none stays disabled (default OFF, not an enable value)", () => {
+		for (const value of ["off", "0", "false", "none", "OFF", "None"]) {
 			process.env.AI_WHISPER_DUO = value;
 			expect(resolveDuoEnabled(undefined)).toBe(false);
 		}
 	});
 
-	it("unset env with flag undefined is enabled (default ON)", () => {
-		expect(resolveDuoEnabled(undefined)).toBe(true);
-	});
-
-	it("unrecognized env value falls through to enabled", () => {
+	it("unrecognized env value stays disabled (default OFF)", () => {
 		process.env.AI_WHISPER_DUO = "banana";
-		expect(resolveDuoEnabled(undefined)).toBe(true);
+		expect(resolveDuoEnabled(undefined)).toBe(false);
 	});
 
-	it("a truthy flag cannot override a disabling env value (only a negative flag exists)", () => {
-		process.env.AI_WHISPER_DUO = "off";
+	it("flag false disables even when env would enable (--no-duo beats env)", () => {
+		process.env.AI_WHISPER_DUO = "on";
+		expect(resolveDuoEnabled(false)).toBe(false);
+	});
+
+	it("flag false disables regardless of env (unset)", () => {
+		expect(resolveDuoEnabled(false)).toBe(false);
+	});
+
+	it("a truthy flag does not enable on its own — only the env opt-in enables", () => {
 		expect(resolveDuoEnabled(true)).toBe(false);
+	});
+
+	it("a truthy flag does not block an enabling env value", () => {
+		process.env.AI_WHISPER_DUO = "on";
+		expect(resolveDuoEnabled(true)).toBe(true);
 	});
 });

@@ -164,6 +164,9 @@ describe("runCollabMount duo banner (pre-spawn claim)", () => {
 	it("duo-enabled mount draws the art banner, pushes exactly rows newlines, and claims a character", async () => {
 		const stateRoot = tempStateRoot();
 		process.env.AI_WHISPER_STATE_ROOT = stateRoot;
+		// Duo is default-OFF; the suite's beforeEach clears AI_WHISPER_DUO, so
+		// opt in explicitly to exercise the enabled path.
+		process.env.AI_WHISPER_DUO = "on";
 		const workspaceRoot = join(stateRoot, "ws-enabled");
 		mkdirSync(workspaceRoot, { recursive: true });
 		const collabId = seedActiveCollab(workspaceRoot);
@@ -341,6 +344,8 @@ describe("runCollabMount duo banner (pre-spawn claim)", () => {
 	it("fallback outcome (both slots live) draws the vendor banner and claims no new row", async () => {
 		const stateRoot = tempStateRoot();
 		process.env.AI_WHISPER_STATE_ROOT = stateRoot;
+		// Opt in to the enabled path (duo is default-OFF).
+		process.env.AI_WHISPER_DUO = "on";
 		const workspaceRoot = join(stateRoot, "ws-fallback");
 		mkdirSync(workspaceRoot, { recursive: true });
 		const collabId = seedActiveCollab(workspaceRoot);
@@ -427,6 +432,8 @@ describe("runCollabMount duo banner (pre-spawn claim)", () => {
 	it("duo-enabled mount that fails before issueAttachClaim (live-owner conflict) claims nothing", async () => {
 		const stateRoot = tempStateRoot();
 		process.env.AI_WHISPER_STATE_ROOT = stateRoot;
+		// Opt in to the enabled path (duo is default-OFF).
+		process.env.AI_WHISPER_DUO = "on";
 		const workspaceRoot = join(stateRoot, "ws-preclaim");
 		mkdirSync(workspaceRoot, { recursive: true });
 		const collabId = seedActiveCollab(workspaceRoot);
