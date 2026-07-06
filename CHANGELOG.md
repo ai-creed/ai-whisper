@@ -5,6 +5,16 @@ All notable changes to the `ai-whisper` package are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] - 2026-07-06
+
+### Added
+
+- **Cursor (agent CLI) adapter — a fifth supported agent.** ai-whisper now drives the real Cursor `agent` CLI, so you can `whisper collab mount cursor` and pair it with any other agent (e.g. `claude` + `cursor`). Cursor is a replacement role like `ezio`/`agy` — any two distinct agents form the implementer+reviewer pair. Because the Cursor CLI exposes no turn-completion hook, its mounted handback is captured by reading the session transcript — treated as authoritative over the PTY scrape — gated on turn completion, with prompt-anchored selection, a transcript freshness floor (rejects a prior run's stale transcript), and capture breadcrumbs/diagnostics to keep handbacks reliable. Override the binary path with `AI_WHISPER_CURSOR_CMD`. The five kickoff skills' collab-readiness sections now document `cursor` as a mountable agent type.
+
+### Changed
+
+- **Duo characters are now OFF by default.** A plain `whisper collab mount` no longer summons movie-duo characters — the feature is now opt-in. Enable it by setting `AI_WHISPER_DUO=on` (also accepts `1`, `true`, `yes`) in your environment; `--no-duo` remains a per-mount kill switch and overrides an enabling env. This reverses the previous default-on behavior, and there is no positive `--duo` flag.
+
 ## [0.13.0] - 2026-07-04
 
 ### Added
@@ -743,6 +753,7 @@ Requires `@ai-creed/ai-ezio` ≥ 0.2.0-beta.4 (the `@ai-ezio/surface` slash seam
   (Claude + Codex) driven by structured workflows, with npm metadata
   (description, repository, homepage).
 
+[0.14.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.14.0
 [0.13.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.13.0
 [0.12.1]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.12.1
 [0.12.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.12.0
