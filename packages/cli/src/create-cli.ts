@@ -737,8 +737,20 @@ export function createCli(): Command {
 				target: opts.target,
 				...(opts.force ? { force: true } : {}),
 			});
-			for (const p of result.installedAt) {
-				console.log(`Installed: ${p}`);
+			for (const e of result.results) {
+				if (e.action === "installed" && e.forced) {
+					console.log(
+						`Installed (forced): ${e.skill} → ${e.dest} (replaced ${e.installedVersion ?? "unversioned"})`,
+					);
+				} else if (e.action === "installed") {
+					console.log(`Installed: ${e.skill} → ${e.dest}`);
+				} else if (e.action === "up-to-date") {
+					console.log(`Up to date: ${e.skill} @ ${e.installedVersion} → ${e.dest}`);
+				} else {
+					console.log(
+						`Skipped (newer installed): ${e.skill} — installed ${e.installedVersion} > bundled ${e.bundledVersion ?? "unversioned"}; use --force to downgrade → ${e.dest}`,
+					);
+				}
 			}
 		});
 

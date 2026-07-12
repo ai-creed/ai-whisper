@@ -4,7 +4,10 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 // routes `--target ezio` WITHOUT performing a real filesystem install.
 // vi.hoisted because vi.mock is hoisted above plain declarations.
 const { runSkillInstall } = vi.hoisted(() => ({
-	runSkillInstall: vi.fn(async () => ({ installedAt: [] as string[] })),
+	runSkillInstall: vi.fn(async () => ({
+		results: [],
+		installedAt: [] as string[],
+	})),
 }));
 vi.mock("../packages/cli/src/commands/skill/install.ts", () => ({ runSkillInstall }));
 
