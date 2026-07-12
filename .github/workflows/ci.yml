@@ -18,6 +18,9 @@ jobs:
         uses: actions/checkout@v5
         with:
           path: ai-whisper
+          # Full history so the skills version-bump assertion can diff against
+          # the PR base / push-before SHA without relying on a runtime fetch.
+          fetch-depth: 0
 
       - name: Checkout ai-ezio (provides @ai-ezio/harness + @ai-ezio/protocol + @ai-ezio/surface)
         uses: actions/checkout@v5
