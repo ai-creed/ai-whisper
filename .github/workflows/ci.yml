@@ -79,6 +79,14 @@ jobs:
         working-directory: ai-whisper
         run: node scripts/bundle-selfcontained-smoke.mjs
 
+      # shakespii's bin executes its TypeScript CLI via bun (engines: bun>=1.3.0);
+      # the Node runner cannot run it. Pinned to the version the skills were
+      # verified under locally.
+      - name: Setup Bun (shakespii runtime)
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+
       # Skills QA (spec: docs/superpowers/specs/2026-07-12-bundled-skills-ownership-design.md).
       # Deterministic only — shakespii test runs WITHOUT --run/--triggers; live
       # trigger/grading sweeps stay manual calibration campaigns.
