@@ -75,3 +75,25 @@ jobs:
       - name: Bundle self-containment smoke
         working-directory: ai-whisper
         run: node scripts/bundle-selfcontained-smoke.mjs
+
+      # Skills QA (spec: docs/superpowers/specs/2026-07-12-bundled-skills-ownership-design.md).
+      # Deterministic only — shakespii test runs WITHOUT --run/--triggers; live
+      # trigger/grading sweeps stay manual calibration campaigns.
+      - name: Skills QA — shakespii lint + deterministic test
+        working-directory: ai-whisper
+        run: |
+          set -euo pipefail
+          for d in packages/cli/skills/*/; do
+            echo "== shakespii lint $d"
+            pnpm exec shakespii lint "$d" --json
+            echo "== shakespii test (deterministic) $d"
+            pnpm exec shakespii test "$d" --json
+          done
+
+      # Changed skill content requires a version bump; unresolvable bases skip
+      # visibly inside the script (first push, force push).
+      - name: Skills QA — version-bump assertion
+        working-directory: ai-whisper
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: node scripts/check-skill-version-bump.mjs --base "$BASE_SHA"

@@ -68,6 +68,19 @@
 - Keep `AGENTS.md` procedural and stable.
 - Do not duplicate full spec content here; refer to the tracked spec documents instead.
 
+## Bundled Skills
+
+- `packages/cli/skills/` is owned by this repo; content originates from the
+  calibrated corpus (see
+  `docs/superpowers/specs/2026-07-12-bundled-skills-ownership-design.md`).
+- Any content edit to a skill under `packages/cli/skills/` must bump that
+  skill's `version` frontmatter in the same change — guarded installers
+  silently skip unbumped content. CI enforces this
+  (`scripts/check-skill-version-bump.mjs`).
+- Skills QA in CI is deterministic only (`shakespii lint` + `shakespii test`
+  without `--run`); live trigger/grading sweeps are manual calibration
+  campaigns run when content meaningfully changes.
+
 ## Current Working Mode
 
 - Work only on the currently approved phase.
