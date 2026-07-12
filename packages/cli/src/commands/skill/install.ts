@@ -1,7 +1,8 @@
-import { cp, mkdir, readdir, stat } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, stat } from "node:fs/promises";
 import type { AgentType } from "@ai-whisper/shared";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { compareSemver, parseSkillVersion } from "./version.js";
 
 export type SkillInstallTarget = AgentType | "all";
 
@@ -13,8 +14,21 @@ export interface SkillInstallInput {
 	bundledSkillsDir?: string;
 }
 
+export type SkillInstallAction = "installed" | "up-to-date" | "skipped-newer";
+
+export interface SkillInstallEntry {
+	skill: string;
+	target: AgentType;
+	dest: string; // skill directory at the destination
+	action: SkillInstallAction;
+	bundledVersion: string | null;
+	installedVersion: string | null; // pre-install version at dest, null if absent/unreadable/malformed
+	forced?: true; // present only when --force overrode a would-be skip
+}
+
 export interface SkillInstallResult {
-	installedAt: string[];
+	results: SkillInstallEntry[];
+	installedAt: string[]; // SKILL.md paths actually written (derived from results)
 }
 
 function defaultBundledSkillsDir(): string {
@@ -22,6 +36,16 @@ function defaultBundledSkillsDir(): string {
 	// ../../skills from there.
 	const here = path.dirname(fileURLToPath(import.meta.url));
 	return path.resolve(here, "..", "..", "skills");
+}
+
+async function readSkillVersion(skillMdPath: string): Promise<string | null> {
+	let content: string;
+	try {
+		content = await readFile(skillMdPath, "utf8");
+	} catch {
+		return null;
+	}
+	return parseSkillVersion(content);
 }
 
 function homeForTarget(target: AgentType, fakeHome?: string): string {
@@ -96,6 +120,7 @@ export async function runSkillInstall(
 			? ["claude", "codex", "cursor", "ezio", "agy"]
 			: [input.target];
 
+	const results: SkillInstallEntry[] = [];
 	const installedAt: string[] = [];
 
 	for (const t of targets) {
@@ -111,15 +136,40 @@ export async function runSkillInstall(
 			} catch (err) {
 				if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
 			}
-			if (destExists && !input.force) {
-				throw new Error(
-					`Skill destination already exists at ${dest}. Re-run with --force to overwrite.`,
-				);
+			const bundledVersion = await readSkillVersion(path.join(src, "SKILL.md"));
+			const installedVersion = destExists
+				? await readSkillVersion(path.join(dest, "SKILL.md"))
+				: null;
+
+			// Guard table (spec 2026-07-12): a missing destination or a
+			// versionless/unreadable installed copy installs; otherwise semver
+			// decides. A versionless bundled skill compares as 0.0.0 so a broken
+			// bundle can never downgrade a versioned install without --force.
+			let action: SkillInstallAction;
+			if (!destExists || installedVersion === null) {
+				action = "installed";
+			} else {
+				const cmp = compareSemver(bundledVersion ?? "0.0.0", installedVersion);
+				action = cmp > 0 ? "installed" : cmp === 0 ? "up-to-date" : "skipped-newer";
 			}
-			await cp(src, dest, { recursive: true, force: true });
-			installedAt.push(path.join(dest, "SKILL.md"));
+			const forced = action !== "installed" && input.force === true;
+			if (forced) action = "installed";
+
+			results.push({
+				skill,
+				target: t,
+				dest,
+				action,
+				bundledVersion,
+				installedVersion,
+				...(forced ? { forced: true as const } : {}),
+			});
+			if (action === "installed") {
+				await cp(src, dest, { recursive: true, force: true });
+				installedAt.push(path.join(dest, "SKILL.md"));
+			}
 		}
 	}
 
-	return { installedAt };
+	return { results, installedAt };
 }
