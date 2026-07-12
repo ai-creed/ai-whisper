@@ -1,0 +1,25 @@
+{
+  "skill_name": "ai-whisper-code-review",
+  "queries": [
+    { "query": "Review this diff for blocking issues.", "should_trigger": true },
+    { "query": "Code review the bugfix before we close it out.", "should_trigger": true },
+    { "query": "Review the implementation against the spec.", "should_trigger": true },
+    { "query": "Check this commit range against the acceptance criteria.", "should_trigger": true },
+    { "query": "Review this Ralph code chunk.", "should_trigger": true },
+    { "query": "Final code-quality acceptance check on this diff.", "should_trigger": true },
+    { "query": "Review the fix against the prior findings.", "should_trigger": true },
+    { "query": "Review this diff against the plan.", "should_trigger": true },
+    { "query": "Is this bug fix actually fixed? Review it.", "should_trigger": true },
+    { "query": "Do a code-quality review of the delivered diff.", "should_trigger": true },
+    { "query": "Review this commit range for regressions.", "should_trigger": true },
+    { "query": "Review agent-written code against the goal before merge.", "should_trigger": true },
+    { "query": "Review this pull request for logic errors.", "should_trigger": false },
+    { "query": "Fix my pending review comments from the desktop app.", "should_trigger": false },
+    { "query": "Act on the review feedback I wrote in ai-14all.", "should_trigger": false },
+    { "query": "Run SDD on this spec.", "should_trigger": false },
+    { "query": "Kick off a bugfix workflow on this bug report.", "should_trigger": false },
+    { "query": "Kick off deliberation on this seed idea.", "should_trigger": false },
+    { "query": "Leave a review comment on this function for my teammate.", "should_trigger": false },
+    { "query": "What's the status of my agent session?", "should_trigger": false }
+  ]
+}

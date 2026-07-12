@@ -1,0 +1,25 @@
+{
+  "skill_name": "ai-whisper-deliberation-craft",
+  "queries": [
+    { "query": "How do I research the Approaches layer as Explorer?", "should_trigger": true },
+    { "query": "I'm the Challenger, help me attack this Objectives output.", "should_trigger": true },
+    { "query": "Give me the Explorer research contract.", "should_trigger": true },
+    { "query": "What's the Challenger attack taxonomy?", "should_trigger": true },
+    { "query": "How do I verify a claim in this deliberation?", "should_trigger": true },
+    { "query": "I need craft guidance for the Tradeoffs layer.", "should_trigger": true },
+    { "query": "What lenses does the Challenger use for the Approaches layer?", "should_trigger": true },
+    { "query": "Help me ground these approach findings before I submit them.", "should_trigger": true },
+    { "query": "As Explorer, how do I derive objectives instead of restating the seed?", "should_trigger": true },
+    { "query": "What's the per-layer weighting for Challenger attacks?", "should_trigger": true },
+    { "query": "How should I verify this Explorer claim instead of trusting a shared prior?", "should_trigger": true },
+    { "query": "I'm reviewing the Approaches layer as Challenger — what should I check?", "should_trigger": true },
+    { "query": "Start a deliberation on docs/idea.md.", "should_trigger": false },
+    { "query": "Kick off the deliberation workflow on this seed file.", "should_trigger": false },
+    { "query": "Run deliberation on this idea.", "should_trigger": false },
+    { "query": "$aiw-deliberation docs/seed.md", "should_trigger": false },
+    { "query": "Help me brainstorm ideas for our next product feature.", "should_trigger": false },
+    { "query": "What are the pros and cons of moving to microservices?", "should_trigger": false },
+    { "query": "Pause the deliberation workflow, I need to fix something.", "should_trigger": false },
+    { "query": "Resume the halted deliberation workflow.", "should_trigger": false }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "skill_name": "ai-whisper-deliberation-craft",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I'm the Explorer for the Approaches layer in this Deliberation run. The committed Objectives finding: 'CI feedback time on the main repo is 14+ minutes; the real pain is slow signal on pull requests, not raw compute cost.' Research the Approaches layer for this objective per the research contract.",
+      "expected_output": "The agent surveys multiple distinct approaches (e.g. test sharding, affected-only test selection, caching layers, tiered pipelines), grounds each in prior art or labels it an assumption, logs known-unknowns, and picks no winner — approach ranking belongs to a later layer.",
+      "files": [],
+      "expectations": [
+        "Surveys the space and produces multiple distinct approaches instead of jumping to one preferred option",
+        "Does not pick or rank a winning approach at this layer",
+        "Grounds each approach in a traceable source (prior art, primary source) or explicitly labels it as an assumption",
+        "Logs known-unknowns rather than silently omitting gaps",
+        "Does not restate the gate contract, verdict mechanics, or output format as if this skill were authoritative over them"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I'm the Challenger for the Objectives layer. The Explorer's committed output claims: '1. Developers lose about two hours per day to CI waits (source: team vibes). 2. The objective is to cut p95 CI time below five minutes. 3. Compute cost is irrelevant to everyone.' Attack this output per the taxonomy.",
+      "expected_output": "The agent applies Objectives-weighted lenses (framing, assumption): flags the ungrounded 'team vibes' evidence, questions whether the five-minute figure is derived or invented, attacks the 'irrelevant to everyone' universal, and verifies what it can while explicitly logging any verification it cannot perform — without issuing a gate verdict.",
+      "files": [],
+      "expectations": [
+        "Applies attack lenses weighted for the Objectives layer (framing and assumption) rather than a generic unweighted critique",
+        "Flags the 'team vibes' claim as ungrounded evidence rather than accepting it",
+        "Verifies at least one objection against evidence it can actually reach, or explicitly logs the verification it could not perform",
+        "Does not issue the gate decision itself — recommending against advancement is legitimate Challenger output; deciding or announcing the gate verdict is not"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Challenger here — the Explorer's Tradeoffs entry says approach B 'obviously improves p95 latency at negligible cost', with no source attached. Attack this claim per the taxonomy and the verification standard.",
+      "expected_output": "The agent treats felt confidence as the defect: it names the grounding/materiality attack, demands or performs concrete verification of both the latency and cost halves, labels the claim ungrounded as it stands, and issues no gate verdict.",
+      "files": [],
+      "expectations": [
+        "Attacks the claim's grounding — 'obviously' and 'negligible' are felt confidence, not evidence",
+        "Demands or performs concrete verification for both the latency improvement and the cost claim",
+        "Labels the claim ungrounded rather than accepting or softening it",
+        "Does not issue a gate verdict"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Explorer on the Tradeoffs layer: you cannot find any grounding for approach C's claimed migration cost — no prior art, nothing reachable. Apply the research contract to this situation and produce your entry for approach C.",
+      "expected_output": "The agent writes the approach C entry with the migration cost explicitly labeled as an assumption / known-unknown, logs the failed search as a gap, and neither fabricates a source nor silently drops the approach.",
+      "files": [],
+      "expectations": [
+        "Explicitly labels the migration cost as an assumption or known-unknown in the entry",
+        "Logs the failed grounding search as a gap rather than omitting it",
+        "Does not fabricate a source or citation for the cost claim",
+        "Does not silently drop approach C from the layer"
+      ]
+    }
+  ]
+}

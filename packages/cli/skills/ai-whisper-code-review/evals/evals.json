@@ -1,0 +1,62 @@
+{
+  "skill_name": "ai-whisper-code-review",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Review this diff against the bug report before we close the task out.\n\nBug report: parse() throws on empty input; add a guard and a regression test.\n\nDiff:\n```diff\n--- a/src/parser.ts\n+++ b/src/parser.ts\n@@\n export function parse(input: string): Token[] {\n+  if (input.length === 0) return []\n   const tokens = tokenize(input)\n   return tokens\n }\n--- a/tests/parser.test.ts\n+++ b/tests/parser.test.ts\n@@\n+test(\"parse returns [] on empty input\", () => {\n+  expect(parse(\"\")).toEqual([])\n+})\n```",
+      "expected_output": "The agent reviews the diff strictly against the bug report: guard present, regression test present and one that would have failed before the fix, no scope creep — and concludes in prose that the task is acceptable (or names a concrete blocking gap).",
+      "files": [],
+      "expectations": [
+        "Reviews the diff against the stated task artifact (the bug report) rather than reviewing code in a vacuum",
+        "Checks whether the new test would have failed before the fix",
+        "Does not block on style, naming, or speculative concerns unrelated to the bug report",
+        "Ends with a clear approve-or-cannot-proceed conclusion stated in prose, not a bare workflow control token like 'approve'"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "This review is part of an ai-whisper workflow handoff — report using the handoff's Findings: / Non-blocking risks: format.\n\nPlan step (task artifact): add a slugify(title) helper that lowercases, trims, replaces whitespace runs with single hyphens, and strips all other non-alphanumerics; include a unit test.\n\nDelivered diff:\n```diff\n+export function slugify(title: string): string {\n+  return title.toLowerCase().trim().replace(/\\s+/g, \"-\").replace(/[^a-z0-9-]/g, \"\")\n+}\n+test(\"slugify basic\", () => {\n+  expect(slugify(\"Hello World\")).toBe(\"hello-world\")\n+})\n```",
+      "expected_output": "The agent reviews the diff against the plan step and reports in the handoff format: a Findings: section only if something meets the blocking standard, Non-blocking risks: as the final section, and no bare workflow control tokens.",
+      "files": [],
+      "expectations": [
+        "Structures output with a Findings: section (or omits it entirely when there are no blocking findings)",
+        "Keeps Non-blocking risks: as the final section",
+        "Does not emit bare workflow control labels such as 'approve', 'findings', or 'escalate' as standalone tokens",
+        "Only reports findings that meet the blocking standard (concrete, fixable, evidenced)"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Review this fix — did the prior finding actually get fixed, or did the agent just add an unrelated test?\n\nPrior blocking finding: getConfig() dereferences cfg.server without a null check, crashing when the config file is missing.\n\nFix diff:\n```diff\n--- a/tests/config.test.ts\n+++ b/tests/config.test.ts\n@@\n+test(\"getConfig returns default port for empty object\", () => {\n+  expect(getConfig({}).port).toBe(3000)\n+})\n```",
+      "expected_output": "The agent notices the diff never touches getConfig's null handling: the added test is unrelated and would not have failed before, so the prior finding is NOT fixed — it reports that as the blocking conclusion without expanding into an unrelated broad review.",
+      "files": [],
+      "expectations": [
+        "Focuses on whether the prior finding is actually fixed and concludes it is not — the diff does not touch the null-check path",
+        "Notes the added test is unrelated and would not have failed before the fix",
+        "Does not expand into a full re-review of unrelated code"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Fix review: your earlier blocking finding on this step was 'the empty-input guard returns null, breaking the parse() -> Token[] contract'. The implementer's fix:\n\n```diff\n--- a/src/parser.ts\n+++ b/src/parser.ts\n@@\n-  if (input.length === 0) return null\n+  if (input.length === 0) return []\n```\n\nRe-review the fix.",
+      "expected_output": "The agent scopes the re-review to the prior finding: the guard now returns [] matching the contract, so the finding is resolved — stated in prose, without reopening a broad review of the rest of the step.",
+      "files": [],
+      "expectations": [
+        "Verifies the specific prior finding is addressed by the fix (guard now returns [] per the contract)",
+        "Does not reopen a broad review of code unrelated to the fix",
+        "States the conclusion in prose rather than a bare control token"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Workflow handoff review. Plan step (task artifact): rename the exported constant DEFAULT_TIMEOUT to REQUEST_TIMEOUT_MS in src/http.ts and update its one usage.\n\nDelivered diff:\n```diff\n--- a/src/http.ts\n+++ b/src/http.ts\n@@\n-export const DEFAULT_TIMEOUT = 30_000\n+export const REQUEST_TIMEOUT_MS = 30_000\n@@\n-  const t = opts.timeout ?? DEFAULT_TIMEOUT\n+  const t = opts.timeout ?? REQUEST_TIMEOUT_MS\n```\n\nReport using the handoff's Findings: / Non-blocking risks: format.",
+      "expected_output": "A clean mechanical rename matching the task exactly: the agent reports no blocking findings (omitting or emptying Findings:), keeps Non-blocking risks: as the final section, and approves in prose without inventing blockers.",
+      "files": [],
+      "expectations": [
+        "Reports no blocking findings for this diff — it matches the task artifact exactly — rather than inventing concerns to fill the format",
+        "Keeps Non-blocking risks: as the final labeled section (closing acceptance prose after it is fine)",
+        "States the acceptance in prose, never as a bare 'approve' control token"
+      ]
+    }
+  ]
+}

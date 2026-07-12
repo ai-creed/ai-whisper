@@ -1,0 +1,36 @@
+{
+  "skill_name": "ai-whisper-ralph",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Kick off ralph with evals/files/GOAL.md",
+      "expected_output": "The agent treats the ask as a ralph-loop kickoff, consults the ai-whisper-workflow delegation target (or falls back to the inline contract), vets the goal file, then attempts the collab-readiness gate; with no whisper CLI in this workspace it reports that honestly and never claims a workflow started.",
+      "files": ["evals/files/GOAL.md"],
+      "expectations": [
+        "Identifies the ask as the ralph / ralph-loop workflow in any phrasing — prose naming counts; the literal --type token is not required",
+        "Vets the goal file evals/files/GOAL.md before any kickoff attempt",
+        "Attempts collab readiness (whisper collab status --json) or honestly reports the whisper CLI / collab / delegation target is unavailable, and never claims a workflow was started"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Run ralph on docs/missing-GOAL.md",
+      "expected_output": "The agent vets the goal path first, finds it missing, reports it is not readable and asks for the correct path — no workflow start is attempted and none is claimed.",
+      "files": [],
+      "expectations": [
+        "Does NOT run whisper workflow start when the goal file is missing",
+        "Tells the user the goal file is not readable / missing and asks for the correct path instead of guessing"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Use the ai-whisper-ralph flow to kick off SDD on evals/files/GOAL.md",
+      "expected_output": "The agent refuses to bend the alias to another workflow type: it explains ai-whisper-ralph maps only to ralph-loop and points the user to the SDD entry point instead of starting anything.",
+      "files": ["evals/files/GOAL.md"],
+      "expectations": [
+        "Does not start a spec-driven-development workflow through this alias",
+        "Holds the type-fidelity line: refuses outright or asks the user once to resolve the SDD-ask-vs-goal-file mismatch — either is correct; silently starting a workflow is not"
+      ]
+    }
+  ]
+}

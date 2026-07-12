@@ -1,0 +1,21 @@
+{
+  "skill_name": "ai-whisper-deliberation",
+  "queries": [
+    { "query": "run deliberation on docs/idea.md", "should_trigger": true },
+    { "query": "$aiw-deliberation docs/seed.md", "should_trigger": true },
+    { "query": "deliberate on this idea docs/ideas/plugin-system.md", "should_trigger": true },
+    { "query": "kick off deliberation with docs/seed.md", "should_trigger": true },
+    { "query": "use ai-whisper-deliberation on docs/idea.md", "should_trigger": true },
+    { "query": "start the deliberation workflow on docs/ideas/caching.md", "should_trigger": true },
+    { "query": "run the deliberation skill on docs/seed.md", "should_trigger": true },
+    { "query": "deliberation kickoff on docs/ideas/split-service.md", "should_trigger": true },
+    { "query": "run a deliberation over the seed at docs/ideas/auth.md", "should_trigger": true },
+    { "query": "deliberate docs/idea.md", "should_trigger": true },
+    { "query": "run SDD on docs/spec.md", "should_trigger": false },
+    { "query": "run bugfix on docs/bug.md", "should_trigger": false },
+    { "query": "ralph loop on docs/GOAL.md", "should_trigger": false },
+    { "query": "help me brainstorm pros and cons of Postgres vs MySQL", "should_trigger": false },
+    { "query": "I'm the Challenger in this deliberation run — attack the Objectives layer", "should_trigger": false },
+    { "query": "write up my idea into a seed file", "should_trigger": false }
+  ]
+}

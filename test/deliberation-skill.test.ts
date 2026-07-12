@@ -12,6 +12,9 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const CRAFT = join(repoRoot, "packages/cli/skills/ai-whisper-deliberation-craft/SKILL.md");
 const sourceSkillsDir = join(repoRoot, "packages/cli/skills");
 const deliberationSkill = join(sourceSkillsDir, "ai-whisper-deliberation", "SKILL.md");
+// The dispatcher that the deliberation alias now delegates to; it owns the
+// readiness gate, the fire-and-forget contract, and operator pause-control.
+const dispatcherSkill = join(sourceSkillsDir, "ai-whisper-workflow", "SKILL.md");
 
 /** Run the real build copy from the real source skills dir into a temp dest. */
 function copyRealSkills(): string {
@@ -39,13 +42,23 @@ describe("ai-whisper-deliberation skill", () => {
 		expect(md).not.toContain("--type=complex-bug-fixing");
 	});
 
-	it("keeps the readiness gate, is fire-and-forget, and carries operator control", () => {
-		const md = readFileSync(deliberationSkill, "utf8");
-		expect(md).toContain("whisper collab status --json");
-		expect(md).toMatch(/fire-and-forget/i);
-		expect(md).toMatch(/do NOT (continue )?poll/i);
-		expect(md).toContain("whisper workflow pause");
-		expect(md).toContain("whisper workflow resume");
+	it("delegates to the dispatcher, which owns the readiness gate, fire-and-forget, and operator control", () => {
+		// This skill is now a thin alias: it delegates to ai-whisper-workflow and
+		// keeps only the collab-status gate + fire-and-forget language in its
+		// inline fallback. The no-poll rule and operator pause/resume control now
+		// live in the dispatcher it delegates to.
+		const alias = readFileSync(deliberationSkill, "utf8");
+		expect(alias).toContain("ai-whisper-workflow");
+		expect(alias).toMatch(/delegat/i);
+		expect(alias).toContain("whisper collab status --json");
+		expect(alias).toMatch(/fire-and-forget/i);
+
+		const dispatcher = readFileSync(dispatcherSkill, "utf8");
+		expect(dispatcher).toContain("whisper collab status --json");
+		expect(dispatcher).toMatch(/fire-and-forget/i);
+		expect(dispatcher).toMatch(/do NOT (continue )?poll/i);
+		expect(dispatcher).toContain("whisper workflow pause");
+		expect(dispatcher).toContain("whisper workflow resume");
 	});
 
 	it("validates the seed is non-empty (rejects empty / whitespace-only files)", () => {

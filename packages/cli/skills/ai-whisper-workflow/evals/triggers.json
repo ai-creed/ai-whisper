@@ -1,0 +1,25 @@
+{
+  "skill_name": "ai-whisper-workflow",
+  "queries": [
+    { "query": "run SDD on docs/specs/2026-07-10-m5c-design.md", "should_trigger": true },
+    { "query": "$aiw-sdd docs/specs/cache-design.md", "should_trigger": true },
+    { "query": "kick off spec-driven-development with docs/spec.md", "should_trigger": true },
+    { "query": "run bugfix on docs/bug.md", "should_trigger": true },
+    { "query": "fix this bug report docs/reports/login-crash.md", "should_trigger": true },
+    { "query": "kick off complex-bug-fixing with docs/bug.md", "should_trigger": true },
+    { "query": "run deliberation on docs/idea.md", "should_trigger": true },
+    { "query": "deliberate on this idea docs/seed.md", "should_trigger": true },
+    { "query": "$aiw-deliberation docs/seed.md", "should_trigger": true },
+    { "query": "ralph loop on docs/GOAL.md", "should_trigger": true },
+    { "query": "kick off ralph with docs/GOAL.md", "should_trigger": true },
+    { "query": "resume the halted whisper workflow", "should_trigger": true },
+    { "query": "Fix this bug: the login form crashes on empty passwords.", "should_trigger": false },
+    { "query": "Review this pull request for logic errors.", "should_trigger": false },
+    { "query": "Let's brainstorm ideas for the new API design.", "should_trigger": false },
+    { "query": "Execute the plan at docs/superpowers/plans/feature.md task by task.", "should_trigger": false },
+    { "query": "Write a spec for the caching feature.", "should_trigger": false },
+    { "query": "Run a quick task with my teammate: fix the typo in README.", "should_trigger": false },
+    { "query": "The whisper collab dashboard shows an error — help me debug it.", "should_trigger": false },
+    { "query": "Start my dev server and watch for changes.", "should_trigger": false }
+  ]
+}

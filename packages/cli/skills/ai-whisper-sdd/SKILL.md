@@ -1,164 +1,69 @@
 ---
 name: ai-whisper-sdd
-description: Kick off the spec-driven-development (SDD) workflow on a given spec file. Use when the user says things like "run SDD on <path>", "kick off spec-driven-development with <path>", "/aiw-sdd <path>", "$aiw-sdd <path>", or otherwise asks to start the spec-driven-development workflow on a specific spec file.
+description: Use when the user asks to run SDD / spec-driven-development on an approved spec file, in any phrasing ("run SDD on docs/spec.md", "sdd kickoff", "kick off spec-driven-development with <path>", "$aiw-sdd") or by this skill's name — applies the ai-whisper-workflow skill with workflow type spec-driven-development. Kickoff only; executing an existing plan is a different job.
+version: 0.1.0
 ---
 
 # ai-whisper-sdd
 
-Kick off the ai-whisper spec-driven-development (SDD) workflow on a specific spec file. This skill is fire-and-forget: it verifies the collab is ready, runs `whisper workflow start`, and exits. **Do NOT continue polling or narrating after kickoff** — continuous activity from the calling agent keeps it busy, which blocks the broker's idle detection and stalls the workflow. The dashboard (`whisper collab dashboard`) is the inspection surface during the run.
+## Intent
 
-## When to invoke
+A name-preserving alias. The pre-collapse kickoff skills became the
+`ai-whisper-workflow` skill; this one keeps the `ai-whisper-sdd` picker name
+alive and delegates to that skill with workflow type
+`spec-driven-development`. It adds no behavior of its own.
 
-Match phrases like:
-- *"run SDD on docs/spec.md"* / *"kick off spec-driven-development with @docs/spec.md"*
-- *"/aiw-sdd docs/spec.md"* (Claude picker form)
-- *"$aiw-sdd docs/spec.md"* (Codex picker form)
+## Inputs
 
-If the user references a spec ambiguously (e.g., "run SDD on the spec we just wrote"), ASK them for the path ONCE before proceeding. Do not guess.
+- The approved spec file path (the workflow's `--spec` input). An
+  `@`-prefixed form is accepted; strip the `@` before resolving.
 
-## Steps
+## Preconditions
 
-### 1. Resolve the spec path
+- The `ai-whisper-workflow` skill is installed alongside this one — it is the
+  delegation target and owns the full procedure.
+- Its preconditions apply unchanged: `whisper` CLI on PATH, a ready collab
+  with two bound agents, a readable spec file.
 
-The user names a path. If it begins with `@`, strip the `@`. Resolve to an absolute path. Verify it's a readable file via the Read tool. If not readable:
+## Procedure
 
-> Spec file `<path>` is not readable. Check the path and try again.
+1. Read the `ai-whisper-workflow` skill's SKILL.md — it is installed in the
+   adjacent directory of the same skills root.
+2. Apply it with workflow type `spec-driven-development` and the given spec
+   path — file vetting, collab readiness, kickoff, and the one-line report
+   all follow that skill verbatim.
+3. Only if the delegation target is not installed, use the inline fallback:
+   vet the spec path, gate on `whisper collab status --json`, then run:
 
-### 2. Verify collab readiness
+   ```bash
+   whisper workflow start --type=spec-driven-development --spec=<resolved-absolute-path>
+   ```
 
-Run:
+   Report exactly one line — Workflow `<workflowId>` started. Track progress
+   with `whisper collab dashboard`. — then stop.
 
-```bash
-whisper collab status --json
-```
+## Output
 
-Parse the JSON. The expected shape is:
+Identical to ai-whisper-workflow's output contract: exactly one
+workflow-started line on success, or the matching gate error verbatim, and
+nothing more after kickoff.
 
-```json
-{
-  "collabId": "collab_xyz",
-  "workspaceRoot": "/path",
-  "status": "active",
-  "daemon": { "host": "127.0.0.1", "port": 4311, "pid": 12345 },
-  "agents": [
-    { "agentType": "codex",  "bindingState": "bound" | "pending_attach" | "unbound" | null },
-    { "agentType": "claude", "bindingState": "bound" | "pending_attach" | "unbound" | null },
-    { "agentType": "ezio",   "bindingState": "bound" | "pending_attach" | "unbound" | null },
-    { "agentType": "agy",    "bindingState": "bound" | "pending_attach" | "unbound" | null },
-    { "agentType": "cursor", "bindingState": "bound" | "pending_attach" | "unbound" | null }
-  ],
-  "recovery": { "state": "normal" | "recovery_required" | "recovered" },
-  "evaluator": { "ready": true | false, "status": "ready" | "missing_anthropic_key" | "invalid_config" | "disabled" | "unknown" }
-}
-```
+## Examples
 
-Required for readiness:
-- `daemon !== null`
-- `status === "active"`
-- `recovery.state === "normal"`
-- **EXACTLY TWO agents bound** — among the supported agent types (`codex`, `claude`,
-  `ezio`, `agy`, `cursor`), exactly two must have `bindingState === "bound"` (the
-  implementer + reviewer pair). **`ezio`, `agy`, and `cursor` are replacement
-  roles**: any of them stands in for `codex` or `claude`, so do NOT require
-  `codex` and `claude` specifically — any pair of two distinct supported agents
-  passes. (The `agents` array may list all supported types; the displaced slots
-  read `null`/`unbound` and that is expected when a replacement agent takes a
-  seat.)
-- `evaluator.status` is NOT `"missing_anthropic_key"` or `"invalid_config"` (i.e., `ready`, `disabled`, and `unknown` all pass this gate; only the two true-misconfiguration statuses block)
+Input: the user says "run SDD on docs/specs/2026-07-12-auth-design.md".
 
-If the JSON has `{ "error": "no_collab_for_cwd", ... }`:
+The agent reads the ai-whisper-workflow skill and applies it with type
+`spec-driven-development`; the spec is readable, the collab is ready, and the
+kickoff succeeds.
 
-> No collab found in this workspace. Mount any **two** agents (e.g. `whisper collab mount ezio` in one terminal and `whisper collab mount codex` — or `claude` / `agy` / `cursor` — in another), then re-run this skill.
+Output: Workflow `wf_31ab9c` started. Track progress with `whisper collab dashboard`.
 
-If `recovery.state === "recovery_required"`:
+## Anti-patterns
 
-> The collab is in recovery_required state. Run `whisper collab recover`, then re-run this skill.
-
-If `recovery.state === "recovered"`:
-
-> The collab has been recovered and still needs reconnect. Run `whisper collab reconnect <agent>` for each bound agent, then re-run this skill.
-
-If FEWER than two agents are bound (count `bindingState === "bound"` across
-the supported agent types):
-
-> Only <N> agent(s) bound (<list bound agentTypes>). A workflow needs two — an
-> implementer and a reviewer. Mount another agent (`whisper collab mount <codex|claude|ezio|agy|cursor>`)
-> in a separate terminal, then re-run this skill. `ezio`, `agy`, or `cursor` may replace `codex` or `claude`.
-
-(Do NOT append permission flags — mount already spawns the agent in full-permission mode; passing `--dangerously-skip-permissions` / `--dangerously-bypass-approvals-and-sandbox` again can crash the agent on a duplicate-argument error.)
-
-If `evaluator.status === "missing_anthropic_key"` (i.e., `evaluator.ready === false` AND status is `missing_anthropic_key`):
-
-> The evaluator has no Anthropic API key. Create `~/.ai-whisper/auth.json` with `{ "ANTHROPIC_API_KEY": "sk-ant-..." }` (chmod 600), then restart the daemon (`whisper collab stop` and re-mount, or restart the broker), and re-run this skill. See the README "Evaluator configuration" section.
-
-If `evaluator.status === "invalid_config"` (i.e., `evaluator.ready === false` AND status is `invalid_config`):
-
-> The evaluator config is malformed. Fix the JSON in `~/.ai-whisper/auth.json` or `~/.ai-whisper/config.json`, then restart the daemon and re-run this skill. See the README "Evaluator configuration" section.
-
-If `evaluator.status === "disabled"`: this means the orchestrator is intentionally off — it is NOT a misconfiguration and does NOT block this skill gate. Proceed to step 3; `workflow start` will surface the orchestrator-disabled error itself.
-
-(Note: `evaluator.ready` is `false` for `missing_anthropic_key`, `invalid_config`, AND `disabled`; it is `true` only for `ready` and `unknown`. That's why this gate keys off `status` rather than `ready` — so `disabled` does not block the skill while the two true-misconfiguration statuses do.)
-
-### 3. Kick off the workflow
-
-Run:
-
-```bash
-whisper workflow start --type=spec-driven-development --spec=<resolved-absolute-path>
-```
-
-(No `--implementer` / `--reviewer` needed — the agent triggering this skill becomes the implementer and the other agent the reviewer. Pass `--implementer <agent> --reviewer <agent>` only to override.)
-
-Parse the workflowId from stdout (format: `Workflow started: <workflowId>`).
-
-### 4. Report and exit
-
-Print exactly:
-
-> Workflow `<workflowId>` started. Track progress with `whisper collab dashboard`.
-
-Then stop. Do NOT poll `whisper workflow inspect`. Do NOT continue narrating. The workflow runs in the broker driver; your job is done.
-
-## Why fire-and-forget
-
-The broker's relay handoff system uses **idle detection** to know when an agent is ready to receive the next handoff. If this skill polled the workflow's status every few seconds, the calling agent (you) would emit output continuously, the broker would never see you as idle, and the workflow's first handoff couldn't be delivered to you — the workflow stalls. Kick off and exit; observation belongs to the dashboard.
-
-## Duo roleplay
-
-The mount may have assigned you a movie-duo character for this collab session — check the `AI_WHISPER_CHARACTER` / `AI_WHISPER_CHARACTER_ROLE` env vars, or the `[ai-whisper duo]` brief injected at session start, to find out. If so, staying in character is welcome — but **conversational prose only**: chat, status updates, banter with the operator or your teammate.
-
-Never let character flavor into code, commit messages, PR descriptions, or file contents. The reviewer/evaluator protocol output (verdict labels, approve/findings/escalate) stays protocol-exact regardless of who you're playing.
-
-## Resume / cancel
-
-If the user asks to resume a halted workflow, run:
-
-```bash
-whisper workflow resume <workflowId>
-```
-
-If they ask to cancel:
-
-```bash
-whisper workflow cancel <workflowId>
-```
-
-Same fire-and-forget shape: invoke, report one line, exit.
-
-## Pausing the workflow (operator control)
-
-If the user interrupts you mid-workflow and asks to pause it (e.g. "pause the workflow, I need to fix X"):
-
-1. Find the active workflow id: `whisper workflow list`.
-2. Run `whisper workflow pause <workflowId>`.
-3. Acknowledge and **stop working** — do not start the next change.
-
-The operator edits artifacts while paused, then resumes:
-
-```bash
-whisper workflow resume <workflowId> --message "what I changed and why"
-```
-
-On resume the agents receive a notice listing the changed files plus the operator note, and must re-read those files before continuing.
-
-Provider gotcha: the Codex CLI **exits its session** on Ctrl+C at an idle prompt (a mid-task Ctrl+C only interrupts the running task). The user typically interrupts a *busy* agent before issuing the pause instruction — do not assume Ctrl+C is a safe no-op.
+- Re-implementing or paraphrasing the ai-whisper-workflow procedure here —
+  this alias delegates; the target owns the procedure.
+- Using this alias for any workflow type other than
+  `spec-driven-development` — redirect bugfix, deliberation, or ralph asks to
+  their own entry points instead of bending the type.
+- Polling or narrating after kickoff — the delegation target's
+  fire-and-forget contract applies unchanged.

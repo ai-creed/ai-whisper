@@ -1,0 +1,36 @@
+{
+  "skill_name": "ai-whisper-deliberation",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Run deliberation on evals/files/seed-idea.md",
+      "expected_output": "The agent treats the ask as a deliberation kickoff, consults the ai-whisper-workflow delegation target (or falls back to the inline contract), vets the seed (readable and non-empty), then attempts the collab-readiness gate; with no whisper CLI in this workspace it reports that honestly and never claims a workflow started.",
+      "files": ["evals/files/seed-idea.md"],
+      "expectations": [
+        "Identifies the workflow type as deliberation, in its reply or in an attempted whisper command",
+        "Vets the seed file evals/files/seed-idea.md before any kickoff attempt",
+        "Attempts collab readiness (whisper collab status --json) or honestly reports the whisper CLI / collab / delegation target is unavailable, and never claims a workflow was started"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Run deliberation on docs/ideas/missing-seed.md",
+      "expected_output": "The agent vets the seed path first, finds it missing, reports it is not readable and asks for the correct path — no workflow start is attempted and none is claimed.",
+      "files": [],
+      "expectations": [
+        "Does NOT run whisper workflow start when the seed file is missing",
+        "Tells the user the seed file is not readable / missing and asks for the correct path instead of guessing"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Use the ai-whisper-deliberation flow to run SDD on evals/files/seed-idea.md",
+      "expected_output": "The agent refuses to bend the alias to another workflow type: it explains ai-whisper-deliberation maps only to deliberation and points the user to the SDD entry point instead of starting anything.",
+      "files": ["evals/files/seed-idea.md"],
+      "expectations": [
+        "Does not start a spec-driven-development workflow through this alias",
+        "Explains the alias maps only to deliberation and redirects the user to the correct SDD entry point"
+      ]
+    }
+  ]
+}

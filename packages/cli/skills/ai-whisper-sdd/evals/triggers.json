@@ -1,0 +1,21 @@
+{
+  "skill_name": "ai-whisper-sdd",
+  "queries": [
+    { "query": "run SDD on docs/specs/cache-design.md", "should_trigger": true },
+    { "query": "$aiw-sdd docs/specs/cache-design.md", "should_trigger": true },
+    { "query": "kick off spec-driven-development with docs/spec.md", "should_trigger": true },
+    { "query": "start the SDD workflow on docs/specs/auth-design.md", "should_trigger": true },
+    { "query": "use ai-whisper-sdd on docs/spec.md", "should_trigger": true },
+    { "query": "run the sdd skill on docs/specs/design.md", "should_trigger": true },
+    { "query": "sdd kickoff on docs/spec.md", "should_trigger": true },
+    { "query": "spec-driven development on docs/specs/payments.md please", "should_trigger": true },
+    { "query": "run SDD on the approved spec at docs/specs/m6-design.md", "should_trigger": true },
+    { "query": "SDD docs/spec.md", "should_trigger": true },
+    { "query": "run bugfix on docs/bug.md", "should_trigger": false },
+    { "query": "ralph loop on docs/GOAL.md", "should_trigger": false },
+    { "query": "run deliberation on docs/idea.md", "should_trigger": false },
+    { "query": "write a spec for the caching feature", "should_trigger": false },
+    { "query": "execute the plan at docs/superpowers/plans/feature.md", "should_trigger": false },
+    { "query": "what does SDD stand for in this repo?", "should_trigger": false }
+  ]
+}

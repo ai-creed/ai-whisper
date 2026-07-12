@@ -1,0 +1,25 @@
+{
+  "skill_name": "ai-whisper-quick-task",
+  "queries": [
+    { "query": "run quick task on docs/notes.md", "should_trigger": true },
+    { "query": "kick off quick-task with docs/notes.md", "should_trigger": true },
+    { "query": "resume the quick-task workflow wf_12ab with a note", "should_trigger": true },
+    { "query": "$aiw-quick-task docs/notes.md", "should_trigger": true },
+    { "query": "quick task", "should_trigger": true },
+    { "query": "run quick task: fix the off-by-one in the pagination helper", "should_trigger": true },
+    { "query": "We approved the approach above — kick off quick-task now.", "should_trigger": true },
+    { "query": "Start the quick-task workflow for this small fix.", "should_trigger": true },
+    { "query": "Cancel the quick-task workflow wf_a1b2.", "should_trigger": true },
+    { "query": "Cancel the quick-task workflow wf_a1b2.", "should_trigger": true },
+    { "query": "Pause the quick-task workflow, I need to fix something first.", "should_trigger": true },
+    { "query": "Write the brief and start quick-task on this bug fix.", "should_trigger": true },
+    { "query": "run SDD on docs/spec.md", "should_trigger": false },
+    { "query": "kick off a bugfix workflow on this issue", "should_trigger": false },
+    { "query": "rename this variable across the repo", "should_trigger": false },
+    { "query": "run deliberation on this seed idea file", "should_trigger": false },
+    { "query": "run ralph on the goal file", "should_trigger": false },
+    { "query": "Review this function for bugs and give me your feedback.", "should_trigger": false },
+    { "query": "This feature needs a full design spec before we touch any code — let's redesign the auth flow with SSO support.", "should_trigger": false },
+    { "query": "Just fix the failing test in auth.test.ts directly, no workflow needed.", "should_trigger": false }
+  ]
+}

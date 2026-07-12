@@ -75,7 +75,12 @@ describe("ai-whisper-plan-execution skill content", () => {
 	});
 
 	it("keeps Path B non-blocking for harnesses without subagent dispatch", () => {
-		expect(txt).toMatch(/nothing in this skill blocks or changes your handback/i);
+		// The phrase hard-wraps after "your" (lines 99-100: "...changes your\n
+		// handback"), so match against a whitespace-normalized copy.
+		const norm = (s: string) => s.replace(/\s+/g, " ");
+		expect(norm(txt)).toMatch(
+			/nothing in this skill blocks or changes your handback/i,
+		);
 	});
 
 	it("keeps the workflow prompt authoritative", () => {

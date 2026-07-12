@@ -68,8 +68,13 @@ describe("ai-whisper-quick-task skill", () => {
 
 	it("instructs writing .ai-whisper/.gitignore without clobbering an existing one", () => {
 		const md = readFileSync(quickTaskSkill, "utf8");
+		// "never clobber" hard-wraps ("...absent; never\nclobber an existing
+		// file"), so match against a whitespace-normalized copy. The create-if-
+		// absent guard is the stronger pin: it writes only when the file is absent.
+		const norm = (s: string) => s.replace(/\s+/g, " ");
 		expect(md).toMatch(/\.ai-whisper\/\.gitignore/);
-		expect(md).toMatch(/never clobber/i);
+		expect(norm(md)).toMatch(/never clobber/i);
+		expect(md).toContain("[ -f .ai-whisper/.gitignore ] || printf");
 	});
 
 	it("ships into the post-build bundled dir, alongside ai-whisper-sdd", () => {

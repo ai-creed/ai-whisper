@@ -1,0 +1,36 @@
+{
+  "skill_name": "ai-whisper-bugfix",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Run bugfix on evals/files/bug-report.md",
+      "expected_output": "The agent treats the ask as a complex-bug-fixing kickoff, consults the ai-whisper-workflow delegation target (or falls back to the inline contract), vets the bug report, then attempts the collab-readiness gate; with no whisper CLI in this workspace it reports that honestly and never claims a workflow started.",
+      "files": ["evals/files/bug-report.md"],
+      "expectations": [
+        "Identifies the ask as the bugfix / complex-bug-fixing workflow in any phrasing — prose naming counts; the literal --type token is not required",
+        "Vets the bug report evals/files/bug-report.md before any kickoff attempt",
+        "Attempts collab readiness (whisper collab status --json) or honestly reports the whisper CLI / collab / delegation target is unavailable, and never claims a workflow was started"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Run bugfix on docs/reports/missing-report.md",
+      "expected_output": "The agent vets the bug-report path first, finds it missing, reports it is not readable and asks for the correct path — no workflow start is attempted and none is claimed.",
+      "files": [],
+      "expectations": [
+        "Does NOT run whisper workflow start when the bug report is missing",
+        "Tells the user the bug report is not readable / missing and asks for the correct path instead of guessing"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Use the ai-whisper-bugfix flow to run a deliberation on evals/files/bug-report.md",
+      "expected_output": "The agent refuses to bend the alias to another workflow type: it explains ai-whisper-bugfix maps only to complex-bug-fixing and points the user to the deliberation entry point instead of starting anything.",
+      "files": ["evals/files/bug-report.md"],
+      "expectations": [
+        "Does not start a deliberation workflow through this alias",
+        "Explains the alias maps only to complex-bug-fixing and redirects the user to the correct deliberation entry point"
+      ]
+    }
+  ]
+}

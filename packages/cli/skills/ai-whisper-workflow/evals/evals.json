@@ -1,0 +1,47 @@
+{
+  "skill_name": "ai-whisper-workflow",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Run SDD on evals/files/cache-design-spec.md",
+      "expected_output": "The agent identifies the spec-driven-development workflow, verifies the spec file is readable, then attempts the collab-readiness check; since the whisper CLI is unavailable in this workspace it reports that honestly and stops — it never fabricates a workflow-started line.",
+      "files": ["evals/files/cache-design-spec.md"],
+      "expectations": [
+        "Identifies the ask as the spec-driven-development workflow, in its reply or in an attempted whisper command",
+        "Verifies the spec file evals/files/cache-design-spec.md is readable before any kickoff attempt",
+        "Attempts the collab-readiness check (whisper collab status --json) or honestly reports the whisper CLI / collab is unavailable, and never claims a workflow was started"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Kick off ralph with evals/files/GOAL.md",
+      "expected_output": "The agent identifies the ralph-loop workflow, vets the goal file, then attempts the collab-readiness check; with no whisper CLI in the workspace it reports the failure honestly, without fabricating a kickoff and without polling.",
+      "files": ["evals/files/GOAL.md"],
+      "expectations": [
+        "Identifies the ask as the ralph-loop workflow, in its reply or in an attempted whisper command",
+        "Reads or vets the goal file before any whisper workflow start attempt",
+        "Attempts collab readiness or honestly reports whisper is unavailable; does not claim a workflow started and does not poll"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Run deliberation on evals/files/empty-idea.md",
+      "expected_output": "The agent finds the seed file exists but is empty, refuses to start the workflow, and tells the user a deliberation needs a non-empty topic — at least a one-line idea, problem, or question — before retrying.",
+      "files": ["evals/files/empty-idea.md"],
+      "expectations": [
+        "Detects that the seed file is empty and does NOT run whisper workflow start",
+        "Tells the user the seed file is empty and must contain at least a one-line idea, problem, or question before retrying"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Resume the halted whisper workflow wf_7d41f2 — note for the agents: I fixed the spec typos.",
+      "expected_output": "The agent runs whisper workflow resume wf_7d41f2 with the operator note passed via --message (or honestly reports the whisper CLI is unavailable), acknowledges in one line, and does not poll afterwards.",
+      "files": [],
+      "expectations": [
+        "Runs or attempts whisper workflow resume for wf_7d41f2 with the operator note passed via --message, or honestly reports the whisper CLI is unavailable",
+        "Keeps the fire-and-forget shape: a short acknowledgement, no polling or status-watching afterwards"
+      ]
+    }
+  ]
+}

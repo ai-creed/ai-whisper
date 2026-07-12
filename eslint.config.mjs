@@ -18,6 +18,12 @@ export default tseslint.config(
 			"**/deprecated/**",
 			"docs/**",
 			"scripts/**",
+			// Bundled skill content synced verbatim from ai-skills (SKILL.md +
+			// eval fixtures under */evals/**). These `.ts` fixtures are skill eval
+			// inputs, not project source, and belong to no tsconfig — so the typed
+			// lint's project service can't parse them. Treat the whole bundle tree
+			// as non-source, like docs/ and scripts/ above.
+			"packages/cli/skills/**",
 		],
 	},
 	js.configs.recommended,

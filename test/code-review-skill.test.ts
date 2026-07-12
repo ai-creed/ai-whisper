@@ -37,14 +37,20 @@ describe("ai-whisper-code-review skill content", () => {
 	});
 
 	it("description targets code review of workflow code artifacts", () => {
-		// Frontmatter description line.
+		// Frontmatter description line. The calibrated description drops the literal
+		// "code review"; it says "review agent-written code" and "reviews the diff
+		// against the task artifact".
 		const desc = txt.split("\n").find((l) => l.startsWith("description:")) ?? "";
-		expect(desc).toMatch(/code review/i);
+		expect(desc).toMatch(/review agent-written code/i);
+		expect(desc).toMatch(/reviews the diff against the task artifact/i);
 		expect(desc).toMatch(/implementation output|commit ranges|bug fixes/i);
 	});
 
 	it("body says the workflow handoff controls the output format", () => {
-		expect(txt).toMatch(/workflow handoff controls the output format/i);
+		// Calibrated body hard-wraps between "handoff" and "controls" (lines
+		// 35-36), so match against a whitespace-normalized copy.
+		const norm = (s: string) => s.replace(/\s+/g, " ");
+		expect(norm(txt)).toMatch(/workflow handoff controls the output format/i);
 	});
 
 	it("body forbids emitting workflow control labels", () => {

@@ -1,0 +1,25 @@
+{
+  "skill_name": "ai-whisper-plan-execution",
+  "queries": [
+    { "query": "You are the implementer for this ai-whisper SDD run — execute the approved plan at docs/plans/2026-07-checkout-fix.md using the plan-execution structure.", "should_trigger": true },
+    { "query": "Kick off implementation of the approved plan, per ai-whisper-plan-execution: fan out per task, model-allocate reviewers, and hand back with the execution mode.", "should_trigger": true },
+    { "query": "Plan-execution phase: here is the approved 6-task plan, execute it as the implementer and hand back per the workflow contract.", "should_trigger": true },
+    { "query": "Execute the approved plan inside the ai-whisper autonomous workflow — you're in the implementer role for this run.", "should_trigger": true },
+    { "query": "This is the SDD workflow handoff — implement the approved plan at specs/042-plan.md, following the plan-execution fan-out and model-allocation structure.", "should_trigger": true },
+    { "query": "As the ai-whisper implementer, work through the approved plan task by task and hand back the execution mode when done.", "should_trigger": true },
+    { "query": "Quick-task workflow handoff: execute the approved plan and report the execution mode used.", "should_trigger": true },
+    { "query": "You're inside the ai-whisper autonomous workflow as implementer — dispatch subagents per the plan-execution model-allocation table for this approved plan.", "should_trigger": true },
+    { "query": "Continue the ai-whisper plan-execution phase: the plan was just approved, now implement it and hand back.", "should_trigger": true },
+    { "query": "Implementer handoff: execute plan.md per the ai-whisper plan-execution skill, using subagent fan-out where the harness allows.", "should_trigger": true },
+    { "query": "ai-whisper autonomous workflow — plan-execution phase starting. Execute the approved plan and report commit SHAs plus execution mode.", "should_trigger": true },
+    { "query": "Run the plan-execution structure on this approved implementation plan inside the current ai-whisper workflow.", "should_trigger": true },
+    { "query": "Run SDD on docs/spec.md.", "should_trigger": false },
+    { "query": "Review this implementation plan and tell me if the approach is sound.", "should_trigger": false },
+    { "query": "Execute this plan for me: 1) rename the function 2) update the tests.", "should_trigger": false },
+    { "query": "Here's my todo list for today, please work through it.", "should_trigger": false },
+    { "query": "Kick off a deliberation on this seed idea.", "should_trigger": false },
+    { "query": "As the reviewer, check whether the implementer's code matches the approved plan.", "should_trigger": false },
+    { "query": "I wrote a plan by hand, just execute it right now without any workflow.", "should_trigger": false },
+    { "query": "Start the ralph loop on this goal file.", "should_trigger": false }
+  ]
+}

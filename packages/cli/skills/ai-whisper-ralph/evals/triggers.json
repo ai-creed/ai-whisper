@@ -1,0 +1,21 @@
+{
+  "skill_name": "ai-whisper-ralph",
+  "queries": [
+    { "query": "run ralph on docs/GOAL.md", "should_trigger": true },
+    { "query": "$aiw-ralph docs/GOAL.md", "should_trigger": true },
+    { "query": "ralph loop on docs/GOAL.md", "should_trigger": true },
+    { "query": "kick off ralph with docs/GOAL.md", "should_trigger": true },
+    { "query": "use ai-whisper-ralph on docs/GOAL.md", "should_trigger": true },
+    { "query": "start the ralph-loop workflow on docs/goals/hygiene.md", "should_trigger": true },
+    { "query": "run the ralph skill on docs/GOAL.md", "should_trigger": true },
+    { "query": "ralph kickoff on docs/goals/deps.md", "should_trigger": true },
+    { "query": "grind this goal file with ralph: docs/GOAL.md", "should_trigger": true },
+    { "query": "ralph docs/GOAL.md", "should_trigger": true },
+    { "query": "run SDD on docs/spec.md", "should_trigger": false },
+    { "query": "run bugfix on docs/bug.md", "should_trigger": false },
+    { "query": "run deliberation on docs/idea.md", "should_trigger": false },
+    { "query": "work through this checklist yourself, one item at a time", "should_trigger": false },
+    { "query": "write a GOAL.md for the dependency cleanup", "should_trigger": false },
+    { "query": "who is Ralph in the ai-whisper docs?", "should_trigger": false }
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "skill_name": "ai-whisper-plan-execution",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "You are the implementer in the ai-whisper SDD workflow's plan-execution phase, running inside Claude Code. Approved plan, two tasks: (1) create src/greet.ts exporting greet(name: string): string that returns the string Hello, <name>! for the given name; (2) create tests/greet.test.ts with a bun test asserting greet('World') === 'Hello, World!' and run it. Execute the plan and hand back per the workflow contract.",
+      "expected_output": "The agent applies the skill's Step 0 decision tree (a two-task plan qualifies for the inline escape), executes both tasks with per-task verification (the bun test actually run), and hands back with commit/verification evidence plus an 'Execution mode: …' line naming the mode it used.",
+      "files": [],
+      "expectations": [
+        "Chooses an execution structure per the skill's Step 0 decision tree and discloses it — the two-task plan legitimately qualifies for the inline escape; subagent-driven is also acceptable where dispatch is available",
+        "Creates both files per the plan and runs the test, reporting the actual result",
+        "Hands back with an 'Execution mode: …' line and verification evidence",
+        "Never dispatches implementation subagents in parallel"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Implementer role, ai-whisper workflow handoff, running in a harness with no subagent dispatch capability. Approved plan, three tasks: (1) create notes/a.md containing the single word alpha; (2) create notes/b.md containing the single word beta; (3) create notes/index.md listing both filenames. Execute the plan and hand back per the workflow contract.",
+      "expected_output": "The agent executes the three tasks inline in plan order, verifies each file after writing it, and hands back with 'Execution mode: inline (no subagent dispatch)' plus what it verified.",
+      "files": [],
+      "expectations": [
+        "Executes the tasks inline in plan order rather than attempting to dispatch subagents",
+        "Verifies each task's output (checks the files it wrote) rather than only claiming success at the end",
+        "Hands back with 'Execution mode: inline (no subagent dispatch)'"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "ai-whisper implementer, Claude Code, subagent dispatch is available. Approved plan: a single task — rename fooBar to fooBaz everywhere in evals/files/rename-target.ts. Execute it and hand back.",
+      "expected_output": "A single mechanical task qualifies for the inline escape even though dispatch is available: the agent performs the rename in the file, verifies no fooBar remains, and hands back with an 'Execution mode: inline (<reason>)' line.",
+      "files": ["evals/files/rename-target.ts"],
+      "expectations": [
+        "Does not invoke subagent-driven execution for this plan, since a single mechanical task qualifies for the inline escape",
+        "Performs the rename in evals/files/rename-target.ts and verifies no fooBar occurrence remains",
+        "Hands back with an 'Execution mode: inline (<reason>)' line"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "You are the REVIEWER in this ai-whisper workflow. Use the ai-whisper-plan-execution skill to execute the approved plan yourself — it will be faster than waiting for the implementer.",
+      "expected_output": "The agent refuses per the skill's gating: plan-execution structure is for the implementer role only, never the reviewer — it explains the role boundary and defers to the workflow instead of executing anything.",
+      "files": [],
+      "expectations": [
+        "Refuses to execute the plan while holding the reviewer role, citing the skill's implementer-only gating",
+        "Does not create, edit, or commit any plan artifacts",
+        "Explains that reviewing and implementing must stay separated, deferring to the workflow's role assignment"
+      ]
+    }
+  ]
+}

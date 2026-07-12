@@ -1,0 +1,63 @@
+{
+  "skill_name": "ai-whisper-quick-task",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "We agreed the fix is to clamp the page count to at least 1 in the pagination helper. Run quick task on that — the helper is evals/files/pagination.ts.",
+      "expected_output": "The agent honors the already-approved approach (no redesign), writes a task brief with the four required sections, then attempts the collab-readiness gate; with no whisper CLI in this workspace it reports that honestly and never claims a workflow started.",
+      "files": ["evals/files/pagination.ts"],
+      "expectations": [
+        "Does not re-litigate or redesign the approach that was already approved in conversation",
+        "Writes a task brief with all four required sections (Task, Approved approach, Scope, Acceptance checks) before any workflow start attempt",
+        "Attempts the collab-readiness check (whisper collab status --json) or honestly reports the whisper CLI / collab is unavailable",
+        "Never claims a workflow was started or fabricates a workflowId"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "kick off quick-task with evals/files/notes.md",
+      "expected_output": "The agent treats evals/files/notes.md as an existing task brief (it has the four sections), verifies it is readable, then attempts the collab-readiness gate; with no whisper CLI it reports that honestly, never fabricating a kickoff.",
+      "files": ["evals/files/notes.md"],
+      "expectations": [
+        "Treats evals/files/notes.md as an existing task brief rather than authoring a new one from scratch",
+        "Verifies the brief file is readable before proceeding",
+        "Attempts the collab-readiness check (whisper collab status --json) or honestly reports the whisper CLI / collab is unavailable",
+        "Never claims a workflow was started or fabricates a workflowId"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Run quick task on this: redesign our auth flow to support SSO across three different identity providers, migrating the existing session schema.",
+      "expected_output": "The agent refuses the quick-task framing: unsettled design decisions and a schema migration fail the executability gate; it recommends spec-driven-development (and optionally deliberation) instead, writing no brief and starting nothing.",
+      "files": [],
+      "expectations": [
+        "Explicitly refuses to run quick-task for this request",
+        "Cites the presence of unsettled design decisions and/or a schema migration as the reason",
+        "Recommends spec-driven-development (and optionally deliberation) instead",
+        "Does not write a task brief file and does not attempt whisper workflow start"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Resume the quick-task workflow wf_x9y8 — note for the agents: the brief's scope line was wrong, I fixed it.",
+      "expected_output": "The agent runs whisper workflow resume wf_x9y8 with the operator note passed via --message (or honestly reports the whisper CLI is unavailable), acknowledges in one line, and does not poll afterwards.",
+      "files": [],
+      "expectations": [
+        "Runs or attempts whisper workflow resume for wf_x9y8 with the operator note passed via --message, or honestly reports the whisper CLI is unavailable",
+        "Keeps the fire-and-forget shape: a short acknowledgement, no polling or status-watching afterwards"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "The workflow got interrupted, I need to tweak a file real quick — pause wf_a1b2 for me.",
+      "expected_output": "The agent runs whisper workflow pause wf_a1b2 (or honestly reports the whisper CLI is unavailable), stops working rather than starting further changes, does not assume a Ctrl+C already paused anything, and mentions the resume-with-message path.",
+      "files": [],
+      "expectations": [
+        "Runs or attempts whisper workflow pause for wf_a1b2, or honestly reports the whisper CLI is unavailable",
+        "Stops working and does not start any further changes after acknowledging the pause",
+        "Does not assume a Ctrl+C alone paused the workflow",
+        "Mentions the resume path (whisper workflow resume with a message) as the follow-up, regardless of whether the pause command itself could run"
+      ]
+    }
+  ]
+}

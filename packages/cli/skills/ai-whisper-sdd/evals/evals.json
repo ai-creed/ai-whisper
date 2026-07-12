@@ -1,0 +1,36 @@
+{
+  "skill_name": "ai-whisper-sdd",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Run SDD on evals/files/approved-spec.md",
+      "expected_output": "The agent treats the ask as a spec-driven-development kickoff, consults the ai-whisper-workflow delegation target (or falls back to the inline contract when it is unavailable), vets the spec file, then attempts the collab-readiness gate; with no whisper CLI in this workspace it reports that honestly and never claims a workflow started.",
+      "files": ["evals/files/approved-spec.md"],
+      "expectations": [
+        "Identifies the ask as the SDD / spec-driven-development workflow in any phrasing — prose naming counts; the literal --type token is not required",
+        "Vets the spec file evals/files/approved-spec.md before any kickoff attempt",
+        "Attempts collab readiness (whisper collab status --json) or honestly reports the whisper CLI / collab / delegation target is unavailable, and never claims a workflow was started"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Run SDD on docs/specs/missing-spec.md",
+      "expected_output": "The agent vets the spec path first, finds it missing, reports that the spec is not readable and asks for the correct path — no workflow start is attempted and none is claimed.",
+      "files": [],
+      "expectations": [
+        "Does NOT run whisper workflow start when the spec file is missing",
+        "Tells the user the spec file is missing / not readable and does not guess an alternative path or start anything (asking for the correct path is welcome but not required)"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Use the ai-whisper-sdd flow to kick off a ralph loop on evals/files/approved-spec.md",
+      "expected_output": "The agent refuses to bend the alias to another workflow type: it explains ai-whisper-sdd is spec-driven-development only and points the user to the ralph entry point (ai-whisper-workflow / ralph phrasing) instead of starting anything.",
+      "files": ["evals/files/approved-spec.md"],
+      "expectations": [
+        "Does not start a ralph-loop workflow through this alias",
+        "Explains the alias maps only to spec-driven-development and redirects the user to the correct ralph entry point"
+      ]
+    }
+  ]
+}

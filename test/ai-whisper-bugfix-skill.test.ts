@@ -16,12 +16,30 @@ describe("ai-whisper-bugfix skill", () => {
 		expect(skill).toMatch(/fire-and-forget/i);
 	});
 
-	it("documents the operator pause-control flow with the Codex Ctrl+C gotcha", () => {
+	it("delegates operator pause-control to the ai-whisper-workflow dispatcher, which carries the Codex Ctrl+C gotcha", () => {
+		// Operator pause-control (pause / resume --message + the Codex Ctrl+C
+		// gotcha) moved to the ai-whisper-workflow dispatcher. The four aliases no
+		// longer carry it themselves; they inherit it by delegating to the
+		// dispatcher.
+		const dispatcher = readFileSync(
+			"packages/cli/skills/ai-whisper-workflow/SKILL.md",
+			"utf8",
+		);
+		expect(dispatcher, "dispatcher missing pause section").toContain(
+			"whisper workflow pause",
+		);
+		expect(dispatcher, "dispatcher missing resume").toContain(
+			"whisper workflow resume",
+		);
+		expect(dispatcher, "dispatcher missing resume --message flag").toContain(
+			"--message",
+		);
+		expect(dispatcher, "dispatcher missing Ctrl+C gotcha").toMatch(/Ctrl\+C/);
+
 		for (const name of ["ai-whisper-sdd", "ai-whisper-ralph", "ai-whisper-bugfix", "ai-whisper-deliberation"]) {
 			const md = readFileSync(`packages/cli/skills/${name}/SKILL.md`, "utf8");
-			expect(md, `${name} missing pause section`).toContain("whisper workflow pause");
-			expect(md, `${name} missing resume --message`).toContain("whisper workflow resume");
-			expect(md, `${name} missing Ctrl+C gotcha`).toMatch(/Ctrl\+C/);
+			expect(md, `${name} must reference the dispatcher`).toContain("ai-whisper-workflow");
+			expect(md, `${name} must describe itself as delegating`).toMatch(/delegat/i);
 		}
 	});
 

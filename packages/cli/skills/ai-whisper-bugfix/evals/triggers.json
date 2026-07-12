@@ -1,0 +1,21 @@
+{
+  "skill_name": "ai-whisper-bugfix",
+  "queries": [
+    { "query": "run bugfix on docs/bug.md", "should_trigger": true },
+    { "query": "$aiw-bugfix docs/bug.md", "should_trigger": true },
+    { "query": "kick off complex-bug-fixing with docs/reports/crash.md", "should_trigger": true },
+    { "query": "fix this bug report docs/reports/login-crash.md", "should_trigger": true },
+    { "query": "use ai-whisper-bugfix on docs/bug.md", "should_trigger": true },
+    { "query": "start the bugfix workflow on docs/reports/pagination.md", "should_trigger": true },
+    { "query": "run the bugfix skill on docs/bug.md", "should_trigger": true },
+    { "query": "bugfix kickoff on docs/reports/timeout.md", "should_trigger": true },
+    { "query": "run complex-bug-fixing on the report at docs/reports/race.md", "should_trigger": true },
+    { "query": "bugfix docs/bug.md", "should_trigger": true },
+    { "query": "run SDD on docs/spec.md", "should_trigger": false },
+    { "query": "ralph loop on docs/GOAL.md", "should_trigger": false },
+    { "query": "run deliberation on docs/idea.md", "should_trigger": false },
+    { "query": "fix this bug: the login form crashes on empty passwords", "should_trigger": false },
+    { "query": "write a bug report for the crash I just saw", "should_trigger": false },
+    { "query": "review this bug fix diff for correctness", "should_trigger": false }
+  ]
+}
