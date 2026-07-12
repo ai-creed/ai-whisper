@@ -93,4 +93,43 @@ describe("checkSkillVersionBumps", () => {
 		commitAll(root, "remove skill");
 		expect(checkSkillVersionBumps({ repoRoot: root, baseRef: base })).toHaveLength(0);
 	});
+
+	it("flags a decrement even though the version changed (monotonic bump required)", () => {
+		const root = initRepo();
+		writeSkill(root, "skill-a", "0.2.0", "original");
+		const base = commitAll(root, "base");
+		writeSkill(root, "skill-a", "0.1.0", "EDITED");
+		commitAll(root, "edit with a version decrement");
+		const violations = checkSkillVersionBumps({ repoRoot: root, baseRef: base });
+		expect(violations).toHaveLength(1);
+		expect(violations[0]?.skill).toBe("skill-a");
+		expect(violations[0]?.reason).toMatch(/must increase/i);
+	});
+
+	it("given the PR merge-base as baseRef, ignores a skill only changed on the base branch after the fork point", () => {
+		const root = initRepo();
+		// Common ancestor: skill-a and skill-b both exist here.
+		writeSkill(root, "skill-a", "0.1.0", "original-a");
+		writeSkill(root, "skill-b", "0.1.0", "original-b");
+		const mergeBase = commitAll(root, "base");
+
+		// Base branch (e.g. main) keeps moving after the PR forked off: bumps
+		// skill-a. A raw two-dot diff against this later base-branch tip (instead
+		// of the merge-base) would spuriously see skill-a's content differ from
+		// the PR branch and misattribute that to the PR.
+		writeSkill(root, "skill-a", "0.2.0", "changed-on-main-after-fork");
+		commitAll(root, "main moves on without the PR");
+
+		// PR branch forks from the merge-base, not from main's later tip, and
+		// only ever touches skill-b (with a proper bump).
+		git(root, ["checkout", "-q", "-b", "pr", mergeBase]);
+		writeSkill(root, "skill-b", "0.2.0", "edited-b");
+		commitAll(root, "PR edits skill-b with a bump");
+
+		// HEAD is now the PR branch. Diffing against the true merge-base must
+		// not flag skill-a (untouched on the PR branch) and must accept
+		// skill-b's proper bump.
+		const violations = checkSkillVersionBumps({ repoRoot: root, baseRef: mergeBase });
+		expect(violations).toHaveLength(0);
+	});
 });

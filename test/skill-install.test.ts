@@ -102,16 +102,21 @@ describe("runSkillInstall", () => {
 	it("--force overwrites existing destinations", async () => {
 		const s = sandbox();
 		mkdirSync(join(s.home, ".claude", "skills", "ai-whisper-sdd"), { recursive: true });
+		// Versioned and newer than the bundled fixture (versionless, compares as
+		// 0.0.0), so without --force the guard would report "skipped-newer" and
+		// leave the destination untouched — this fixture is what actually
+		// exercises --force rather than the guard's own upgrade-in-place path.
 		writeFileSync(
 			join(s.home, ".claude", "skills", "ai-whisper-sdd", "SKILL.md"),
-			"EXISTING",
+			"---\nname: ai-whisper-sdd\nversion: 0.2.0\n---\nEXISTING",
 		);
-		await runSkillInstall({
+		const result = await runSkillInstall({
 			target: "claude",
 			fakeHome: s.home,
 			bundledSkillsDir: join(s.cliDist, "skills"),
 			force: true,
 		});
+		expect(result.results[0]).toMatchObject({ action: "installed", forced: true });
 		expect(
 			readFileSync(
 				join(s.home, ".claude", "skills", "ai-whisper-sdd", "SKILL.md"),

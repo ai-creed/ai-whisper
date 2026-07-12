@@ -13,9 +13,10 @@ import { fileURLToPath } from "node:url";
 
 const SKILLS_DIR = "packages/cli/skills";
 
-// Mirrors parseSkillVersion in packages/cli/src/commands/skill/version.ts.
-// Duplicated because this script must run without a build step (plain .mjs
-// cannot import the TS source, and dist may not exist yet locally).
+// Mirrors parseSkillVersion and compareSemver in
+// packages/cli/src/commands/skill/version.ts. Duplicated because this script
+// must run without a build step (plain .mjs cannot import the TS source, and
+// dist may not exist yet locally).
 const VALID_VERSION_RE = /^\d+(\.\d+){0,2}$/;
 function parseSkillVersion(content) {
 	const lines = content.split(/\r?\n/);
@@ -32,13 +33,24 @@ function parseSkillVersion(content) {
 	return null;
 }
 
+function compareSemver(a, b) {
+	const pa = a.split(".");
+	const pb = b.split(".");
+	for (let i = 0; i < 3; i++) {
+		const da = Number.parseInt(pa[i] ?? "0", 10);
+		const db = Number.parseInt(pb[i] ?? "0", 10);
+		if (da !== db) return da < db ? -1 : 1;
+	}
+	return 0;
+}
+
 function git(repoRoot, args, opts = {}) {
 	return execFileSync("git", args, { cwd: repoRoot, encoding: "utf8", ...opts });
 }
 
 function gitShow(repoRoot, ref, file) {
 	try {
-		return git(repoRoot, ["show", `${ref}:${file}`]);
+		return git(repoRoot, ["show", `${ref}:${file}`], { stdio: "pipe" });
 	} catch {
 		return null;
 	}
@@ -62,12 +74,16 @@ export function checkSkillVersionBumps({ repoRoot, baseRef }) {
 		const baseContent = gitShow(repoRoot, baseRef, skillMd);
 		if (baseContent === null) continue; // brand-new skill — nothing to compare against
 		const headVersion = parseSkillVersion(headContent);
+		const baseVersion = parseSkillVersion(baseContent);
 		if (headVersion === null) {
 			violations.push({ skill, reason: "SKILL.md at HEAD has no valid version" });
-		} else if (headVersion === parseSkillVersion(baseContent)) {
+		} else if (baseVersion !== null && compareSemver(headVersion, baseVersion) <= 0) {
+			// A changed skill must bump forward, not merely change — a decrement
+			// (or unchanged version) would pass a guarded installer's
+			// `skipped-newer` check and never actually ship the content edit.
 			violations.push({
 				skill,
-				reason: `content changed but version stayed ${headVersion}`,
+				reason: `content changed but version went ${baseVersion} -> ${headVersion} (must increase)`,
 			});
 		}
 	}
@@ -101,7 +117,19 @@ if (isMain) {
 		console.log(`check-skill-version-bump: base ${base} unresolvable — skipping.`);
 		process.exit(0);
 	}
-	const violations = checkSkillVersionBumps({ repoRoot, baseRef: base });
+	// pull_request diffs must be against the merge-base with the base branch,
+	// not the raw base sha: the base branch keeps moving after a PR forks off
+	// it, and a raw two-dot diff against its later tip can misattribute
+	// base-branch-only changes to the PR (or mask PR changes that the base
+	// branch coincidentally also picked up). Fall back to the raw base if the
+	// merge-base can't be resolved (e.g. a shallow fetch with no shared history).
+	let effectiveBase = base;
+	try {
+		effectiveBase = git(repoRoot, ["merge-base", base, "HEAD"], { stdio: "pipe" }).trim();
+	} catch {
+		effectiveBase = base;
+	}
+	const violations = checkSkillVersionBumps({ repoRoot, baseRef: effectiveBase });
 	if (violations.length === 0) {
 		console.log("check-skill-version-bump: OK");
 		process.exit(0);

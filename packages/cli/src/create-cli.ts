@@ -731,7 +731,10 @@ export function createCli(): Command {
 				.choices(["claude", "codex", "cursor", "ezio", "agy", "all"])
 				.default("all"),
 		)
-		.option("--force", "Overwrite existing skill destinations")
+		.option(
+			"--force",
+			"Reinstall even when the installed copy is same-version or newer (downgrade)",
+		)
 		.action(async (opts: { target: AgentType | "all"; force?: boolean }) => {
 			const result = await runSkillInstall({
 				target: opts.target,

@@ -99,7 +99,7 @@ describe("ai-whisper-plan-execution skill build + install", () => {
 		).toBe(true);
 	});
 
-	it("install enumerates it into all three agent skill dirs (claude, codex, ezio)", async () => {
+	it("install enumerates it into the claude, codex, and ezio skill dirs", async () => {
 		const bundled = copyRealSkills();
 		const home = mkdtempSync(join(tmpdir(), "aiw-planexec-home-"));
 		await runSkillInstall({
