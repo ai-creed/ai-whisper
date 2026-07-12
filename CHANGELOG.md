@@ -5,6 +5,18 @@ All notable changes to the `ai-whisper` package are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.0] - 2026-07-13
+
+### Added
+
+- **`ai-whisper-workflow` dispatcher skill.** One kickoff skill now dispatches all four workflow types (SDD, bugfix, deliberation, ralph); the former per-type kickoff skills (`ai-whisper-sdd`, `-bugfix`, `-deliberation`, `-ralph`) ship as thin aliases that keep their picker names and delegate to the dispatcher. The bundle grows from 8 to 9 skills, and every skill now ships with its evaluation suite (`evals/`) as a product asset.
+- **Version-guarded `whisper skill install`.** Installs no longer error on existing destinations. Each bundled skill's frontmatter `version` is compared (semver) against the installed copy per target: missing or versionless destinations install, newer bundles upgrade, equal versions report `up-to-date` with zero writes, and a newer installed copy is skipped with a pointer to `--force` (whose meaning is now explicitly "reinstall even when the installed copy is same-version or newer"). Results are reported per skill and per target instead of aborting on the first conflict.
+- **Skills QA in CI.** Every bundled skill is gated by `shakespii lint` and deterministic `shakespii test` (no live model sweeps), plus a version-bump assertion: bundled skill content cannot change without increasing its `version` frontmatter. The rule is documented in AGENTS.md.
+
+### Changed
+
+- **Bundled skills replaced with the calibrated corpus.** All skill content now lands bit-for-bit from the M5d-calibrated source (ai-skills @ `91890bb`, all at `version: 0.1.0`); ai-whisper owns these skills going forward. Existing versionless installs upgrade in place on the next `whisper skill install`; installs already at the calibrated versions are a no-op. Note: the calibrated prose documents workflow seats as `codex`/`claude`/`ezio`/`agy` — re-adding the `cursor` mention ships as a later versioned content edit.
+
 ## [0.14.0] - 2026-07-06
 
 ### Added
