@@ -117,17 +117,31 @@ if (isMain) {
 		console.log(`check-skill-version-bump: base ${base} unresolvable — skipping.`);
 		process.exit(0);
 	}
-	// pull_request diffs must be against the merge-base with the base branch,
-	// not the raw base sha: the base branch keeps moving after a PR forks off
-	// it, and a raw two-dot diff against its later tip can misattribute
-	// base-branch-only changes to the PR (or mask PR changes that the base
-	// branch coincidentally also picked up). Fall back to the raw base if the
-	// merge-base can't be resolved (e.g. a shallow fetch with no shared history).
+	// PR and push events require different diffs:
+	// - pull_request: GitHub checks out a merge ref (merged PR head with base tip).
+	//   HEAD^1 is the base tip; it's what this PR actually changes against.
+	// - push/force-push: use merge-base(event.before, HEAD) to survive force pushes.
+	// - Fallback: raw base if merge-base can't be resolved (e.g. shallow fetch).
 	let effectiveBase = base;
-	try {
-		effectiveBase = git(repoRoot, ["merge-base", base, "HEAD"], { stdio: "pipe" }).trim();
-	} catch {
-		effectiveBase = base;
+	if (process.env.GITHUB_EVENT_NAME === "pull_request") {
+		// In a merge ref, HEAD^1 is the exact base tip this merge was computed against.
+		try {
+			effectiveBase = git(repoRoot, ["rev-parse", "HEAD^1"], { stdio: "pipe" }).trim();
+		} catch {
+			// Not a merge commit; fallback to merge-base or raw base.
+			try {
+				effectiveBase = git(repoRoot, ["merge-base", base, "HEAD"], { stdio: "pipe" }).trim();
+			} catch {
+				effectiveBase = base;
+			}
+		}
+	} else {
+		// Push/force-push: merge-base against event.before survives force pushes.
+		try {
+			effectiveBase = git(repoRoot, ["merge-base", base, "HEAD"], { stdio: "pipe" }).trim();
+		} catch {
+			effectiveBase = base;
+		}
 	}
 	const violations = checkSkillVersionBumps({ repoRoot, baseRef: effectiveBase });
 	if (violations.length === 0) {
