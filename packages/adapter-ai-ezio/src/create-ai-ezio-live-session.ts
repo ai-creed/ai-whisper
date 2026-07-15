@@ -141,7 +141,9 @@ export function createAiEzioLiveSession(input: {
 				});
 				child.stdout?.on("data", (d: Buffer) => void (out += d.toString("utf8")));
 				child.on("error", () => resolve("[]"));
-				child.on("exit", (code) => resolve(code === 0 ? out : "[]"));
+				// "close", not "exit": exit can fire while stdout chunks are still
+				// in flight, and truncated JSON would read as an empty list.
+				child.on("close", (code) => resolve(code === 0 ? out : "[]"));
 			}));
 
 	let session: AiEzioEngineSession | null = null;
