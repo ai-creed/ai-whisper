@@ -139,7 +139,7 @@ describe("createAiEzioLiveSession — delegates display to the mounted renderer 
 		expect(out).toContain("codex");
 		expect(out).toContain("gpt-5.5");
 		expect(out).toContain("high");
-		expect(out).toMatch(/context 8\.7k \/ 256k \(3%\)/); // usage line (renderer)
+		expect(out).toMatch(/8\.7k \/ 256k \(3%\)/); // usage line (renderer)
 		expect(out).toContain("❯"); // post-turn prompt (renderer)
 	});
 
@@ -261,6 +261,25 @@ describe("createAiEzioLiveSession — mounted slash commands", () => {
 		writeFileSync(h.session.transcriptPath as string, "TRANSCRIPT_BODY");
 		expect(await h.controller.tryConsumeLocalCommand?.("/transcript")).toBe(true);
 		expect(h.writes.join("")).toContain("TRANSCRIPT_BODY");
+	});
+
+	it("showTranscript dumps the minted transcript inline via the same render path as /transcript", async () => {
+		const h = harness();
+		await h.controller.start();
+		writeFileSync(h.session.transcriptPath as string, "TRANSCRIPT_BODY");
+		await h.controller.showTranscript?.();
+		const keyDump = h.writes.join("");
+		expect(keyDump).toContain("TRANSCRIPT_BODY");
+		// Same render path as the slash command: the slash dump is identical output.
+		h.writes.length = 0;
+		expect(await h.controller.tryConsumeLocalCommand?.("/transcript")).toBe(true);
+		expect(h.writes.join("")).toBe(keyDump);
+	});
+
+	it("showTranscript before start() reports no transcript yet", async () => {
+		const h = harness();
+		await h.controller.showTranscript?.();
+		expect(h.writes.join("")).toBe("no transcript yet\n");
 	});
 });
 

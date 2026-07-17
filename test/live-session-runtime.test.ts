@@ -382,6 +382,112 @@ describe("live session runtime", () => {
 		expect(f.calls.echoes).toEqual(["hello"]);
 	});
 
+	function transcriptKeyFixture(opts?: { withShowTranscript: false }) {
+		const stdin = new PassThrough();
+		const stdout = new PassThrough();
+		const out: string[] = [];
+		stdout.on("data", (c) => out.push(String(c)));
+		const calls = {
+			showTranscript: 0,
+			submits: [] as string[],
+			consumed: [] as string[],
+		};
+		const interactiveSession = {
+			start: () => Promise.resolve(),
+			stop: () => Promise.resolve(),
+			writeUserInput(data: string) {
+				calls.submits.push(data);
+			},
+			sendLocalMessage(message: string) {
+				stdout.write(message);
+			},
+			onExit() {},
+			onTurnFinished() {}, // marks this as a protocol-native (line-buffered) session
+			tryConsumeLocalCommand(line: string) {
+				calls.consumed.push(line);
+				return Promise.resolve(line.startsWith("/"));
+			},
+			...(opts?.withShowTranscript === false
+				? {}
+				: {
+						showTranscript() {
+							calls.showTranscript++;
+							stdout.write("__DUMP__");
+							return Promise.resolve();
+						},
+					}),
+		};
+		const runtime = createLiveSessionRuntime({
+			interactiveSession,
+			stdin,
+			stdout,
+			onRelay: () => Promise.reject(new Error("relay should not fire")),
+			lineBufferedInput: true,
+		});
+		return { stdin, out: () => out.join(""), calls, runtime };
+	}
+
+	it("lineBufferedInput: Ctrl+T triggers the controller's showTranscript exactly once and buffers nothing", async () => {
+		const f = transcriptKeyFixture();
+		await f.runtime.start();
+		f.stdin.write("\u0014");
+		await nextTick();
+		expect(f.calls.showTranscript).toBe(1);
+		expect(f.out()).not.toContain("\u0014"); // never echoed into the typed line
+		// The line buffer stays empty: a following Enter submits nothing.
+		f.stdin.write("\r");
+		await nextTick();
+		expect(f.calls.submits).toEqual([]);
+	});
+
+	it("lineBufferedInput: Ctrl+T with a partially typed line renders the dump above and re-echoes the intact line", async () => {
+		const f = transcriptKeyFixture();
+		await f.runtime.start();
+		for (const ch of "draft") f.stdin.write(ch);
+		f.stdin.write("\u0014");
+		await nextTick();
+		expect(f.calls.showTranscript).toBe(1);
+		const s = f.out();
+		const dumpIdx = s.indexOf("__DUMP__");
+		expect(dumpIdx).toBeGreaterThanOrEqual(0);
+		// The echoed input is erased to end-of-screen before the dump renders…
+		expect(s.slice(0, dumpIdx)).toContain("[J");
+		// …and the typed line is re-echoed intact beneath the dump.
+		expect(s.slice(dumpIdx)).toContain("draft");
+		// The buffer itself was preserved: Enter still submits the full line.
+		f.stdin.write("\r");
+		await nextTick();
+		expect(f.calls.submits).toEqual(["draft"]);
+	});
+
+	it("lineBufferedInput: /transcript typed after a Ctrl+T press is still intercepted as a slash command", async () => {
+		const f = transcriptKeyFixture();
+		await f.runtime.start();
+		f.stdin.write("\u0014");
+		f.stdin.write("/transcript\r");
+		await nextTick();
+		expect(f.calls.consumed).toEqual(["/transcript"]);
+		expect(f.calls.submits).toEqual([]);
+	});
+
+	it("lineBufferedInput: unhandled C0 control bytes are dropped from the buffer while tabs are kept", async () => {
+		const f = transcriptKeyFixture();
+		await f.runtime.start();
+		f.stdin.write("a\u0001b\tc\r");
+		await nextTick();
+		expect(f.calls.submits).toEqual(["ab\tc"]);
+	});
+
+	it("lineBufferedInput: Ctrl+T with no showTranscript on the controller is a silent no-op", async () => {
+		const f = transcriptKeyFixture({ withShowTranscript: false });
+		await f.runtime.start();
+		f.stdin.write("\u0014");
+		f.stdin.write("hi\r");
+		await nextTick();
+		// The \u0014 byte was dropped, not buffered ahead of the typed text.
+		expect(f.calls.submits).toEqual(["hi"]);
+	});
+
 	it("consumes relay directives and writes local acknowledgement instead of forwarding them", async () => {
 		const stdin = new PassThrough();
 		const stdout = new PassThrough();

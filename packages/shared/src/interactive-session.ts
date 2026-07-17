@@ -50,6 +50,11 @@ export interface InteractiveSessionController {
 	 *  slashes pass through to the spawned agent. Called ONLY from the operator
 	 *  line-input hook — never from relayed/injected input. */
 	tryConsumeLocalCommand?(line: string): Promise<boolean>;
+	/** Protocol-native providers (ai-ezio) dump the session transcript inline —
+	 *  the same render the `/transcript` slash command uses. The host runtime
+	 *  invokes it on Ctrl+T from the operator key path. PTY providers omit it,
+	 *  so the byte is dropped rather than forwarded. */
+	showTranscript?(): Promise<void>;
 }
 
 /** I/O handed to a full-screen overlay (e.g. the ezio /resume picker) while the

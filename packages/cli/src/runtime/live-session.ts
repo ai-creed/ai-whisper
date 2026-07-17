@@ -131,6 +131,16 @@ export function createLiveSessionRuntime(input: {
 		input.interactiveSession.sendLocalMessage(CLEAR_LINE);
 	}
 
+	// Erase the plainly-echoed input (prompt glyph + text, soft-wrapped at the
+	// tty width): return to col 0, climb to the prompt row, then clear to end
+	// of screen. The cursor sits at the end of the typed text when called.
+	function erasePlainEcho(len: number, cols: number) {
+		const plainRows = Math.max(1, Math.ceil((STRIPE_COLS + len) / cols));
+		let erase = "\r";
+		if (plainRows > 1) erase += `\u001b[${plainRows - 1}A`;
+		erase += "\u001b[J";
+		input.stdout.write(erase);
+	}
 	// Line buffer for protocol-native targets (no PTY): accumulate plain input
 	// with local echo, handle backspace, and submit the whole line on Enter.
 	// Mirrors createLocalModalLineReader's local line-editing.
@@ -163,16 +173,9 @@ export function createLiveSessionRuntime(input: {
 					// hax render_submitted parity: erase the plainly-echoed input
 					// (prompt `❯ ` + text, soft-wrapped at the tty width) — the SAME
 					// clear the submit path uses — so a consumed command's output
-					// starts on a clean line. The cursor sits at the end of the typed
-					// text, so return to col 0, climb to the prompt row, then clear to
-					// end of screen.
+					// starts on a clean line.
 					const cols = ttyCols(input.stdout);
-					const len = Array.from(completed).length;
-					const plainRows = Math.max(1, Math.ceil((STRIPE_COLS + len) / cols));
-					let erase = "\r";
-					if (plainRows > 1) erase += `\u001b[${plainRows - 1}A`;
-					erase += "\u001b[J";
-					input.stdout.write(erase);
+					erasePlainEcho(Array.from(completed).length, cols);
 					// Operator slash command: the adapter renders locally on the clean
 					// line. No magenta stripe, no writeUserInput, no turn.
 					if (await session.tryConsumeLocalCommand?.(completed)) {
@@ -195,6 +198,25 @@ export function createLiveSessionRuntime(input: {
 					inputLineBuffer = inputLineBuffer.slice(0, -1);
 					input.stdout.write("\b \b");
 				}
+				continue;
+			}
+			if (char === "\u0014") {
+				// Ctrl+T: dump the session transcript inline, ABOVE any partially
+				// typed text: erase the plain echo, render the dump, then re-echo
+				// the intact buffer so the operator keeps editing where they left
+				// off. Providers without the seam drop the byte.
+				if (input.interactiveSession.showTranscript) {
+					const len = Array.from(inputLineBuffer).length;
+					if (len > 0) erasePlainEcho(len, ttyCols(input.stdout));
+					await input.interactiveSession.showTranscript();
+					if (len > 0) input.stdout.write(inputLineBuffer);
+				}
+				continue;
+			}
+			if (char < "\u0020" && char !== "\t") {
+				// Any remaining C0 control byte would invisibly prefix the line and
+				// break slash interception ("/transcript" would no longer start
+				// with "/"). Drop it instead of buffering.
 				continue;
 			}
 			inputLineBuffer += char;

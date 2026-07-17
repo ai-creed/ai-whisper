@@ -160,6 +160,9 @@ export function createAiEzioLiveSession(input: {
 	let lastContent = "";
 	let lastUsage: AssistantTurnFinishedEvent["usage"] | undefined;
 	let slash: SlashController | null = null;
+	// Ctrl+T seam: the SAME inline-dump closure the /transcript slash command
+	// uses, captured in start() once the session (and its minted mirror) exists.
+	let showTranscriptInline: (() => Promise<void>) | null = null;
 	// Busy flag: true while an assistant turn is in flight.
 	let inTurn = false;
 
@@ -347,6 +350,26 @@ export function createAiEzioLiveSession(input: {
 					now: input.now ?? (() => Date.now()),
 				});
 
+			// One inline dump (no pager) of the minted mirror, shared verbatim by
+			// the /transcript slash command and the Ctrl+T showTranscript seam.
+			const renderTranscriptInline = () =>
+				renderTranscript({
+					path: sessionFacet.transcriptPath ?? "",
+					readText: (p) => {
+						try {
+							return readFileSync(p, "utf8");
+						} catch {
+							return undefined;
+						}
+					},
+					interactive: false,
+					spawnPager: () => Promise.resolve(),
+					suspendRaw: () => {},
+					restoreRaw: () => {},
+					write: (s) => input.stdout.write(s),
+				});
+			showTranscriptInline = renderTranscriptInline;
+
 			const slashCtx: SlashContext = {
 				write: (s) => input.stdout.write(s),
 				session: {
@@ -368,22 +391,7 @@ export function createAiEzioLiveSession(input: {
 						description: s.description,
 					})),
 				clipboard: input.clipboard ?? makeClipboard(process.platform, spawn),
-				showTranscript: () =>
-					renderTranscript({
-						path: sessionFacet.transcriptPath ?? "",
-						readText: (p) => {
-							try {
-								return readFileSync(p, "utf8");
-							} catch {
-								return undefined;
-							}
-						},
-						interactive: false,
-						spawnPager: () => Promise.resolve(),
-						suspendRaw: () => {},
-						restoreRaw: () => {},
-						write: (s) => input.stdout.write(s),
-					}),
+				showTranscript: renderTranscriptInline,
 				currentSessionId: () => rename.currentSessionId(),
 				getSessionTitle: () => rename.getSessionTitle(),
 				setSessionTitle: (t) => rename.setSessionTitle(t),
@@ -410,6 +418,15 @@ export function createAiEzioLiveSession(input: {
 			// Cancel the in-flight turn over the protocol; the engine ignores it
 			// when no turn is running, so a stray Ctrl+C at idle is harmless.
 			session?.interrupt();
+		},
+		async showTranscript(): Promise<void> {
+			// Ctrl+T seam: the same inline dump the /transcript slash command
+			// renders. Before start() there is no session and no minted mirror.
+			if (!showTranscriptInline) {
+				input.stdout.write("no transcript yet\n");
+				return;
+			}
+			await showTranscriptInline();
 		},
 		async tryConsumeLocalCommand(line: string): Promise<boolean> {
 			// Mounted ezio handles `/`-commands locally (rendered to the pane) so they
