@@ -86,6 +86,26 @@ const defaultBuildAutoCompact: BuildAutoCompact = ({
 	});
 };
 
+/** Buffers the subagent-report destination behind a rebindable seam. Session
+ * hosts load (and may report) before the mounted renderer exists, so the sink
+ * starts on the raw-stdout fallback and is rebound to the renderer's notify
+ * guard once it is built. Mirrors ai-ezio's standalone buildReportSink, which
+ * is not importable here (it lives in the @ai-creed/ai-ezio cli package, not
+ * an adapter dependency). Lines are newline-terminated exactly once —
+ * renderer.notify writes them verbatim. */
+export function buildAdapterReportSink(fallback: (s: string) => void): {
+	report: (line: string) => void;
+	bind: (notify: (line: string) => void) => void;
+} {
+	let sink = fallback;
+	return {
+		report: (line) => sink(line.endsWith("\n") ? line : `${line}\n`),
+		bind: (notify) => {
+			sink = notify;
+		},
+	};
+}
+
 export function createAiEzioLiveSession(input: {
 	stdout: NodeJS.WritableStream;
 	createEngineSession?: CreateEngineSession;
@@ -118,12 +138,17 @@ export function createAiEzioLiveSession(input: {
 	// mounted model gets both the mcp.json ecosystem AND the `subagent` tool. The
 	// `mcpHost` is kept for the host-private rehydration API (callHostRehydration).
 	// An injected mcpHost (tests) is wrapped in a registry of just that host.
+	// Subagent progress lines must never hit the pane raw: under the turn-long
+	// spinner they'd land mid-row on the live spinner line. The hosts load
+	// before the renderer exists, so the sink starts on the raw-stdout fallback
+	// and is rebound to the renderer's notify guard right after it is built.
+	const reportSink = buildAdapterReportSink((s) => input.stdout.write(s));
 	const { registry, mcpHost } = input.mcpHost
 		? { registry: new DelegatedToolRegistry([input.mcpHost]), mcpHost: input.mcpHost }
 		: loadSessionHosts({
 				mode: "mounted",
 				cwd: process.cwd(),
-				report: (line: string) => input.stdout.write(`${line}\n`),
+				report: reportSink.report,
 			});
 
 	// §1C title store + rename controller — built before start() so the seam is
@@ -180,6 +205,7 @@ export function createAiEzioLiveSession(input: {
 	// InteractiveSessionController duties: handler forwarding, M6 handback timing,
 	// and submit — and delegates every byte of display to the renderer.
 	const renderer = createMountedRenderer({ stdout: input.stdout });
+	reportSink.bind(renderer.notify);
 
 	// §1C rename controller — feeds protocol events to track the live session id.
 	const rename = createRenameController({

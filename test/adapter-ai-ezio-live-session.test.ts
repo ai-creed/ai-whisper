@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { existsSync } from "node:fs";
 import type { ProtocolEvent } from "@ai-ezio/protocol";
-import { createAiEzioLiveSession } from "../packages/adapter-ai-ezio/src/create-ai-ezio-live-session.ts";
+import {
+	buildAdapterReportSink,
+	createAiEzioLiveSession,
+} from "../packages/adapter-ai-ezio/src/create-ai-ezio-live-session.ts";
 import type { AiEzioEngineSession } from "../packages/adapter-ai-ezio/src/ai-ezio-engine.ts";
 import { writeFileSync } from "node:fs";
 import { createSessionTitleStore, type TitleFs } from "@ai-ezio/harness";
@@ -119,6 +122,27 @@ describe("createAiEzioLiveSession", () => {
 // the handback still fires before the renderer draws the prompt. Detailed look
 // (binary-k usage, ❯ prompt parity, markdown, tool diffs) is covered by
 // @ai-ezio/surface's mounted-renderer.test.ts.
+describe("buildAdapterReportSink", () => {
+	it("routes report lines to the fallback, newline-normalized, before bind", () => {
+		const fallback: string[] = [];
+		const sink = buildAdapterReportSink((s) => fallback.push(s));
+		sink.report("▸ x");
+		expect(fallback).toEqual(["▸ x\n"]);
+	});
+
+	it("routes report lines to the bound notify after bind, without doubling newlines; the fallback receives nothing more", () => {
+		const fallback: string[] = [];
+		const notified: string[] = [];
+		const sink = buildAdapterReportSink((s) => fallback.push(s));
+		sink.report("▸ before");
+		sink.bind((line) => notified.push(line));
+		sink.report("▸ y");
+		sink.report("▸ z\n"); // already newline-terminated — no doubling
+		expect(notified).toEqual(["▸ y\n", "▸ z\n"]);
+		expect(fallback).toEqual(["▸ before\n"]);
+	});
+});
+
 describe("createAiEzioLiveSession — delegates display to the mounted renderer (M8)", () => {
 	function capturing() {
 		const writes: string[] = [];
