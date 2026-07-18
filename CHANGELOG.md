@@ -5,6 +5,15 @@ All notable changes to the `ai-whisper` package are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.1] - 2026-07-18
+
+### Fixed
+
+- **Recurring `SQLITE_BUSY_SNAPSHOT: database is locked` crashes.** Turn handback delivery (and any other write) could crash when several processes — mounts, the daemon, relay-monitor — wrote the shared state db at the same moment: transactions began as deferred readers, and a competing commit between their first read and first write failed the lock upgrade instantly, bypassing `busy_timeout`. Every transaction now takes the write lock up front (`BEGIN IMMEDIATE`) and waits in a bounded retry queue behind other writers (each attempt capped to the remaining `maxWriteWaitMs` budget) instead of crashing on a stale WAL snapshot.
+- **Ctrl+T transcript view in mounted ezio panes.** Ctrl+T now dumps the session transcript inline — the same render as `/transcript` — instead of doing nothing. With a partially typed line, the dump renders above and the line is re-echoed intact beneath, so editing continues where it left off. Stray C0 control bytes are dropped from the input line buffer instead of invisibly prefixing the next line and breaking slash-command interception (a poisoned `/transcript` used to be submitted to the engine as a real turn).
+- **Subagent progress lines no longer smear the spinner row.** The mounted ezio adapter routes subagent report lines through the renderer's notify guard instead of writing raw to the pane mid-turn, so `[subagent]` progress can't land on the live spinner line. (Requires the paired `@ai-ezio/surface` notify seam, included in this release's build.)
+- **Mounted `/resume` picker no longer intermittently shows an empty session list.** `--list-sessions` output is now read until stream close rather than process exit — exit could fire while stdout chunks were still in flight, and the truncated JSON read as "no sessions".
+
 ## [0.15.0] - 2026-07-13
 
 ### Added
@@ -765,6 +774,8 @@ Requires `@ai-creed/ai-ezio` ≥ 0.2.0-beta.4 (the `@ai-ezio/surface` slash seam
   (Claude + Codex) driven by structured workflows, with npm metadata
   (description, repository, homepage).
 
+[0.15.1]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.15.1
+[0.15.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.15.0
 [0.14.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.14.0
 [0.13.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.13.0
 [0.12.1]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.12.1
