@@ -14,6 +14,7 @@
 		"typecheck": "node packages/cli/scripts/stamp-ezio-provenance.mjs && tsc --noEmit -p tsconfig.json && pnpm -r --if-present typecheck",
 		"lint": "eslint .",
 		"lint:fix": "eslint . --fix",
+		"release": "bash scripts/release.sh",
 		"format": "prettier --check \"{package.json,pnpm-workspace.yaml,tsconfig*.json,vitest.config.ts,eslint.config.mjs,prettier.config.mjs}\" \"packages/*/{package.json,tsconfig.json}\" \"packages/*/src/**/*.ts\" \"test/**/*.ts\"",
 		"format:write": "prettier --write \"{package.json,pnpm-workspace.yaml,tsconfig*.json,vitest.config.ts,eslint.config.mjs,prettier.config.mjs}\" \"packages/*/{package.json,tsconfig.json}\" \"packages/*/src/**/*.ts\" \"test/**/*.ts\""
 	},
