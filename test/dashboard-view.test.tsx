@@ -1505,3 +1505,163 @@ describe("Wall — repository to frame: archived run renders chain-derived statu
 		db.close();
 	});
 });
+
+// Spec Testing (review finding follow-up): `whisper collab purge --force`
+// archives PROTECTED collabs too — those with a non-terminal workflow
+// (running/paused/halted, findNonTerminalWorkflow) — and archival never
+// touches workflow status. So a force-archived paused or running/escalated
+// workflow reaches FullCard, not CompactCard, through BOTH of FullCard's
+// branches (NORMAL and STUCK), neither of which the CompactCard-only
+// archived-chain fix above touched. Same repository -> state -> frame
+// shape as the CompactCard regression, one fixture per FullCard branch.
+describe("Wall — repository to frame: force-archived FullCard variants render chain-derived status and rounds", () => {
+	it("a force-archived PAUSED collab's card renders the archived tag, chain status, and rounds on FullCard's NORMAL branch", () => {
+		const dir = mkdtempSync(join(tmpdir(), "aiw-dash-ledger-paused-"));
+		const db = openDatabase(join(dir, "state.db"));
+		applyMigrations(db);
+
+		const NOW = "2026-05-20T01:00:00.000Z";
+		db.prepare(
+			`INSERT INTO collab (collab_id,workspace_root,display_name,status,created_at,updated_at,orchestrator_enabled,orchestrator_max_rounds,archived_at)
+			 VALUES (?,?,?,'stopped','2026-05-20T00:00:00.000Z','2026-05-20T00:00:00.000Z',0,4,?)`,
+		).run("c_ledger_paused", "/tmp/c_ledger_paused", "Ledger Paused", "2026-05-20T00:45:00.000Z");
+		// workflowStatus 'paused' is non-terminal (findNonTerminalWorkflow) so
+		// `purge --force` can archive it. 'paused' routes to the ACTIVE group
+		// (cardKind "full") and, since statusKey !== "stuck", to FullCard's
+		// NORMAL branch — the branch that already rendered a round counter but
+		// never `pane.chainStatus`.
+		db.prepare(
+			`INSERT INTO workflows (workflow_id,collab_id,workflow_type,name,spec_path,role_bindings,status,current_phase_index,halt_reason,workflow_context,created_at,updated_at)
+			 VALUES (?,?,?,?,?, '{}', ?, ?, ?, '{}', ?, ?)`,
+		).run("wf_ledger_paused", "c_ledger_paused", "sdd", "run", "/s", "paused", 1, null, "2026-05-20T00:10:00.000Z", "2026-05-20T00:10:00.000Z");
+		db.prepare(
+			`INSERT INTO relay_chains (chain_id,collab_id,status,current_round,max_rounds,terminal_handoff_id,terminal_reason,created_at,updated_at)
+			 VALUES (?,?,?,?,?,NULL,?,?,?)`,
+		).run("ch_ledger_paused", "c_ledger_paused", "escalated", 2, 4, "max rounds reached", "2026-05-20T00:10:00.000Z", "2026-05-20T00:40:00.000Z");
+		db.prepare(
+			`INSERT INTO workflow_phases (phase_run_id,workflow_id,phase_index,phase_name,chain_id,started_at,ended_at,outcome)
+			 VALUES (?,?,?,?,?,?,?,?)`,
+		).run("pr_ledger_paused", "wf_ledger_paused", 1, "review", "ch_ledger_paused", "2026-05-20T00:10:00.000Z", null, null);
+
+		const summaries = listAllWorkflowSummaries(db, {
+			sinceMs: Number.MAX_SAFE_INTEGER,
+			now: NOW,
+		});
+		const summary = summaries.find((s) => s.collabId === "c_ledger_paused");
+		expect(summary).toMatchObject({
+			archived: true,
+			workflowStatus: "paused",
+			chainStatus: "escalated",
+			currentRound: 2,
+			maxRounds: 4,
+		});
+
+		const wall = buildWallState({
+			summaries: summaries.filter((s) => s.collabId === "c_ledger_paused"),
+			now: NOW,
+			idleThresholdMs: 30_000,
+			capacity: 4,
+			page: 0,
+			selected: 0,
+			snapshots: {},
+		});
+		const section = wall.sections.find((s) => s.panes.some((p) => p.collabId === "c_ledger_paused"));
+		expect(section?.cardKind).toBe("full");
+		const pane = wall.panes.find((p) => p.collabId === "c_ledger_paused");
+		expect(pane).toMatchObject({
+			archived: true,
+			statusKey: "paused",
+			round: { current: 2, max: 4 },
+			chainStatus: "escalated",
+		});
+
+		const { lastFrame } = render(<Wall state={wall} cols={70} rows={20} />);
+		const frame = stripAnsi(lastFrame() ?? "");
+		// Branch-distinctive marker: the paused glyph "‖" only comes from
+		// statusGlyph on the NORMAL branch — the STUCK branch hardcodes "⚠"
+		// as a literal and never reaches statusGlyph at all.
+		expect(frame).toContain("‖");
+		expect(frame).toContain("archived");
+		expect(frame).toContain("escalated");
+		expect(frame).toContain("R2/4");
+
+		db.close();
+	});
+
+	it("a force-archived RUNNING collab whose liveness computes stuck renders the archived tag, chain status, and rounds on FullCard's STUCK branch", () => {
+		const dir = mkdtempSync(join(tmpdir(), "aiw-dash-ledger-stuck-"));
+		const db = openDatabase(join(dir, "state.db"));
+		applyMigrations(db);
+
+		const NOW = "2026-05-20T01:00:00.000Z";
+		db.prepare(
+			`INSERT INTO collab (collab_id,workspace_root,display_name,status,created_at,updated_at,orchestrator_enabled,orchestrator_max_rounds,archived_at)
+			 VALUES (?,?,?,'stopped','2026-05-20T00:00:00.000Z','2026-05-20T00:00:00.000Z',0,4,?)`,
+		).run("c_ledger_stuck", "/tmp/c_ledger_stuck", "Ledger Stuck", "2026-05-20T00:45:00.000Z");
+		// workflowStatus stays 'running' after force-archive; the chain's own
+		// round count (4/4, maxRounds > 1) trips the round-max-reached stuck
+		// cause (relay-view-state.ts computeLiveness — the same mechanism
+		// proven by test/dashboard-stuck-causes.test.ts "round-max reached"),
+		// so statusGlyph resolves statusKey to "stuck" and this run lands on
+		// FullCard's STUCK early-return branch, which rendered neither the
+		// round counter nor the chain-derived status before this fix. The
+		// chain's own status is deliberately 'active' (not 'escalated'), so
+		// it is never accidentally satisfied by the "why" text below, which
+		// hardcodes the literal word "escalated" regardless of chain.status.
+		db.prepare(
+			`INSERT INTO workflows (workflow_id,collab_id,workflow_type,name,spec_path,role_bindings,status,current_phase_index,halt_reason,workflow_context,created_at,updated_at)
+			 VALUES (?,?,?,?,?, '{}', ?, ?, ?, '{}', ?, ?)`,
+		).run("wf_ledger_stuck", "c_ledger_stuck", "sdd", "run", "/s", "running", 1, null, "2026-05-20T00:10:00.000Z", "2026-05-20T00:10:00.000Z");
+		db.prepare(
+			`INSERT INTO relay_chains (chain_id,collab_id,status,current_round,max_rounds,terminal_handoff_id,terminal_reason,created_at,updated_at)
+			 VALUES (?,?,?,?,?,NULL,?,?,?)`,
+		).run("ch_ledger_stuck", "c_ledger_stuck", "active", 4, 4, null, "2026-05-20T00:10:00.000Z", "2026-05-20T00:40:00.000Z");
+		db.prepare(
+			`INSERT INTO workflow_phases (phase_run_id,workflow_id,phase_index,phase_name,chain_id,started_at,ended_at,outcome)
+			 VALUES (?,?,?,?,?,?,?,?)`,
+		).run("pr_ledger_stuck", "wf_ledger_stuck", 1, "review", "ch_ledger_stuck", "2026-05-20T00:10:00.000Z", null, null);
+
+		const summaries = listAllWorkflowSummaries(db, {
+			sinceMs: Number.MAX_SAFE_INTEGER,
+			now: NOW,
+		});
+		const summary = summaries.find((s) => s.collabId === "c_ledger_stuck");
+		expect(summary).toMatchObject({
+			archived: true,
+			workflowStatus: "running",
+			chainStatus: "active",
+			currentRound: 4,
+			maxRounds: 4,
+		});
+
+		const wall = buildWallState({
+			summaries: summaries.filter((s) => s.collabId === "c_ledger_stuck"),
+			now: NOW,
+			idleThresholdMs: 30_000,
+			capacity: 4,
+			page: 0,
+			selected: 0,
+			snapshots: {},
+		});
+		const section = wall.sections.find((s) => s.panes.some((p) => p.collabId === "c_ledger_stuck"));
+		expect(section?.cardKind).toBe("full");
+		const pane = wall.panes.find((p) => p.collabId === "c_ledger_stuck");
+		expect(pane).toMatchObject({
+			archived: true,
+			statusKey: "stuck",
+			round: { current: 4, max: 4 },
+			chainStatus: "active",
+		});
+
+		const { lastFrame } = render(<Wall state={wall} cols={70} rows={20} />);
+		const frame = stripAnsi(lastFrame() ?? "");
+		// Branch-distinctive marker: the "STUCK ..." why row only renders on the
+		// STUCK early-return branch — the NORMAL branch never renders stuckWhy.
+		expect(frame).toContain("STUCK");
+		expect(frame).toContain("archived");
+		expect(frame).toContain("active");
+		expect(frame).toContain("R4/4");
+
+		db.close();
+	});
+});

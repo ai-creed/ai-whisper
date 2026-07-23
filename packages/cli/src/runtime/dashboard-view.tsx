@@ -192,6 +192,14 @@ export function FullCard(props: {
 		// Stuck card: red border + ⚠ glyph, why text dominant.
 		const why = pane.stuckWhy ?? "";
 		const splitAt = Math.max(0, props.width - 4);
+		// ARCHIVED-only: same convention as CompactCard's archived chain-status
+		// (see CompactCard above) — round counter + chain-derived status, gated
+		// on `pane.archived` so non-archived STUCK-branch output (pinned by
+		// existing frame tests) never changes. A force-archived running/escalated
+		// workflow reaches this branch (archival doesn't touch workflow status),
+		// and this branch previously rendered neither field at all.
+		const roundText = pane.archived ? formatRoundText(pane.round) : "";
+		const chainWord = pane.archived ? pane.chainStatus : null;
 		return (
 			<Box
 				flexDirection="column"
@@ -203,7 +211,9 @@ export function FullCard(props: {
 					{chevron}
 					<Text color={THEME.err}>⚠</Text> {pane.label}
 					{typeText ? <Text color={THEME.muted}> {typeText}</Text> : null}
+					{roundText ? <Text color={THEME.muted}>{roundText}</Text> : null}
 					{pane.archived ? <Text color={THEME.muted}> archived</Text> : null}
+					{chainWord ? <Text color={THEME.muted}> · {chainWord}</Text> : null}
 				</Text>
 				{cwdLine(pane.cwd, props.width)}
 				<Text wrap="truncate" color={THEME.err}>
@@ -233,6 +243,12 @@ export function FullCard(props: {
 	// which are narrow, so the bar drops.
 	const showBar = pane.progress != null && isWide;
 	const roundText = formatRoundText(pane.round);
+	// ARCHIVED-only: same convention as CompactCard's archived chain-status —
+	// the round text above already renders unconditionally on this branch, but
+	// the chain-derived status word never did. Gated on `pane.archived` so
+	// non-archived NORMAL-branch output (pinned by existing frame tests) never
+	// changes.
+	const chainWord = pane.archived ? pane.chainStatus : null;
 
 	const startHHMM = pane.startIso ? hhmmUTC(pane.startIso) : null;
 	// Trim defensively: a whitespace-only artifact must omit the subline (and keep
@@ -267,6 +283,7 @@ export function FullCard(props: {
 				{typeText ? <Text color={THEME.muted}> {typeText}</Text> : null}
 				{roundText ? <Text color={THEME.muted}>{roundText}</Text> : null}
 				{pane.archived ? <Text color={THEME.muted}> archived</Text> : null}
+				{chainWord ? <Text color={THEME.muted}> · {chainWord}</Text> : null}
 			</Text>
 			{cwdLine(pane.cwd, props.width)}
 			{artifactText ? (
