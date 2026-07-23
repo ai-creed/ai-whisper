@@ -89,6 +89,35 @@ describe("composeResumeSeedText — sections", () => {
 		expect(text).toContain("only");
 	});
 
+	it("terminal round captured EMPTY: final section omitted, earlier handbacks stay in digest", () => {
+		// Empty handbacks are valid persisted state (handoffBackRelayTxn writes
+		// requestText verbatim). The final-handback section belongs to the terminal
+		// round only — never backfilled from an earlier round.
+		const text = composeResumeSeedText({
+			marker: marker(),
+			rounds: [
+				{ roundNumber: 1, step: "review", verdict: "findings", handbackText: "reviewer found X" },
+				{ roundNumber: 1, step: "fix", verdict: null, handbackText: "fixed X partially" },
+				{ roundNumber: 2, step: "review", verdict: "escalate", handbackText: "" },
+			],
+			commitBase: null,
+		});
+		expect(text).not.toContain("Final handback");
+		expect(text).toContain("Prior rounds");
+		expect(text).toContain("round 1 fix [findings]: fixed X partially");
+	});
+
+	it("terminal handback never captured (null), no earlier handbacks: no final, no digest", () => {
+		const text = composeResumeSeedText({
+			marker: marker(),
+			rounds: [{ roundNumber: 1, step: "review", verdict: "escalate", handbackText: null }],
+			commitBase: null,
+		});
+		expect(text).not.toContain("Final handback");
+		expect(text).not.toContain("Prior rounds");
+		expect(text).toContain("Halt reason:");
+	});
+
 	it("one digest line per ROUND: review+fix handbacks sharing a round collapse to one line", () => {
 		// findings→fix continuations keep the same round number (createContinuationHandoff
 		// with incrementRound: false), so one logical round can carry two handbacks.

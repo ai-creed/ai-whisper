@@ -90,6 +90,11 @@ export function composeResumeSeedText(input: {
 	rounds: SeedRound[];
 	commitBase: string | null;
 }): string {
+	// The terminal round is determined BEFORE filtering empty text: empty handbacks
+	// are valid persisted state, and the final-handback section belongs to the
+	// terminal round only — omitted when its handback is empty or never captured
+	// (spec §2: no source data → no section), never backfilled from an earlier round.
+	const terminalRow = input.rounds.at(-1) ?? null;
 	const withHandback = input.rounds.filter((r) => r.handbackText !== null && r.handbackText !== "");
 	// One digest entry per ROUND (spec §2): findings→fix continuations share a round
 	// number, so group by roundNumber — the round's LATEST handback supplies the line
@@ -105,8 +110,9 @@ export function composeResumeSeedText(input: {
 		});
 	}
 	const perRound = [...byRound.values()]; // rows arrive ascending; Map preserves insertion order
-	const final = perRound.length > 0 ? perRound[perRound.length - 1] : null;
-	const digestSource = perRound.slice(0, -1);
+	const final =
+		terminalRow !== null && terminalRow.handbackText ? (perRound.at(-1) ?? null) : null;
+	const digestSource = final ? perRound.slice(0, -1) : perRound;
 
 	let digest = digestSource.map((r) => {
 		const line = `round ${r.roundNumber} ${r.step ?? "?"} [${r.verdict ?? "no-verdict"}]: ${firstLine(r.handbackText ?? "")}`;

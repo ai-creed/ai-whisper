@@ -222,11 +222,15 @@ export function createWorkflowDriver(deps: WorkflowDriverDeps): WorkflowDriver {
 			// seed/date doesn't derive a findings path; fall back to specPath
 		}
 
-		// Render kickoff text
-		const usableBase = executionBaseHeadSha ?? ctxForSeed.baseBeforeExecution;
+		// Render kickoff text. The seed's commit-range instruction derives ONLY from
+		// a PRE-EXISTING usable base (a prior attempt's anchor, spec §2/§3) — a HEAD
+		// just read for ordinary phase anchoring is not prior-attempt context and
+		// must not add a commit-range section to the seed.
 		const seedCommitBase =
-			seedForThisPhase && usableBase !== undefined && phaseUsesCommitRange(phase)
-				? usableBase
+			seedForThisPhase &&
+			ctxForSeed.baseBeforeExecution !== undefined &&
+			phaseUsesCommitRange(phase)
+				? ctxForSeed.baseBeforeExecution
 				: undefined;
 		let planPath = workflow.specPath; // safe fallback
 		try {

@@ -26,11 +26,17 @@ function setupBroker() {
 /** Insert a running workflow at the given phase with the given context + resumeSeed marker. */
 function insertWorkflowAtPhase(
 	broker: ReturnType<typeof setupBroker>,
-	input: { workflowType: string; phaseIndex: number; context: Record<string, unknown> },
+	input: {
+		workflowType: string;
+		phaseIndex: number;
+		context: Record<string, unknown>;
+		markerOverrides?: Record<string, unknown>;
+	},
 ) {
 	const marker = {
 		phaseIndex: input.phaseIndex, resumedAt: NOW,
 		haltReason: "max-rounds-reached (5/5)", chainId: null, message: null,
+		...input.markerOverrides,
 	};
 	broker.db
 		.prepare(
@@ -115,6 +121,23 @@ describe("seeded driver kickoff — base-establishing phases (spec §3)", () => 
 		expect(reviewText).toContain(`${ORIGINAL_BASE}..HEAD`);
 		expect(reviewText.includes(STALE)).toBe(false);
 		void workflowId;
+	});
+
+	it("no-chain anchor phase with NO pre-existing base: seed omits the commit-range section; ordinary anchoring still records fresh HEAD (spec §2)", async () => {
+		// A just-read HEAD is ordinary phase anchoring, not prior-attempt context —
+		// it must not feed the seed's commit-range instruction.
+		const broker = setupBroker();
+		const workflowId = insertWorkflowAtPhase(broker, {
+			workflowType: "quick-task", phaseIndex: 0, context: {},
+			markerOverrides: { message: "bindings fixed, go" },
+		});
+		await runDriverOnce(broker);
+		const text = latestRequestText(broker);
+		expect(text).toContain("RESUMED PHASE");
+		expect(text).toContain("bindings fixed, go");
+		expect(text).not.toContain("--- Commit range ---");
+		const ctx = broker.control.getWorkflow(workflowId)!.workflowContext as { baseBeforeExecution?: string };
+		expect(ctx.baseBeforeExecution).toBe(FINISHED_TIP);
 	});
 
 	it("seeded execute phase with NO recorded base re-anchors normally (first attempt of this phase)", async () => {
