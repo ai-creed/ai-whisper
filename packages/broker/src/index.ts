@@ -49,6 +49,12 @@ export {
 	type LeaseOptions,
 } from "./storage/clipboard-capture-lease.js";
 export { openDatabase } from "./storage/open-database.js";
+export {
+	runRecoveryImport,
+	runRecoveryImportFromPaths,
+	type RecoveryExpectations,
+	type RecoveryImportResult,
+} from "./storage/import-recovery.js";
 export { getBrokerState } from "./storage/repositories/broker-state-repository.js";
 export {
 	createCompanionAck,
