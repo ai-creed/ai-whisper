@@ -6,6 +6,7 @@ import { applyMigrations } from "../packages/broker/src/storage/apply-migrations
 import { openDatabase } from "../packages/broker/src/storage/open-database.ts";
 import {
 	listActiveCollabSummaries,
+	listAllWorkflowSummaries,
 	listRunCostRows,
 } from "../packages/broker/src/storage/repositories/dashboard-repository.ts";
 
@@ -16,11 +17,11 @@ function freshDb() {
 	return db;
 }
 
-function insCollab(db: ReturnType<typeof freshDb>, id: string, name = id) {
+function insCollab(db: ReturnType<typeof freshDb>, id: string, name = id, archivedAt: string | null = null) {
 	db.prepare(
-		`INSERT INTO collab (collab_id,workspace_root,display_name,status,created_at,updated_at,orchestrator_enabled,orchestrator_max_rounds)
-		 VALUES (?,?,?,'active','2026-05-20T00:00:00.000Z','2026-05-20T00:00:00.000Z',0,3)`,
-	).run(id, `/tmp/${id}`, name);
+		`INSERT INTO collab (collab_id,workspace_root,display_name,status,created_at,updated_at,orchestrator_enabled,orchestrator_max_rounds,archived_at)
+		 VALUES (?,?,?,'active','2026-05-20T00:00:00.000Z','2026-05-20T00:00:00.000Z',0,3,?)`,
+	).run(id, `/tmp/${id}`, name, archivedAt);
 }
 function insWorkflow(db: ReturnType<typeof freshDb>, w: { id: string; collab: string; type?: string; name?: string | null; status?: string; phaseIdx?: number; createdAt?: string; specPath?: string }) {
 	db.prepare(
@@ -287,6 +288,59 @@ describe("listActiveCollabSummaries", () => {
 		insHandoff(db, { id: "hws", collab: "cws", wf: "wfws", createdAt: "2026-05-20T00:55:00.000Z", lastAct: "2026-05-20T00:59:30.000Z" });
 		const rows = listActiveCollabSummaries(db, { sinceMs, now: NOW });
 		expect(rows.find((r) => r.collabId === "cws")?.workspaceRoot).toBe("/tmp/cws");
+	});
+
+	// Eligibility's HAVING clause must also accept a workflow-bearing collab with
+	// ZERO relay_handoff rows via the created_at fallback — before the fix, a
+	// collab whose workflow had no handoffs at all (e.g. just-started) fell
+	// through `MAX(h.last_activity_at) >= cutoff` (NULL comparison) and the old
+	// status-only EXISTS clause, vanishing from the wall entirely.
+	// `minResults: 0` disables the finished-collab backfill so this test isolates
+	// the HAVING clause itself — without it, this collab's terminal ('done')
+	// workflow would get rescued by the floor-of-3 backfill regardless of
+	// whether the created_at fallback works, masking a regression.
+	it("wall includes a workflow-bearing collab with zero handoffs (created_at fallback)", () => {
+		const db = freshDb();
+		insCollab(db, "c_nohandoff", "NoHandoff");
+		insWorkflow(db, {
+			id: "wf_nohandoff",
+			collab: "c_nohandoff",
+			status: "done",
+			createdAt: "2026-05-20T00:50:00.000Z", // inside the 30m window (cutoff 00:30:00)
+		});
+		// deliberately no insHandoff() call — zero relay_handoff rows for this collab
+		const out = listActiveCollabSummaries(db, { sinceMs, now: NOW, minResults: 0 });
+		expect(out.map((c) => c.collabId)).toContain("c_nohandoff");
+	});
+
+	// Wall (default, per-collab) eligibility must exclude archived collabs even
+	// under an unbounded window, while the run-ledger view (listAllWorkflowSummaries)
+	// keeps them and flags each run `archived: true` so Task 7's card marker can
+	// render it. Uses `sinceMs: Number.MAX_SAFE_INTEGER` (the `--window all`
+	// sentinel) so window recency can't accidentally explain the exclusion.
+	it("wall excludes archived collabs; run-ledger view includes them flagged archived", () => {
+		const db = freshDb();
+		insCollab(db, "c_archived", "Archived", "2026-05-20T00:45:00.000Z");
+		insWorkflow(db, {
+			id: "wf_archived",
+			collab: "c_archived",
+			status: "done",
+			createdAt: "2026-05-20T00:50:00.000Z",
+		});
+		insHandoff(db, {
+			id: "h_archived",
+			collab: "c_archived",
+			wf: "wf_archived",
+			createdAt: "2026-05-20T00:55:00.000Z",
+			lastAct: "2026-05-20T00:59:00.000Z",
+		});
+
+		const wall = listActiveCollabSummaries(db, { sinceMs: Number.MAX_SAFE_INTEGER, now: NOW });
+		expect(wall.map((c) => c.collabId)).not.toContain("c_archived");
+
+		const ledger = listAllWorkflowSummaries(db, { sinceMs: Number.MAX_SAFE_INTEGER, now: NOW });
+		const archivedRun = ledger.find((r) => r.collabId === "c_archived");
+		expect(archivedRun?.archived).toBe(true);
 	});
 });
 

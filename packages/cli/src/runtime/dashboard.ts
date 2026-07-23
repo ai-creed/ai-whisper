@@ -68,6 +68,13 @@ export function buildMountAliveByAgent(
 
 const DEFAULT_WINDOW_MS = 1_800_000;
 
+// The `--window all`/`max`/`∞` sentinel (also reached via any sinceMs this
+// large). Exported so callers can compare `windowMs === WINDOW_ALL_SENTINEL`
+// without duplicating the literal — e.g. create-cli.ts's dashboard action
+// uses it to imply run-ledger mode (`showAll: true`) whenever the window is
+// unbounded, even without an explicit `--all`.
+export const WINDOW_ALL_SENTINEL = Number.MAX_SAFE_INTEGER;
+
 // Parse a human-friendly duration ("30m", "2h", "1d", "45s", "all", or raw ms).
 // Returns null if the input is unparseable so the caller can fall back.
 export function parseDashboardWindow(input: string | undefined): number | null {
@@ -76,7 +83,7 @@ export function parseDashboardWindow(input: string | undefined): number | null {
 	if (s === "") return null;
 	if (s === "all" || s === "max" || s === "∞") {
 		// Effectively "no window" — collabs with any activity ever are eligible.
-		return Number.MAX_SAFE_INTEGER;
+		return WINDOW_ALL_SENTINEL;
 	}
 	const m = /^(\d+(?:\.\d+)?)(ms|s|m|h|d)?$/.exec(s);
 	if (!m) return null;

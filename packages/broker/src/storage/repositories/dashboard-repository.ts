@@ -28,6 +28,12 @@ export type CollabSummary = {
 	workflowCreatedAt: string | null; // additive — see spec Non-Goals
 	specPath: string | null; // additive — repo-relative artifact path (Fix 3)
 	lastActivityAt: string;
+	// additive — true when the OWNING COLLAB is archived (collab.archived_at
+	// IS NOT NULL). Always false on the Wall path (listActiveCollabSummaries
+	// excludes archived collabs outright); only listAllWorkflowSummaries's
+	// run-ledger view can surface true. Optional so pre-existing CollabSummary
+	// object literals (e.g. test fixtures) don't need updating.
+	archived?: boolean;
 };
 
 export type WorkflowSummaryRow = {
@@ -81,13 +87,14 @@ export function listActiveCollabSummaries(
 			        COALESCE(MAX(h.last_activity_at), '') AS lastAct
 			   FROM collab c
 			   LEFT JOIN relay_handoff h ON h.collab_id = c.collab_id
+			  WHERE c.archived_at IS NULL
 			  GROUP BY c.collab_id
 			 HAVING MAX(h.last_activity_at) >= ?
 			     OR EXISTS (SELECT 1 FROM workflows w
 			                 WHERE w.collab_id = c.collab_id
-			                   AND w.status IN ('running','paused'))`,
+			                   AND (w.status IN ('running','paused') OR w.created_at >= ?))`,
 		)
-		.all(cutoff) as Array<{ collabId: string; lastAct: string }>;
+		.all(cutoff, cutoff) as Array<{ collabId: string; lastAct: string }>;
 
 	const out: CollabSummary[] = [];
 	const seen = new Set<string>();
@@ -102,11 +109,13 @@ export function listActiveCollabSummaries(
 	if (out.length < minResults) {
 		const finished = db
 			.prepare(
-				`SELECT collab_id AS collabId, MAX(created_at) AS lastCreated
-				   FROM workflows
-				  WHERE status IN ('done','halted','canceled')
-				  GROUP BY collab_id
-				  ORDER BY lastCreated DESC, collab_id DESC`,
+				`SELECT w.collab_id AS collabId, MAX(w.created_at) AS lastCreated
+				   FROM workflows w
+				   JOIN collab c ON c.collab_id = w.collab_id
+				  WHERE w.status IN ('done','halted','canceled')
+				    AND c.archived_at IS NULL
+				  GROUP BY w.collab_id
+				  ORDER BY lastCreated DESC, w.collab_id DESC`,
 			)
 			.all() as Array<{ collabId: string; lastCreated: string }>;
 		for (const f of finished) {
@@ -129,6 +138,10 @@ type WorkflowProjectionRow = {
 	currentPhaseIndex: number;
 	createdAt: string;
 	specPath: string;
+	// Owning-collab archived flag (Task 6). Only listAllWorkflowSummaries's SQL
+	// populates this (JOIN collab ... c.archived_at); the wall's buildCollabSummary
+	// path never sets it — those collabs are already excluded from eligibility.
+	archived?: boolean;
 };
 
 // Project ONE run (or the manual-relay slice when `wf` is null) of a collab into
@@ -264,6 +277,7 @@ function buildWorkflowSummary(
 		workflowCreatedAt: wf?.createdAt ?? null,
 		specPath: wf ? displayArtifactPath(wf.specPath, collab?.workspaceRoot ?? "") : null,
 		lastActivityAt: runLastAct,
+		archived: wf?.archived ?? false,
 	};
 }
 
@@ -303,8 +317,10 @@ export function listAllWorkflowSummaries(
 			        w.name AS name, w.status AS status,
 			        w.current_phase_index AS currentPhaseIndex,
 			        w.created_at AS createdAt, w.spec_path AS specPath,
-			        w.collab_id AS collabId
+			        w.collab_id AS collabId,
+			        c.archived_at IS NOT NULL AS archived
 			   FROM workflows w
+			   JOIN collab c ON c.collab_id = w.collab_id
 			   LEFT JOIN relay_handoff h ON h.workflow_id = w.workflow_id
 			  GROUP BY w.workflow_id
 			 HAVING w.status IN ('running','paused')
@@ -312,9 +328,13 @@ export function listAllWorkflowSummaries(
 			     OR (MAX(h.last_activity_at) IS NULL AND w.created_at >= ?)
 			  ORDER BY w.created_at DESC, w.rowid DESC`,
 		)
-		.all(cutoff, cutoff) as Array<WorkflowProjectionRow & { collabId: string }>;
+		.all(cutoff, cutoff) as Array<
+		Omit<WorkflowProjectionRow, "archived"> & { collabId: string; archived: number }
+	>;
 
-	return rows.map((r) => buildWorkflowSummary(db, r.collabId, r));
+	return rows.map((r) =>
+		buildWorkflowSummary(db, r.collabId, { ...r, archived: Boolean(r.archived) }),
+	);
 }
 
 // Bug B: enumerate the FULL workflow run history for a collab, newest-first.

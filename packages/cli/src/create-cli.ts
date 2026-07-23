@@ -396,7 +396,8 @@ export function createCli(): Command {
 			"Show one card per workflow RUN (no per-collab masking). Still respects --window per run; pair with '--window all' for the complete run ledger.",
 		)
 		.action(async (opts: { window?: string; all?: boolean }) => {
-			const { parseDashboardWindow } = await import("./runtime/dashboard.js");
+			const { parseDashboardWindow, WINDOW_ALL_SENTINEL } =
+				await import("./runtime/dashboard.js");
 			const windowMs =
 				opts.window != null ? parseDashboardWindow(opts.window) : null;
 			if (opts.window != null && windowMs == null) {
@@ -405,9 +406,13 @@ export function createCli(): Command {
 				);
 				process.exit(2);
 			}
+			// `--window all` implies the run-ledger view (one card per run, archived
+			// runs included) even without an explicit `--all` — an unbounded window
+			// is meaningless under per-collab masking, which only ever shows the
+			// latest run per collab. `--all` still works independently at any window.
 			await runCollabDashboard({
+				showAll: opts.all === true || windowMs === WINDOW_ALL_SENTINEL,
 				...(windowMs != null ? { windowMs } : {}),
-				...(opts.all ? { showAll: true } : {}),
 			});
 		});
 
