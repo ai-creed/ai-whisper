@@ -22,7 +22,11 @@ import {
 	closeWorkflowPhaseRun,
 	type WorkflowPhaseRunRecord,
 } from "../storage/repositories/workflow-phase-repository.js";
-import type { ResumeSeedMarker } from "./resume-seed.js";
+import {
+	composeResumeSeedText,
+	readResumeSeedMarker,
+	type ResumeSeedMarker,
+} from "./resume-seed.js";
 import {
 	insertRelayChain,
 	getRelayChain as getRelayChainRepo,
@@ -38,6 +42,7 @@ import {
 	hasInFlightAcceptedHandoffForWorkflow,
 	resetStrandedOrchestrationForWorkflow,
 	prependToPendingHandoffRequestText,
+	listRelayHandoffsForChain,
 } from "../storage/repositories/relay-handoff-repository.js";
 import { upsertRelayTurnState } from "../storage/repositories/relay-turn-state-repository.js";
 import {
@@ -267,6 +272,9 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 		target: AgentType;
 		maxRounds: number;
 		executionBaseHeadSha?: string;
+		/** Base SHA the resume seed's commit-range section states (spec §3). Set by the
+		 *  driver only for seeded kickoffs of phases that use a commit range. */
+		seedCommitBase?: string;
 		now: string;
 	}): { phaseRunId: string; chainId: string; handoffId: string } {
 		if (input.initialHandoffStep === "execute") {
@@ -306,6 +314,35 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 					`beginPhaseRun: open phase run already exists for workflow ${input.workflowId} index ${input.phaseIndex}`,
 				);
 			}
+			// Resume seed (spec §2): consume the one-shot marker in this same tx.
+			// Re-read the workflow inside the tx so the marker check is atomic.
+			const current = getWorkflowById(db, input.workflowId);
+			const marker = current ? readResumeSeedMarker(current.workflowContext) : null;
+			let kickoffText = input.kickoffText;
+			if (marker) {
+				if (marker.phaseIndex === input.phaseIndex) {
+					const rounds = marker.chainId
+						? listRelayHandoffsForChain(db, marker.chainId).map((r) => ({
+								roundNumber: r.roundNumber ?? 0,
+								step: r.handoffStep,
+								verdict: r.orchestratorVerdict,
+								handbackText: r.handbackText,
+							}))
+						: [];
+					const seed = composeResumeSeedText({
+						marker,
+						rounds,
+						commitBase: input.seedCommitBase ?? null,
+					});
+					kickoffText = `${seed}\n\n${input.kickoffText}`;
+				}
+				// Consumed on match, discarded on phase mismatch — one-shot either way.
+				updateWorkflowContext(db, {
+					workflowId: input.workflowId,
+					patch: { resumeSeed: null },
+					now: input.now,
+				});
+			}
 			insertRelayChain(db, {
 				chainId,
 				collabId: workflow.collabId,
@@ -325,7 +362,7 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 				collabId: workflow.collabId,
 				senderAgent: input.sender,
 				targetAgent: input.target,
-				requestText: input.kickoffText,
+				requestText: kickoffText,
 				chainId,
 				roundNumber: 1,
 				maxRounds: input.maxRounds,
