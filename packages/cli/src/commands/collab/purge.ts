@@ -284,7 +284,7 @@ export async function runCollabPurge(
 				);
 			} else {
 				log(
-					`Dry run — ${candidates.length} collab(s) would be purged. Nothing deleted.`,
+					`Dry run — ${candidates.length} collab(s) would be purged. Nothing archived.`,
 				);
 			}
 			return empty(0, classifications, protectedSkipped);
@@ -293,11 +293,13 @@ export async function runCollabPurge(
 		if (opts.yes !== true) {
 			if (!isTTY) {
 				log(
-					`Refusing to delete ${candidates.length} collab(s) without confirmation. Re-run with --yes.`,
+					`Refusing to archive ${candidates.length} collab(s) without confirmation. Re-run with --yes.`,
 				);
 				return empty(1, classifications, protectedSkipped, true);
 			}
-			const ok = await confirm(`Delete these ${candidates.length} collab(s)?`);
+			const ok = await confirm(
+				`Archive these ${candidates.length} collab(s)? (runtime state removed, history kept)`,
+			);
 			if (!ok) {
 				log("Aborted. Nothing deleted.");
 				return empty(0, classifications, protectedSkipped, true);

@@ -462,9 +462,11 @@ export function createCli(): Command {
 
 	collab
 		.command("purge")
-		.description("Remove stale collabs (no live process) across all workspaces")
+		.description(
+			"Archive stale collabs (no live process) across all workspaces: runtime state is removed, ledger history is kept",
+		)
 		.option("--dry-run", "Classify and print only; never prompt or delete")
-		.option("-y, --yes", "Skip the confirmation prompt and delete")
+		.option("-y, --yes", "Skip the confirmation prompt and archive")
 		.option(
 			"--force",
 			"Also purge collabs with a non-terminal (resumable) workflow",
