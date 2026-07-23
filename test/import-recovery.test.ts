@@ -128,16 +128,32 @@ function fillFixtureSource(db: ReturnType<typeof openDatabase>): void {
 		c6: "t",
 		c7: "t",
 	});
+	// nfield=12 distractor (session-shaped c0, does NOT glob wf_*) -> proves the
+	// workflows predicate's c0 GLOB is load-bearing, not just nfield=12.
+	insertRow(db, 12, {
+		...workflow(),
+		c0: "sess_y",
+	});
 	// chain referenced by the closed phase/handoff.
 	insertRow(db, 9, chain("relay_ch_a"));
 	// chain referenced by nothing -> skip: unreferencedChains.
 	insertRow(db, 9, chain("relay_ch_orphan"));
+	// nfield=9 distractor (c0 does NOT glob relay_ch_*) -> proves the chains
+	// predicate's c0 GLOB is load-bearing, not just nfield=9.
+	insertRow(db, 9, {
+		...chain("sess_z"),
+	});
 	// handoff rooted + chain-closed.
 	insertRow(db, 29, handoff("ho_a", "relay_ch_a", "wf_a"));
 	// handoff rooted, chain missing -> skip: missingChain.
 	insertRow(db, 29, handoff("ho_b", "relay_ch_missing", "wf_a"));
 	// handoff unknown workflow -> skip: unknownWorkflow.
 	insertRow(db, 29, handoff("ho_c", "relay_ch_a", "wf_ghost"));
+	// nfield=29 distractor (c0 does NOT glob ho_*) -> proves the handoffs
+	// predicate's c0 GLOB is load-bearing, not just nfield=29.
+	insertRow(db, 29, {
+		...handoff("sess_w", "relay_ch_a", "wf_a"),
+	});
 }
 
 function fixtureSource(): ReturnType<typeof openDatabase> {
@@ -187,6 +203,24 @@ const FIXTURE_EXPECTATIONS = {
 	distinct: { workflows: 1, phases: 3, chains: 2, handoffs: 3 },
 	closureFloor: { phases: 1, chains: 1, handoffs: 1 },
 };
+
+// Every verification-tier abort must leave the target completely unwritten —
+// no imported rows AND no collab tombstones (tombstones are written first,
+// inside the same guarded transaction, so a stray tombstone would mean the
+// abort ran too late).
+function expectNoImportedRows(target: ReturnType<typeof openDatabase>): void {
+	for (const table of [
+		"collab",
+		"workflows",
+		"workflow_phases",
+		"relay_chains",
+		"relay_handoff",
+	]) {
+		expect(target.prepare(`SELECT COUNT(*) n FROM "${table}"`).get()).toMatchObject({
+			n: 0,
+		});
+	}
+}
 
 // WAL-aware snapshot: the target runs in WAL mode, so a forbidden pre-guard write
 // could land in state.db-wal while the primary file's hash stays unchanged.
@@ -245,6 +279,18 @@ describe("runRecoveryImport", () => {
 				.prepare("SELECT archived_at FROM collab WHERE collab_id = ?")
 				.get(TOMBSTONE_COLLAB_ID),
 		).toMatchObject({ archived_at: expect.any(String) });
+		// same-width distractors (session-shaped c0, one per predicate width) never
+		// import — the per-table imported total of exactly 1 already implies this,
+		// but assert their ids directly so a dropped GLOB predicate fails loudly.
+		expect(
+			target.prepare("SELECT 1 FROM workflows WHERE workflow_id = ?").get("sess_y"),
+		).toBeUndefined();
+		expect(
+			target.prepare("SELECT 1 FROM relay_chains WHERE chain_id = ?").get("sess_z"),
+		).toBeUndefined();
+		expect(
+			target.prepare("SELECT 1 FROM relay_handoff WHERE handoff_id = ?").get("sess_w"),
+		).toBeUndefined();
 	});
 
 	it("is idempotent — second run imports nothing", () => {
@@ -259,16 +305,46 @@ describe("runRecoveryImport", () => {
 		});
 	});
 
-	it("aborts before writing on raw/distinct mismatch and on closure below floor", () => {
+	it("aborts before writing on a raw-count mismatch", () => {
 		const bad = {
 			...FIXTURE_EXPECTATIONS,
 			raw: { ...FIXTURE_EXPECTATIONS.raw, workflows: 99 },
 		};
 		expect(() => runRecoveryImport(source, target, bad, NOW)).toThrow(/count/i);
-		expect(target.prepare("SELECT COUNT(*) n FROM workflows").get()).toMatchObject({
-			n: 0,
-		});
+		expectNoImportedRows(target);
 	});
+
+	// Raw is a straight COUNT(*); distinct is COUNT(DISTINCT c0) after freelist
+	// duplicates collapse. A raw-only check would miss a predicate that matches
+	// the right row COUNT but the wrong SET of rows (e.g. dedup collapsing
+	// differently than expected) — so distinct must be verified independently,
+	// with raw left correct, to prove tier 2 actually gates on its own.
+	it("aborts before writing on a distinct-count mismatch (raw correct, distinct wrong)", () => {
+		const bad = {
+			...FIXTURE_EXPECTATIONS,
+			distinct: { ...FIXTURE_EXPECTATIONS.distinct, phases: 99 },
+		};
+		expect(() => runRecoveryImport(source, target, bad, NOW)).toThrow(/count/i);
+		expectNoImportedRows(target);
+	});
+
+	// Tier 3 (closure floor) is checked AFTER both count tiers pass and BEFORE
+	// any write — one case per floor field, each raising just that field's floor
+	// one above what this fixture's referential closure actually achieves (1).
+	it.each(["phases", "chains", "handoffs"] as const)(
+		"aborts before writing when the %s closure count falls below its floor",
+		(field) => {
+			const bad = {
+				...FIXTURE_EXPECTATIONS,
+				closureFloor: {
+					...FIXTURE_EXPECTATIONS.closureFloor,
+					[field]: FIXTURE_EXPECTATIONS.closureFloor[field] + 1,
+				},
+			};
+			expect(() => runRecoveryImport(source, target, bad, NOW)).toThrow(/count/i);
+			expectNoImportedRows(target);
+		},
+	);
 
 	it("rolls back the whole transaction on a malformed row", () => {
 		// fixture variant: a valid-shape workflow with NULL created_at (c10) —

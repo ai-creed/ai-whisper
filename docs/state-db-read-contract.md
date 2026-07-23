@@ -62,6 +62,21 @@ The exact subset of tables and columns external readers may rely on:
 - **Purge archives, it does not delete:** purge sets `collab.archived_at` and
   deletes only runtime tables; `collab`, `workflows`, `workflow_phases`,
   `relay_chains`, `relay_handoff` are permanent ledger tables.
+- **Three-way table classification.** Every `collab_id`-bearing table is
+  exactly one of:
+  - **Ledger tables** (permanent, never deleted by purge or by the age-based
+    sweep): `collab`, `workflows`, `workflow_phases`, `relay_chains`,
+    `relay_handoff`. These are the contract surface in §3.
+  - **Runtime tables** (deleted by purge when a collab is archived): daemon
+    rows, sessions, session attachments, sockets state, clipboard leases, and
+    other per-collab runtime state. Not contract surface.
+  - **Diagnostics tables** (purge never touches them; the age-based retention
+    sweep is their only deleter): `relay_capture_diagnostics`,
+    `relay_evaluator_diagnostics`, `relay_turn_event_diagnostics`. The sweep
+    deletes rows older than a retention window (default 30 days,
+    `AI_WHISPER_DIAGNOSTICS_RETENTION_DAYS`) independent of purge and
+    independent of whether the owning collab is archived. Not contract
+    surface — external readers must not assume diagnostics rows survive.
 
 ## 5. Event socket (companion surface)
 

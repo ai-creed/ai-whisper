@@ -72,6 +72,13 @@ describe("workflow lifecycle on archived collabs", () => {
 			);
 			archiveTx.immediate();
 
+			// Full-row snapshot (every column), pinned immediately after archiving —
+			// the resume refusal must leave the collab row byte-for-byte untouched,
+			// not merely `archived_at` still-a-string.
+			const collabBefore = broker.db
+				.prepare("SELECT * FROM collab WHERE collab_id = ?")
+				.get(collabId);
+
 			expect(() =>
 				broker.control.resumeWorkflow({
 					workflowId,
@@ -86,11 +93,10 @@ describe("workflow lifecycle on archived collabs", () => {
 				.get(workflowId);
 			expect(after).toEqual(before);
 
-			expect(
-				broker.db
-					.prepare("SELECT archived_at FROM collab WHERE collab_id = ?")
-					.get(collabId),
-			).toMatchObject({ archived_at: expect.any(String) });
+			const collabAfter = broker.db
+				.prepare("SELECT * FROM collab WHERE collab_id = ?")
+				.get(collabId);
+			expect(collabAfter).toEqual(collabBefore);
 		} finally {
 			void broker.stop();
 		}

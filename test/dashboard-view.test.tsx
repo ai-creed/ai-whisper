@@ -17,10 +17,15 @@ import type {
 	WorkflowHistoryItem,
 } from "../packages/cli/src/runtime/dashboard-state.ts";
 import type { WallSummaryCounts } from "../packages/cli/src/runtime/dashboard-state.ts";
-import { CARD_HEIGHT } from "../packages/cli/src/runtime/dashboard-state.ts";
+import { CARD_HEIGHT, buildWallState } from "../packages/cli/src/runtime/dashboard-state.ts";
 import type { RelayViewState } from "../packages/cli/src/runtime/relay-view-state.ts";
 import type { Viewport } from "../packages/cli/src/runtime/relay-view.ts";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { applyMigrations } from "../packages/broker/src/storage/apply-migrations.ts";
+import { openDatabase } from "../packages/broker/src/storage/open-database.ts";
+import { listAllWorkflowSummaries } from "../packages/broker/src/storage/repositories/dashboard-repository.ts";
 
 // ---- Shared Wall fixture helpers (Tasks 8-12) ----
 
@@ -1405,5 +1410,79 @@ describe("Inspector action status line", () => {
 		const frame = lastFrame() ?? "";
 		expect(frame).toContain("b wall");
 		expect(frame).not.toContain("Esc wall");
+	});
+});
+
+// Spec Testing: "an archived run's card in run-ledger mode still renders chain
+// status and round counters from preserved relay_chains rows." Full path,
+// repository -> state -> frame, off a real migrated DB (not hand-built
+// fixtures at each layer) so a regression anywhere in the pipeline is caught.
+describe("Wall — repository to frame: archived run renders chain-derived status (review finding 3)", () => {
+	it("an archived collab's run-ledger card renders the archived tag and the chain's round counters", () => {
+		const dir = mkdtempSync(join(tmpdir(), "aiw-dash-ledger-"));
+		const db = openDatabase(join(dir, "state.db"));
+		applyMigrations(db);
+
+		const NOW = "2026-05-20T01:00:00.000Z";
+		db.prepare(
+			`INSERT INTO collab (collab_id,workspace_root,display_name,status,created_at,updated_at,orchestrator_enabled,orchestrator_max_rounds,archived_at)
+			 VALUES (?,?,?,'stopped','2026-05-20T00:00:00.000Z','2026-05-20T00:00:00.000Z',0,3,?)`,
+		).run("c_ledger", "/tmp/c_ledger", "Ledger Card", "2026-05-20T00:45:00.000Z");
+		// workflowStatus 'paused': computeLiveness short-circuits stuck detection for
+		// a paused run (spec: paused is quiescent, resumable, never stuck), so the
+		// pane takes FullCard's normal branch — the one that renders round counters
+		// — instead of the STUCK branch, which renders `why` text in their place.
+		db.prepare(
+			`INSERT INTO workflows (workflow_id,collab_id,workflow_type,name,spec_path,role_bindings,status,current_phase_index,halt_reason,workflow_context,created_at,updated_at)
+			 VALUES (?,?,?,?,?, '{}', ?, ?, NULL, '{}', ?, ?)`,
+		).run("wf_ledger", "c_ledger", "spec-driven-development", "ledger run", "/s", "paused", 1, "2026-05-20T00:10:00.000Z", "2026-05-20T00:10:00.000Z");
+		db.prepare(
+			`INSERT INTO relay_chains (chain_id,collab_id,status,current_round,max_rounds,terminal_handoff_id,terminal_reason,created_at,updated_at)
+			 VALUES (?,?,?,?,?,NULL,?,?,?)`,
+		).run("ch_ledger", "c_ledger", "escalated", 5, 5, "max rounds reached", "2026-05-20T00:10:00.000Z", "2026-05-20T00:40:00.000Z");
+		db.prepare(
+			`INSERT INTO workflow_phases (phase_run_id,workflow_id,phase_index,phase_name,chain_id,started_at,ended_at,outcome)
+			 VALUES (?,?,?,?,?,?,?,?)`,
+		).run("pr_ledger", "wf_ledger", 1, "review", "ch_ledger", "2026-05-20T00:10:00.000Z", null, null);
+
+		// Repository half: the archived run still carries the chain-derived status
+		// and round counters through listAllWorkflowSummaries (the run-ledger query).
+		const summaries = listAllWorkflowSummaries(db, {
+			sinceMs: Number.MAX_SAFE_INTEGER,
+			now: NOW,
+		});
+		const summary = summaries.find((s) => s.collabId === "c_ledger");
+		expect(summary).toMatchObject({
+			archived: true,
+			chainStatus: "escalated",
+			currentRound: 5,
+			maxRounds: 5,
+		});
+
+		// State half: project the summary onto a Wall pane.
+		const wall = buildWallState({
+			summaries: summaries.filter((s) => s.collabId === "c_ledger"),
+			now: NOW,
+			idleThresholdMs: 30_000,
+			capacity: 4,
+			page: 0,
+			selected: 0,
+			snapshots: {},
+		});
+		const pane = wall.panes.find((p) => p.collabId === "c_ledger");
+		expect(pane).toMatchObject({ archived: true, round: { current: 5, max: 5 } });
+
+		// Frame half: render the actual card and assert both the archived tag and
+		// the round counters (same "R<current>/<max>" format asserted elsewhere in
+		// this file, e.g. "R1/3") survive all the way to the terminal frame.
+		// cols=70 keeps a single-column (wide) pane layout — 100/2=50-col panes
+		// (used elsewhere for shorter labels) truncate this card's longer
+		// label+type+round+archived line before "archived" renders.
+		const { lastFrame } = render(<Wall state={wall} cols={70} rows={20} />);
+		const frame = stripAnsi(lastFrame() ?? "");
+		expect(frame).toContain("archived");
+		expect(frame).toContain("R5/5");
+
+		db.close();
 	});
 });
