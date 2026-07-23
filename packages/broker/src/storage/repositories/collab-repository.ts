@@ -204,6 +204,9 @@ export function countCollabRows(
  * so this is an explicit multi-table delete. The CALLER owns the transaction;
  * this function does not BEGIN/COMMIT. Order matters only so the child-via-parent
  * subqueries still see their parent rows before the loop removes the parents.
+ *
+ * No longer called by purge — purge archives via archiveCollabRuntime
+ * (run-ledger spec §3).
  */
 export function deleteCollabCascade(
 	db: Database.Database,
@@ -226,6 +229,37 @@ export function deleteCollabCascade(
 	).run(collabId);
 	// (4) the collab row, last.
 	db.prepare("DELETE FROM collab WHERE collab_id = ?").run(collabId);
+}
+
+/**
+ * Purge's action since the run-ledger split (spec §3): remove the collab's
+ * RUNTIME rows and stamp archived_at; ledger tables (LEDGER_TABLES) and
+ * diagnostics tables (owned by the age sweep) are untouched. The CALLER owns
+ * the transaction, mirroring deleteCollabCascade.
+ */
+export function archiveCollabRuntime(
+	db: Database.Database,
+	collabId: string,
+	now: string,
+): void {
+	// Refuse to run against a drifted schema — an unclassified table must be
+	// classified before purge may act, so it can never be silently deleted.
+	assertCollabTablesClassified(db);
+	// child-via-parent runtime rows first, while work_item parents exist
+	db.prepare(
+		"DELETE FROM work_item_cancellation WHERE work_item_id IN (SELECT work_item_id FROM work_item WHERE collab_id = ?)",
+	).run(collabId);
+	for (const table of RUNTIME_TABLES) {
+		db.prepare(`DELETE FROM "${table}" WHERE collab_id = ?`).run(collabId);
+	}
+	db.prepare(
+		"DELETE FROM clipboard_capture_lease WHERE holder_collab_id = ?",
+	).run(collabId);
+	// status='stopped': an archived collab must never hold the one-active-per-
+	// workspace slot (start.ts lookup + enforce-one-active-collab partial index).
+	db.prepare(
+		"UPDATE collab SET status = 'stopped', archived_at = ?, updated_at = ? WHERE collab_id = ?",
+	).run(now, now, collabId);
 }
 
 export function getCollab(

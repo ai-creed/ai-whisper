@@ -142,6 +142,7 @@ export {
 	listCollabIdTables,
 	countCollabRows,
 	deleteCollabCascade,
+	archiveCollabRuntime,
 	LEDGER_TABLES,
 	DIAGNOSTICS_TABLES,
 	RUNTIME_TABLES,
