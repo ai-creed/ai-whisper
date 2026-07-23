@@ -50,6 +50,7 @@ function mkPane(p: PaneOverrides): WallPaneState {
 		artifact: null,
 		cwd: null,
 		cardKind: "full",
+		archived: false,
 		...p,
 	};
 }
@@ -344,6 +345,36 @@ describe("Wall — full ACTIVE card (Task 9)", () => {
 		expect(out).toMatch(/[▰▱]/); // progress bar present
 		expect(out).toContain("codex");
 		expect(out).toContain("claude");
+	});
+
+	it("renders a dim archived tag on an archived run card, and omits it on a non-archived card", () => {
+		const state = mkWallState({
+			sections: [
+				mkSection({
+					group: "active",
+					panes: [
+						mkPane({ collabId: "c1", statusKey: "running", label: "old-run", archived: true }),
+					],
+				}),
+			],
+			selected: 0,
+		});
+		const { lastFrame } = render(<Wall state={state} cols={100} rows={20} />);
+		expect(lastFrame() ?? "").toContain("archived");
+
+		const notArchivedState = mkWallState({
+			sections: [
+				mkSection({
+					group: "active",
+					panes: [
+						mkPane({ collabId: "c2", statusKey: "running", label: "live-run", archived: false }),
+					],
+				}),
+			],
+			selected: 0,
+		});
+		const { lastFrame: lastFrame2 } = render(<Wall state={notArchivedState} cols={100} rows={20} />);
+		expect(lastFrame2() ?? "").not.toContain("archived");
 	});
 
 	it("two-pane 80-col wall drops the bar (each pane is 40 cols, below NARROW_PANE_COLS)", () => {
@@ -1241,7 +1272,7 @@ describe("Wall — per-run card keys (Task 3 --all support)", () => {
 			collabId: "c1", workflowId, statusKey: "running", label,
 			workflowType: "deliberation", round: null, progress: null,
 			agentHealth: [], stuckWhy: null, events: [], elapsed: "1m",
-			startIso: null, artifact: null, cwd: null, cardKind: "full",
+			startIso: null, artifact: null, cwd: null, cardKind: "full", archived: false,
 		});
 		const state: WallState = {
 			sections: [{ group: "active", label: "ACTIVE (2)", cardKind: "full", panes: [mk("wf_a", "A"), mk("wf_b", "B")] }],
@@ -1356,5 +1387,23 @@ describe("Inspector action status line", () => {
 		const frame = lastFrame() ?? "";
 		expect(frame).toContain("Pause wf_z? (y/n)");
 		expect(frame).toContain("p/r/c/d act");
+	});
+
+	it("footer advertises b, not Esc, to return to the wall", () => {
+		const { lastFrame } = render(
+			<Inspector
+				state={mkInspectorState({ stuck: false })}
+				section="live"
+				viewport={defaultViewport}
+				cols={120}
+				rows={24}
+				label="oauth"
+				workflowType="spec-driven-development"
+				workflowStatus="running"
+			/>,
+		);
+		const frame = lastFrame() ?? "";
+		expect(frame).toContain("b wall");
+		expect(frame).not.toContain("Esc wall");
 	});
 });

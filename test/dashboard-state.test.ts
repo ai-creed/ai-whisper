@@ -191,6 +191,25 @@ describe("buildWallState", () => {
 		expect(pane.artifact).toBe("docs/specs/foo-design.md");
 	});
 
+	it("projects the owning-collab archived flag onto the pane (Task 6 field, default false)", () => {
+		const archived = sum({ collabId: "c1", archived: true });
+		const notArchived = sum({ collabId: "c2", archived: false });
+		const unset = sum({ collabId: "c3" });
+		const w = buildWallState({
+			summaries: [archived, notArchived, unset],
+			now: "2026-05-20T00:01:00.000Z",
+			idleThresholdMs: 60_000,
+			capacity: 10,
+			page: 0,
+			selected: 0,
+			snapshots: { c1: emptySnap, c2: emptySnap, c3: emptySnap },
+		});
+		const byId = Object.fromEntries(w.panes.map((p) => [p.collabId, p]));
+		expect(byId.c1!.archived).toBe(true);
+		expect(byId.c2!.archived).toBe(false);
+		expect(byId.c3!.archived).toBe(false); // absent on CollabSummary → defaults false
+	});
+
 	it("manual-relay pane has null startIso and artifact", () => {
 		const s = sum({
 			collabId: "m",

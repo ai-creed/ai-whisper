@@ -36,6 +36,10 @@ export type WallPaneState = {
 	artifact: string | null; // repo-relative spec/goal/bug-report path
 	cwd: string | null; // abbreviated workspace_root ($HOME→~), null when unknown
 	cardKind: "full" | "compact";
+	// Task 7: owning-collab archived flag (Task 6's CollabSummary.archived).
+	// Wall rows are always false (listActiveCollabSummaries excludes archived
+	// collabs); only run-ledger (`--all`) cards can be true.
+	archived: boolean;
 };
 export type WallStateSection = {
 	group: WallGroupKey;
@@ -738,6 +742,7 @@ function projectPane(
 		artifact: s.specPath,
 		cwd: s.workspaceRoot ? abbreviateCwd(s.workspaceRoot, home) : null,
 		cardKind,
+		archived: s.archived ?? false,
 	};
 }
 

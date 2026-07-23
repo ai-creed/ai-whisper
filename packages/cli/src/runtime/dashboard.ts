@@ -634,7 +634,7 @@ export function createDashboardRuntime(input: {
 			else if (ev.key === "2") inspectorSection = "timeline";
 			else if (ev.key === "3") inspectorSection = "evidence";
 			else if (ev.key === "4") inspectorSection = "cost";
-			else if (ev.escape) mode = "wall";
+			else if (ev.key === "b") mode = "wall";
 			else if (ev.key === "q") stopping = true;
 			else if (actionForKey(ev.key)) {
 				if (inspectorCollabId) {

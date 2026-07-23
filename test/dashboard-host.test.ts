@@ -66,7 +66,7 @@ describe("dashboard host", () => {
 		expect(buf).toContain("page 1/");
 	});
 
-	it("Enter switches to Inspector, Esc back; q stops", async () => {
+	it("Enter switches to Inspector, b back; q stops", async () => {
 		const stdout = new PassThrough();
 		(stdout as unknown as { columns: number }).columns = 100;
 		(stdout as unknown as { rows: number }).rows = 24;
@@ -80,7 +80,7 @@ describe("dashboard host", () => {
 		expect(m.__mode()).toBe("wall");
 		m.__handleKey({ key: "\r" }); // Enter
 		expect(m.__mode()).toBe("inspector");
-		m.__handleKey({ escape: true }); // Esc
+		m.__handleKey({ key: "b" }); // b
 		expect(m.__mode()).toBe("wall");
 		m.__handleKey({ key: "q" });
 		await Promise.race([
@@ -89,12 +89,13 @@ describe("dashboard host", () => {
 		]);
 	});
 
-	it("Inspector ignores non-Esc empty-key events (Left/Right/Tab don't bounce to Wall)", async () => {
+	it("Inspector ignores non-b empty-key events AND Escape (Esc is inert; only b returns to Wall)", async () => {
 		// Regression: ink's useInput collapses many non-printable keys (Left,
 		// Right, Tab, PageUp, Home, …) to inputCh = "". Earlier code treated
 		// `ev.key === ""` as Esc and silently exited Inspector on any of them.
-		// Now Esc is forwarded as `escape: true`; the empty-key events must be
-		// no-ops in Inspector.
+		// Escape is still forwarded as `escape: true` (the pendingConfirm modal
+		// still uses it to cancel), but Inspector's own back-to-wall binding
+		// moved from Esc to `b` (Task 7) — Esc must now be a no-op in Inspector.
 		const stdout = new PassThrough();
 		(stdout as unknown as { columns: number }).columns = 100;
 		(stdout as unknown as { rows: number }).rows = 24;
@@ -109,7 +110,9 @@ describe("dashboard host", () => {
 		expect(m.__mode()).toBe("inspector");
 		m.__handleKey({ key: "" }); // Left/Right/Tab/PageUp/Home — all surface as ""
 		expect(m.__mode()).toBe("inspector"); // MUST still be Inspector
-		m.__handleKey({ escape: true }); // explicit Esc now exits
+		m.__handleKey({ escape: true }); // Esc is now inert in Inspector
+		expect(m.__mode()).toBe("inspector"); // MUST still be Inspector
+		m.__handleKey({ key: "b" }); // b exits
 		expect(m.__mode()).toBe("wall");
 		await m.stop();
 	});
@@ -142,7 +145,7 @@ describe("dashboard host", () => {
 		// skipped entirely, or repaint without a full clear).
 		m.__handleKey({ key: "1" }); // inspector section "live" (already live) — same mode
 		expect(m.__clears()).toBe(base + 1);
-		m.__handleKey({ escape: true }); // inspector → wall
+		m.__handleKey({ key: "b" }); // inspector → wall
 		expect(m.__mode()).toBe("wall");
 		expect(m.__clears()).toBe(base + 2); // switch back cleared again
 		await m.stop();
@@ -376,8 +379,8 @@ describe("dashboard host", () => {
 		expect((broker.control.listEvaluatorDiagnosticsByCollabAndChain as { mock: { calls: unknown[][] } }).mock.calls).toHaveLength(0);
 		expect((broker.control.listCaptureDiagnosticsByCollabAndChain as { mock: { calls: unknown[][] } }).mock.calls).toHaveLength(0);
 
-		// Escape back to the wall, select the manual pane, inspect → fallback fires with manualOnly.
-		m.__handleKey({ escape: true });
+		// b back to the wall, select the manual pane, inspect → fallback fires with manualOnly.
+		m.__handleKey({ key: "b" });
 		await new Promise((r) => setTimeout(r, 20));
 		m.__handleKey({ key: "j" }); // move to manual pane
 		(broker.control.listEvaluatorDiagnosticsByCollab as { mock: { calls: unknown[][] } }).mock.calls.length = 0;

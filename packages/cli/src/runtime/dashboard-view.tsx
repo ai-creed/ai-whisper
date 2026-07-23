@@ -195,6 +195,7 @@ export function FullCard(props: {
 					{chevron}
 					<Text color={THEME.err}>⚠</Text> {pane.label}
 					{typeText ? <Text color={THEME.muted}> {typeText}</Text> : null}
+					{pane.archived ? <Text color={THEME.muted}> archived</Text> : null}
 				</Text>
 				{cwdLine(pane.cwd, props.width)}
 				<Text wrap="truncate" color={THEME.err}>
@@ -258,6 +259,7 @@ export function FullCard(props: {
 				<Text color={glyph.color}>{glyph.glyph}</Text> {pane.label}
 				{typeText ? <Text color={THEME.muted}> {typeText}</Text> : null}
 				{roundText ? <Text color={THEME.muted}>{roundText}</Text> : null}
+				{pane.archived ? <Text color={THEME.muted}> archived</Text> : null}
 			</Text>
 			{cwdLine(pane.cwd, props.width)}
 			{artifactText ? (
@@ -361,6 +363,7 @@ export function CompactCard(props: {
 				{chevron}
 				<Text color={glyph.color}>{glyph.glyph}</Text> {pane.label}
 				{typeText ? <Text color={THEME.muted}> {typeText}</Text> : null}
+				{pane.archived ? <Text color={THEME.muted}> archived</Text> : null}
 				<Text color={THEME.muted}> · {statusElapsed}</Text>
 			</Text>
 			{cwdLine(pane.cwd, props.width)}
@@ -521,7 +524,7 @@ export function Inspector(props: {
 				<Text color={THEME.muted}>
 					{`   1-4 section${
 						props.section === "live" ? " · ↑↓/g/G/f scroll" : ""
-					} · p/r/c/d act · Esc wall · q quit`}
+					} · p/r/c/d act · b wall · q quit`}
 				</Text>
 			</Text>
 			{props.section === "live" ? (
