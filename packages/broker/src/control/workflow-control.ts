@@ -17,10 +17,12 @@ import {
 import {
 	insertWorkflowPhaseRun,
 	listPhaseRunsForWorkflow,
+	getLatestPhaseRunForIndex,
 	hasOpenPhaseRunForIndex,
 	closeWorkflowPhaseRun,
 	type WorkflowPhaseRunRecord,
 } from "../storage/repositories/workflow-phase-repository.js";
+import type { ResumeSeedMarker } from "./resume-seed.js";
 import {
 	insertRelayChain,
 	getRelayChain as getRelayChainRepo,
@@ -1307,7 +1309,11 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 
 	// Existing halted → running resume, extracted VERBATIM so the legacy path is
 	// provably unchanged (regression guard). Only paused resume is new.
-	function resumeHaltedWorkflow(workflow: WorkflowRecord, now: string): void {
+	function resumeHaltedWorkflow(
+		workflow: WorkflowRecord,
+		now: string,
+		message?: string,
+	): void {
 		const tx = db.transaction(() => {
 			const others = listWorkflowsRepo(db, { collabId: workflow.collabId }).filter(
 				(w) =>
@@ -1319,6 +1325,28 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 					`resumeWorkflow: another workflow is already active on collab ${workflow.collabId}`,
 				);
 			}
+			// Capture halt context BEFORE the status flip clears halt_reason — the
+			// marker is the only copy that survives to kickoff time (spec §1). The
+			// chain id is optional: some halts precede any phase run (spec §1/§5),
+			// and only an ESCALATED run is a failed prior attempt worth seeding —
+			// a ralph maxIterations halt closes its chain as `done` before halting,
+			// and that chain must not feed handback/digest sections.
+			const latestRun = getLatestPhaseRunForIndex(db, {
+				workflowId: workflow.workflowId,
+				phaseIndex: workflow.currentPhaseIndex,
+			});
+			const marker: ResumeSeedMarker = {
+				phaseIndex: workflow.currentPhaseIndex,
+				resumedAt: now,
+				haltReason: workflow.haltReason,
+				chainId: latestRun?.outcome === "escalated" ? latestRun.chainId : null,
+				message: message !== undefined && message.trim() !== "" ? message : null,
+			};
+			updateWorkflowContext(db, {
+				workflowId: workflow.workflowId,
+				patch: { resumeSeed: marker },
+				now,
+			});
 			setWorkflowStatus(db, {
 				workflowId: workflow.workflowId,
 				status: "running",
@@ -1346,7 +1374,7 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 			throw new Error(`resumeWorkflow: unknown workflowId ${input.workflowId}`);
 		}
 		if (workflow.status === "halted") {
-			resumeHaltedWorkflow(workflow, input.now); // unchanged path
+			resumeHaltedWorkflow(workflow, input.now, input.message);
 			return;
 		}
 		if (workflow.status !== "paused") {
