@@ -272,7 +272,7 @@ export function getCollab(
 	const row = db
 		.prepare(
 			`SELECT collab_id, workspace_root, display_name, status, created_at, updated_at,
-			        orchestrator_enabled, orchestrator_max_rounds
+			        archived_at, orchestrator_enabled, orchestrator_max_rounds
        FROM collab
        WHERE collab_id = ?`,
 		)
@@ -284,6 +284,7 @@ export function getCollab(
 				status: "active" | "stopped";
 				created_at: string;
 				updated_at: string;
+				archived_at: string | null;
 				orchestrator_enabled: number;
 				orchestrator_max_rounds: number;
 		  }
@@ -301,6 +302,7 @@ export function getCollab(
 		status: row.status,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
+		archivedAt: row.archived_at,
 		orchestratorEnabled: row.orchestrator_enabled === 1,
 		orchestratorMaxRounds: row.orchestrator_max_rounds,
 	});

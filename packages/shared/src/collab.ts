@@ -11,6 +11,9 @@ export const collabSchema = z.object({
 	status: z.enum(collabStates),
 	createdAt: z.string().datetime({ offset: true }),
 	updatedAt: z.string().datetime({ offset: true }),
+	// Run-ledger: null while the collab is live/addressable; a timestamp once purge
+	// has archived its runtime rows (Task 1, schema v8). History is read-only once set.
+	archivedAt: z.string().datetime({ offset: true }).nullable().default(null),
 	orchestratorEnabled: z.boolean().default(false),
 	orchestratorMaxRounds: z.number().int().min(1).default(3),
 });

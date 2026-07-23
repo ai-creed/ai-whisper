@@ -1345,6 +1345,15 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 		if (!workflow) {
 			throw new Error(`resumeWorkflow: unknown workflowId ${input.workflowId}`);
 		}
+		// Run-ledger: an archived collab is read-only history. Reject BEFORE the
+		// halted/paused branching so neither resume path (resumeHaltedWorkflow or the
+		// paused → running transition below) can mutate a workflow toward `running`.
+		const parent = getCollab(db, workflow.collabId);
+		if (parent?.archivedAt != null) {
+			throw new Error(
+				`resumeWorkflow: collab ${workflow.collabId} is archived; history is read-only — start a new collab to continue work`,
+			);
+		}
 		if (workflow.status === "halted") {
 			resumeHaltedWorkflow(workflow, input.now); // unchanged path
 			return;

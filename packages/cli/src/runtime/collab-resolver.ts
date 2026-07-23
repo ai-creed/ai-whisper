@@ -126,15 +126,20 @@ function lookupByCwd(db: Database.Database, cwd: string): CollabRow | undefined 
 			`cannot read workspace path ${cwd}: ${(err as Error).message}`,
 		);
 	}
+	// Live-path cwd resolution must never surface an archived collab (run-ledger):
+	// archived collabs are read-only history. `archived_at IS NULL` is belt-and-
+	// braces on the active query (archiving also sets status='stopped') and the
+	// real exclusion on the status-agnostic fallback, which would otherwise return
+	// an archived collab as the most-recent one for the workspace.
 	const active = db
 		.prepare(
-			"SELECT collab_id, workspace_id, workspace_root, status, launch_mode, tmux_session FROM collab WHERE workspace_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT 1",
+			"SELECT collab_id, workspace_id, workspace_root, status, launch_mode, tmux_session FROM collab WHERE workspace_id = ? AND status = 'active' AND archived_at IS NULL ORDER BY created_at DESC LIMIT 1",
 		)
 		.get(workspaceId) as CollabRow | undefined;
 	if (active) return active;
 	return db
 		.prepare(
-			"SELECT collab_id, workspace_id, workspace_root, status, launch_mode, tmux_session FROM collab WHERE workspace_id = ? ORDER BY created_at DESC LIMIT 1",
+			"SELECT collab_id, workspace_id, workspace_root, status, launch_mode, tmux_session FROM collab WHERE workspace_id = ? AND archived_at IS NULL ORDER BY created_at DESC LIMIT 1",
 		)
 		.get(workspaceId) as CollabRow | undefined;
 }
