@@ -31,6 +31,7 @@ export type CollabListRow = {
 	workspaceId: string | null;
 	status: "active" | "stopped";
 	tmuxSession: string | null;
+	archivedAt: string | null;
 };
 
 /**
@@ -42,7 +43,7 @@ export type CollabListRow = {
 export function listAllCollabs(db: Database.Database): CollabListRow[] {
 	const rows = db
 		.prepare(
-			`SELECT collab_id, workspace_root, workspace_id, status, tmux_session
+			`SELECT collab_id, workspace_root, workspace_id, status, tmux_session, archived_at
          FROM collab
         ORDER BY created_at`,
 		)
@@ -52,6 +53,7 @@ export function listAllCollabs(db: Database.Database): CollabListRow[] {
 		workspace_id: string | null;
 		status: "active" | "stopped";
 		tmux_session: string | null;
+		archived_at: string | null;
 	}>;
 	return rows.map((r) => ({
 		collabId: r.collab_id,
@@ -59,6 +61,7 @@ export function listAllCollabs(db: Database.Database): CollabListRow[] {
 		workspaceId: r.workspace_id,
 		status: r.status,
 		tmuxSession: r.tmux_session,
+		archivedAt: r.archived_at,
 	}));
 }
 

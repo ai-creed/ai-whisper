@@ -160,7 +160,7 @@ describe("runCollabPurge", () => {
 		delete process.env.AI_WHISPER_STATE_ROOT;
 	});
 
-	it("deletes a stale collab on --yes and leaves a live one untouched", async () => {
+	it("archives a stale collab on --yes and leaves a live one untouched", async () => {
 		const { d } = setupStateRoot();
 		seedCollabRow(d, "stale1", "active");
 		seedDaemon(d, "stale1", 999); // dead pid
@@ -179,22 +179,74 @@ describe("runCollabPurge", () => {
 
 		expect(res.purged).toEqual(["stale1"]);
 		expect(res.exitCode).toBe(0);
+		expect(logs).toContain(
+			"Archived 1 collab(s) (runtime state removed, history kept), skipped (went live) 0, errors 0, protected 0.",
+		);
+		const d2 = openDatabase(getSharedSqlitePath());
+		const stale = d2
+			.prepare("SELECT archived_at, status FROM collab WHERE collab_id='stale1'")
+			.get() as { archived_at: string | null; status: string };
+		expect(stale.archived_at).toEqual(expect.any(String));
+		expect(stale.status).toBe("stopped");
+		const live = d2
+			.prepare("SELECT archived_at FROM collab WHERE collab_id='live1'")
+			.get() as { archived_at: string | null };
+		expect(live.archived_at).toBeNull();
+		d2.close();
+	});
+
+	it("archives stale collabs instead of deleting ledger rows", async () => {
+		const { d } = setupStateRoot();
+		seedCollabRow(d, "stale1", "stopped");
+		seedWorkflow(d, "stale1", "wf1", "done", "2026-06-30T00:00:00Z");
+		d.close();
+
+		const res = await runCollabPurge({
+			cwd: "/tmp",
+			yes: true,
+			isAlive: DEAD,
+			isTTY: false,
+			log: () => {},
+		});
+
+		expect(res.purged).toEqual(["stale1"]);
 		const d2 = openDatabase(getSharedSqlitePath());
 		expect(
-			(
-				d2
-					.prepare("SELECT COUNT(*) AS n FROM collab WHERE collab_id='stale1'")
-					.get() as { n: number }
-			).n,
-		).toBe(0);
+			d2
+				.prepare("SELECT archived_at FROM collab WHERE collab_id = ?")
+				.get("stale1"),
+		).toMatchObject({ archived_at: expect.any(String) });
 		expect(
-			(
-				d2
-					.prepare("SELECT COUNT(*) AS n FROM collab WHERE collab_id='live1'")
-					.get() as { n: number }
-			).n,
-		).toBe(1);
+			d2
+				.prepare("SELECT COUNT(*) n FROM workflows WHERE collab_id = ?")
+				.get("stale1"),
+		).toMatchObject({ n: 1 });
 		d2.close();
+	});
+
+	it("does not re-process already-archived collabs", async () => {
+		const { d } = setupStateRoot();
+		seedCollabRow(d, "stale1", "stopped");
+		d.close();
+
+		const first = await runCollabPurge({
+			cwd: "/tmp",
+			yes: true,
+			isAlive: DEAD,
+			isTTY: false,
+			log: () => {},
+		});
+		expect(first.purged).toEqual(["stale1"]);
+
+		const out = await runCollabPurge({
+			cwd: "/tmp",
+			yes: true,
+			isAlive: DEAD,
+			isTTY: false,
+			log: () => {},
+		});
+		expect(out.purged).toHaveLength(0); // archived collab no longer classified
+		expect(out.classifications).toHaveLength(0);
 	});
 
 	it("protects a dead collab with a non-terminal workflow unless --force", async () => {
@@ -286,7 +338,7 @@ describe("runCollabPurge", () => {
 		expect(res.purged).toEqual([]);
 	});
 
-	it("--workspace confines deletion to one workspace; stale elsewhere is untouched", async () => {
+	it("--workspace confines archival to one workspace; stale elsewhere is untouched", async () => {
 		const { d } = setupStateRoot();
 		const wsA = mkdtempSync(path.join(os.tmpdir(), "wsA-"));
 		const wsB = mkdtempSync(path.join(os.tmpdir(), "wsB-"));
@@ -397,7 +449,7 @@ describe("runCollabPurge", () => {
 		).rejects.toThrow(/mutually exclusive/);
 	});
 
-	it("--collab narrows deletion to a single collab id (AC-7)", async () => {
+	it("--collab narrows archival to a single collab id (AC-7)", async () => {
 		const { d } = setupStateRoot();
 		seedCollabRow(d, "s1", "stopped");
 		seedCollabRow(d, "s2", "stopped"); // also stale, in scope of a no-filter sweep
@@ -417,29 +469,25 @@ describe("runCollabPurge", () => {
 		expect(res.classifications.map((c) => c.collabId)).toEqual(["s1"]);
 		const d2 = openDatabase(getSharedSqlitePath());
 		expect(
-			(
-				d2
-					.prepare("SELECT COUNT(*) AS n FROM collab WHERE collab_id='s1'")
-					.get() as { n: number }
-			).n,
-		).toBe(0);
+			d2
+				.prepare("SELECT archived_at FROM collab WHERE collab_id='s1'")
+				.get(),
+		).toMatchObject({ archived_at: expect.any(String) });
 		expect(
-			(
-				d2
-					.prepare("SELECT COUNT(*) AS n FROM collab WHERE collab_id='s2'")
-					.get() as { n: number }
-			).n,
-		).toBe(1);
+			d2
+				.prepare("SELECT archived_at FROM collab WHERE collab_id='s2'")
+				.get(),
+		).toMatchObject({ archived_at: null });
 		d2.close();
 	});
 
-	it("a per-collab deletion failure is recorded and does NOT abort the sweep (AC-8)", async () => {
+	it("a per-collab archival failure is recorded and does NOT abort the sweep (AC-8)", async () => {
 		const { d } = setupStateRoot();
 		seedCollabRow(d, "boom", "stopped");
 		seedCollabRow(d, "ok", "stopped");
 		d.close();
 
-		const { deleteCollabCascade } =
+		const { archiveCollabRuntime } =
 			await import("../packages/broker/src/storage/repositories/collab-repository.ts");
 		const res = await runCollabPurge({
 			cwd: "/tmp",
@@ -447,10 +495,10 @@ describe("runCollabPurge", () => {
 			isAlive: DEAD,
 			isTTY: false,
 			log: () => {},
-			// Fail the first candidate; delegate the rest to the real cascade.
+			// Fail the first candidate; delegate the rest to the real archive action.
 			deleteCascade: (db, collabId) => {
 				if (collabId === "boom") throw new Error("simulated delete failure");
-				deleteCollabCascade(db, collabId);
+				archiveCollabRuntime(db, collabId, "2026-07-23T00:00:00.000Z");
 			},
 		});
 
@@ -459,19 +507,15 @@ describe("runCollabPurge", () => {
 		expect(res.exitCode).toBe(1); // a per-collab error makes the run non-zero
 		const d2 = openDatabase(getSharedSqlitePath());
 		expect(
-			(
-				d2
-					.prepare("SELECT COUNT(*) AS n FROM collab WHERE collab_id='boom'")
-					.get() as { n: number }
-			).n,
-		).toBe(1);
+			d2
+				.prepare("SELECT archived_at FROM collab WHERE collab_id='boom'")
+				.get(),
+		).toMatchObject({ archived_at: null }); // failed transaction rolled back
 		expect(
-			(
-				d2
-					.prepare("SELECT COUNT(*) AS n FROM collab WHERE collab_id='ok'")
-					.get() as { n: number }
-			).n,
-		).toBe(0);
+			d2
+				.prepare("SELECT archived_at FROM collab WHERE collab_id='ok'")
+				.get(),
+		).toMatchObject({ archived_at: expect.any(String) });
 		d2.close();
 	});
 });

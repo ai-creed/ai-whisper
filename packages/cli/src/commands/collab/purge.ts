@@ -97,7 +97,7 @@ import {
 	applyMigrations,
 	openDatabase,
 	listAllCollabs,
-	deleteCollabCascade,
+	archiveCollabRuntime,
 	isPidAlive,
 } from "@ai-whisper/broker";
 import { getSharedSqlitePath } from "../../runtime/state-root.js";
@@ -222,7 +222,7 @@ export async function runCollabPurge(
 	const db = openDatabase(getSharedSqlitePath());
 	applyMigrations(db);
 	try {
-		let collabs = listAllCollabs(db);
+		let collabs = listAllCollabs(db).filter((c) => c.archivedAt == null);
 		if (opts.collabId)
 			collabs = collabs.filter((c) => c.collabId === opts.collabId);
 		if (workspaceFilter)
@@ -312,11 +312,16 @@ export async function runCollabPurge(
 		// liveness re-check (TOCTOU guard). Defined once; invoked per candidate.
 		// deleteCascade is injectable so tests can simulate a per-collab failure;
 		// a throw rolls back that one transaction and is caught below — the sweep
-		// continues to the next candidate.
-		const cascade = opts.deleteCascade ?? deleteCollabCascade;
+		// continues to the next candidate. The default action archives — it
+		// removes the collab's RUNTIME rows and stamps archived_at, but keeps the
+		// ledger rows (collab/workflows/etc.) forever (run-ledger spec §3).
+		const archive =
+			opts.deleteCascade ??
+			((d: Database.Database, collabId: string) =>
+				archiveCollabRuntime(d, collabId, new Date().toISOString()));
 		const purgeOne = db.transaction((collabId: string): boolean => {
 			if (isCollabLive(db, collabId, isAlive)) return false;
-			cascade(db, collabId);
+			archive(db, collabId);
 			return true;
 		});
 
@@ -354,7 +359,7 @@ export async function runCollabPurge(
 			);
 		} else {
 			log(
-				`Purged ${purged.length}, skipped (went live) ${skippedWentLive.length}, errors ${skippedError.length}, protected ${protectedSkipped.length}.`,
+				`Archived ${purged.length} collab(s) (runtime state removed, history kept), skipped (went live) ${skippedWentLive.length}, errors ${skippedError.length}, protected ${protectedSkipped.length}.`,
 			);
 		}
 
