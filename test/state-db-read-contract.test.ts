@@ -13,7 +13,7 @@ import { openDatabase } from "../packages/broker/src/storage/open-database.ts";
 // from repository code: a schema rename/drop without a contract+version bump
 // must fail here.
 const CONTRACT: Record<string, string[]> = {
-	collab: ["collab_id", "workspace_root", "display_name", "status"],
+	collab: ["collab_id", "workspace_root", "display_name", "status", "archived_at"],
 	broker_daemon: ["collab_id", "host", "port", "pid", "last_heartbeat_at"],
 	session_binding: ["collab_id", "agent_type", "binding_state"],
 	workflows: [

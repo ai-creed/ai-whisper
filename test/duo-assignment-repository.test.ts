@@ -196,13 +196,13 @@ describe("duo-assignment-repository", () => {
 		expect(assignment?.role).toBe("brain");
 	});
 
-	it("migration: fresh DB has both duo tables and user_version === 7", () => {
+	it("migration: fresh DB has both duo tables and user_version === 8", () => {
 		const dir = mkdtempSync(join(tmpdir(), "duo-migration-"));
 		const db = openDatabase(join(dir, "state.db"));
 		applyMigrations(db);
 
-		expect(CURRENT_SCHEMA_VERSION).toBe(7);
-		expect(db.pragma("user_version", { simple: true })).toBe(7);
+		expect(CURRENT_SCHEMA_VERSION).toBe(8);
+		expect(db.pragma("user_version", { simple: true })).toBe(8);
 
 		const tableNames = (
 			db

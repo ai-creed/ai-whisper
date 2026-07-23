@@ -7,7 +7,7 @@ import { sweepStaleCaptureLease } from "./clipboard-capture-lease.js";
 // ALTERs), so a persisted DB at an older user_version safely re-runs it and
 // picks up the additions. Forgetting to bump means a persisted DB never gets
 // the new schema (it only worked for freshly-created DBs).
-export const CURRENT_SCHEMA_VERSION = 7;
+export const CURRENT_SCHEMA_VERSION = 8;
 
 const initMigrationSql = `
 CREATE TABLE IF NOT EXISTS broker_state (
@@ -518,6 +518,11 @@ function runMigrationBody(db: Database.Database): void {
 		db.exec("ALTER TABLE collab ADD COLUMN relay_monitor_pid INTEGER");
 	}
 	db.exec("CREATE INDEX IF NOT EXISTS collab_by_workspace ON collab(workspace_id, status)");
+	// v8: collab archive lifecycle marker (run-ledger preservation spec §2).
+	// Contract surface — see docs/state-db-read-contract.md §3.
+	if (!collabColumns.some((column) => column.name === "archived_at")) {
+		db.exec("ALTER TABLE collab ADD COLUMN archived_at TEXT");
+	}
 
 	const relayTurnStateColumns = db.prepare("PRAGMA table_info(relay_turn_state)").all() as Array<{ name: string }>;
 	if (!relayTurnStateColumns.some((column) => column.name === "orchestrator_enabled")) {

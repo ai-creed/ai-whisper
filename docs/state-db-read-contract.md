@@ -1,6 +1,6 @@
 # ai-whisper state-db read contract
 
-<!-- contract-version: 7 -->
+<!-- contract-version: 8 -->
 <!-- protocol-version: 1 -->
 
 **Status:** Stable, versioned. This document is the explicit, versioned list of
@@ -23,7 +23,7 @@ one supervisor.
 
 ## 2. Version gate
 
-- `PRAGMA user_version` is the contract version. It currently reads **7**
+- `PRAGMA user_version` is the contract version. It currently reads **8**
   (`CURRENT_SCHEMA_VERSION`).
 - Readers declare a supported version range and refuse to read a database whose
   `user_version` is outside that range.
@@ -38,7 +38,7 @@ The exact subset of tables and columns external readers may rely on:
 
 | table | columns external readers may rely on |
 |---|---|
-| `collab` | `collab_id`, `workspace_root`, `display_name`, `status` |
+| `collab` | `collab_id`, `workspace_root`, `display_name`, `status`, `archived_at` (NULL = live; ISO timestamp = archived by purge, ledger rows retained) |
 | `broker_daemon` | `collab_id`, `host`, `port`, `pid`, `last_heartbeat_at` |
 | `session_binding` | `collab_id`, `agent_type`, `binding_state` (`unbound` \| `pending_attach` \| `bound`) |
 | `workflows` | `workflow_id`, `collab_id`, `workflow_type`, `status`, `current_phase_index`, `halt_reason`, `updated_at` |
@@ -59,6 +59,9 @@ The exact subset of tables and columns external readers may rely on:
   `broker_daemon.last_heartbeat_at` every 10 s by default (`AI_WHISPER_HEARTBEAT_MS`).
   External readers should treat a heartbeat older than 30 s as daemon-dead; the
   default cadence stays comfortably under that threshold.
+- **Purge archives, it does not delete:** purge sets `collab.archived_at` and
+  deletes only runtime tables; `collab`, `workflows`, `workflow_phases`,
+  `relay_chains`, `relay_handoff` are permanent ledger tables.
 
 ## 5. Event socket (companion surface)
 
