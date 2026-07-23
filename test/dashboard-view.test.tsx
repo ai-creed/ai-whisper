@@ -56,6 +56,7 @@ function mkPane(p: PaneOverrides): WallPaneState {
 		cwd: null,
 		cardKind: "full",
 		archived: false,
+		chainStatus: null,
 		...p,
 	};
 }
@@ -1278,6 +1279,7 @@ describe("Wall — per-run card keys (Task 3 --all support)", () => {
 			workflowType: "deliberation", round: null, progress: null,
 			agentHealth: [], stuckWhy: null, events: [], elapsed: "1m",
 			startIso: null, artifact: null, cwd: null, cardKind: "full", archived: false,
+			chainStatus: null,
 		});
 		const state: WallState = {
 			sections: [{ group: "active", label: "ACTIVE (2)", cardKind: "full", panes: [mk("wf_a", "A"), mk("wf_b", "B")] }],
@@ -1417,8 +1419,16 @@ describe("Inspector action status line", () => {
 // status and round counters from preserved relay_chains rows." Full path,
 // repository -> state -> frame, off a real migrated DB (not hand-built
 // fixtures at each layer) so a regression anywhere in the pipeline is caught.
+//
+// The fixture is TERMINAL (workflowStatus 'halted'), not paused. A paused run
+// routes to the ACTIVE section (cardKind "full") and FullCard already renders
+// round counters on its normal branch — that would not exercise the bug. An
+// ordinary archived run is done/halted/canceled, which routes to the HALTED /
+// DONE-CANCELED sections (cardKind "compact") and CompactCard, before this
+// fix, derived its status word from workflowStatus alone and rendered no
+// round text at all — silently dropping the chain's preserved status/rounds.
 describe("Wall — repository to frame: archived run renders chain-derived status (review finding 3)", () => {
-	it("an archived collab's run-ledger card renders the archived tag and the chain's round counters", () => {
+	it("an archived halted collab's run-ledger card renders the archived tag, the chain status, and the round counters on the CompactCard path", () => {
 		const dir = mkdtempSync(join(tmpdir(), "aiw-dash-ledger-"));
 		const db = openDatabase(join(dir, "state.db"));
 		applyMigrations(db);
@@ -1428,14 +1438,15 @@ describe("Wall — repository to frame: archived run renders chain-derived statu
 			`INSERT INTO collab (collab_id,workspace_root,display_name,status,created_at,updated_at,orchestrator_enabled,orchestrator_max_rounds,archived_at)
 			 VALUES (?,?,?,'stopped','2026-05-20T00:00:00.000Z','2026-05-20T00:00:00.000Z',0,3,?)`,
 		).run("c_ledger", "/tmp/c_ledger", "Ledger Card", "2026-05-20T00:45:00.000Z");
-		// workflowStatus 'paused': computeLiveness short-circuits stuck detection for
-		// a paused run (spec: paused is quiescent, resumable, never stuck), so the
-		// pane takes FullCard's normal branch — the one that renders round counters
-		// — instead of the STUCK branch, which renders `why` text in their place.
+		// workflowStatus 'halted' is TERMINAL: statusGlyph maps it to the "stuck"
+		// key and partitionWallGroups buckets it into the HALTED section, whose
+		// cardKind is "compact" (cardKindFor: only "active" gets "full") — so this
+		// run renders through CompactCard, the path the finding says drops the
+		// chain-derived status and round counters entirely.
 		db.prepare(
 			`INSERT INTO workflows (workflow_id,collab_id,workflow_type,name,spec_path,role_bindings,status,current_phase_index,halt_reason,workflow_context,created_at,updated_at)
-			 VALUES (?,?,?,?,?, '{}', ?, ?, NULL, '{}', ?, ?)`,
-		).run("wf_ledger", "c_ledger", "spec-driven-development", "ledger run", "/s", "paused", 1, "2026-05-20T00:10:00.000Z", "2026-05-20T00:10:00.000Z");
+			 VALUES (?,?,?,?,?, '{}', ?, ?, ?, '{}', ?, ?)`,
+		).run("wf_ledger", "c_ledger", "sdd", "run", "/s", "halted", 1, "max rounds reached", "2026-05-20T00:10:00.000Z", "2026-05-20T00:10:00.000Z");
 		db.prepare(
 			`INSERT INTO relay_chains (chain_id,collab_id,status,current_round,max_rounds,terminal_handoff_id,terminal_reason,created_at,updated_at)
 			 VALUES (?,?,?,?,?,NULL,?,?,?)`,
@@ -1454,12 +1465,14 @@ describe("Wall — repository to frame: archived run renders chain-derived statu
 		const summary = summaries.find((s) => s.collabId === "c_ledger");
 		expect(summary).toMatchObject({
 			archived: true,
+			workflowStatus: "halted",
 			chainStatus: "escalated",
 			currentRound: 5,
 			maxRounds: 5,
 		});
 
-		// State half: project the summary onto a Wall pane.
+		// State half: project the summary onto a Wall pane, and confirm it lands
+		// on the compact path (not the FullCard path the old paused fixture hit).
 		const wall = buildWallState({
 			summaries: summaries.filter((s) => s.collabId === "c_ledger"),
 			now: NOW,
@@ -1469,18 +1482,24 @@ describe("Wall — repository to frame: archived run renders chain-derived statu
 			selected: 0,
 			snapshots: {},
 		});
+		const section = wall.sections.find((s) => s.panes.some((p) => p.collabId === "c_ledger"));
+		expect(section?.cardKind).toBe("compact");
 		const pane = wall.panes.find((p) => p.collabId === "c_ledger");
-		expect(pane).toMatchObject({ archived: true, round: { current: 5, max: 5 } });
+		expect(pane).toMatchObject({
+			archived: true,
+			statusKey: "stuck",
+			round: { current: 5, max: 5 },
+			chainStatus: "escalated",
+		});
 
-		// Frame half: render the actual card and assert both the archived tag and
-		// the round counters (same "R<current>/<max>" format asserted elsewhere in
-		// this file, e.g. "R1/3") survive all the way to the terminal frame.
-		// cols=70 keeps a single-column (wide) pane layout — 100/2=50-col panes
-		// (used elsewhere for shorter labels) truncate this card's longer
-		// label+type+round+archived line before "archived" renders.
+		// Frame half: render the actual card and assert the archived tag, the
+		// chain-derived status word, and the round counters (same "R<current>/<max>"
+		// format asserted elsewhere in this file, e.g. "R1/3") all survive to the
+		// terminal frame on the CompactCard render path.
 		const { lastFrame } = render(<Wall state={wall} cols={70} rows={20} />);
 		const frame = stripAnsi(lastFrame() ?? "");
 		expect(frame).toContain("archived");
+		expect(frame).toContain("escalated");
 		expect(frame).toContain("R5/5");
 
 		db.close();

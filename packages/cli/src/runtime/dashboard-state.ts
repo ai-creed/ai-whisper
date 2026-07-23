@@ -24,6 +24,12 @@ export type WallPaneState = {
 	label: string;
 	workflowType: string | null;
 	round: { current: number; max: number } | null;
+	// Chain-derived status (relay_chains.status), independent of workflowStatus.
+	// Populated for every pane (mirrors CollabSummary.chainStatus); consumed by
+	// the view layer to render the chain's preserved status on an ARCHIVED run's
+	// CompactCard, where the terminal glyph/statusWord alone (workflowStatus-only)
+	// would otherwise hide it — see dashboard-view.tsx CompactCard.
+	chainStatus: CollabSummary["chainStatus"];
 	progress: { current: number; total: number } | null;
 	agentHealth: Array<{
 		agent: AgentType;
@@ -733,6 +739,7 @@ function projectPane(
 		label: s.label,
 		workflowType: s.workflowType,
 		round,
+		chainStatus: s.chainStatus,
 		progress,
 		agentHealth: rv.agentHealth,
 		stuckWhy: rv.stuck ? rv.why : null,

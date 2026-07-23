@@ -144,6 +144,14 @@ function padRight(s: string, n: number): string {
 	return s.length >= n ? s.slice(0, n) : s + " ".repeat(n - s.length);
 }
 
+// Round counter text, "  R<current>/<max>" (leading two spaces so it reads as
+// its own header segment), or "" when the pane has no round. Shared by
+// FullCard (every non-stuck card) and CompactCard (ARCHIVED cards only — see
+// CompactCard) so both cards render rounds in the exact same format.
+function formatRoundText(round: WallPaneState["round"]): string {
+	return round != null ? `  R${round.current}/${round.max}` : "";
+}
+
 // Intentionally ignores isWide — cwd clips identically at any width, so both
 // FullCard and CompactCard share the same budget formula.
 function cwdLine(cwd: string | null, width: number): ReactElement {
@@ -224,8 +232,7 @@ export function FullCard(props: {
 	// width is irrelevant — a 2-col 80-col terminal renders 40-col panes,
 	// which are narrow, so the bar drops.
 	const showBar = pane.progress != null && isWide;
-	const roundText =
-		pane.round != null ? `  R${pane.round.current}/${pane.round.max}` : "";
+	const roundText = formatRoundText(pane.round);
 
 	const startHHMM = pane.startIso ? hhmmUTC(pane.startIso) : null;
 	// Trim defensively: a whitespace-only artifact must omit the subline (and keep
@@ -343,7 +350,18 @@ export function CompactCard(props: {
 			? pane.workflowType
 			: abbreviateWorkflowType(pane.workflowType)
 		: null;
-	const statusElapsed = `${statusWord} · ${pane.elapsed}`;
+	// ARCHIVED-only: the round counter (relay_chains survives purge; the
+	// repository projects it onto every summary) and the chain-derived status
+	// word. An archived run is TERMINAL (done/halted/canceled) — statusWord
+	// above is derived from workflowStatus alone, which for a halted/escalated
+	// chain reads just "halted" and silently drops the chain's own preserved
+	// status/rounds. Gated on `pane.archived` so non-archived CompactCard
+	// output (pinned by existing frame tests) never changes.
+	const roundText = pane.archived ? formatRoundText(pane.round) : "";
+	const chainWord = pane.archived ? pane.chainStatus : null;
+	const statusElapsed = chainWord
+		? `${statusWord} · ${chainWord} · ${pane.elapsed}`
+		: `${statusWord} · ${pane.elapsed}`;
 	const compactArtifact = pane.artifact?.trim() || null;
 	// Dedicated artifact line: budget = inner width minus border(2), indent(2), "→ "(2).
 	const artBudget = Math.max(8, props.width - 2 - 2 - 2);
@@ -363,6 +381,7 @@ export function CompactCard(props: {
 				{chevron}
 				<Text color={glyph.color}>{glyph.glyph}</Text> {pane.label}
 				{typeText ? <Text color={THEME.muted}> {typeText}</Text> : null}
+				{roundText ? <Text color={THEME.muted}>{roundText}</Text> : null}
 				{pane.archived ? <Text color={THEME.muted}> archived</Text> : null}
 				<Text color={THEME.muted}> · {statusElapsed}</Text>
 			</Text>
