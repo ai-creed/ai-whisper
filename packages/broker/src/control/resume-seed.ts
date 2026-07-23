@@ -130,9 +130,7 @@ export function composeResumeSeedText(input: {
 		}
 		if (digest.length > 0 || droppedRounds > 0) {
 			const note = droppedRounds > 0 ? `(digest truncated: rounds 1–${droppedRounds} omitted)\n` : "";
-			if (digest.length > 0 || droppedRounds > 0) {
-				parts.push(`--- Prior rounds ---\n${note}${digest.join("\n")}`);
-			}
+			parts.push(`--- Prior rounds ---\n${note}${digest.join("\n")}`);
 		}
 		if (input.marker.message) {
 			parts.push(

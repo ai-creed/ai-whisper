@@ -168,7 +168,7 @@ describe("beginPhaseRun — seed consumption (spec §2, D1)", () => {
 			reason: "still bad", now: "2026-07-23T00:05:00Z",
 		}); // maxRounds 1 → escalates & halts again
 		s.broker.control.resumeWorkflow({ workflowId: s.workflowId, now: "2026-07-23T00:06:00Z" });
-		// discard this second seed by kicking off a different phase index (stale-seed case below asserts details)
+		// same phase index → the second marker seeds again (stale-seed discard is covered by the next test)
 		const again = kickoff(s);
 		const text = requestTextOf(s, again.handoffId);
 		expect(text).toContain("RESUMED PHASE"); // second resume seeded again — new marker, new seed

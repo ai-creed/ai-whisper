@@ -1344,8 +1344,8 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 		maybeCaptureQuiesceSnapshot({ workflowId: input.workflowId, now: input.now });
 	}
 
-	// Existing halted → running resume, extracted VERBATIM so the legacy path is
-	// provably unchanged (regression guard). Only paused resume is new.
+	// Halted → running resume: flips status and captures a one-shot resume-seed
+	// marker (spec §1) before the status flip clears halt_reason.
 	function resumeHaltedWorkflow(
 		workflow: WorkflowRecord,
 		now: string,
