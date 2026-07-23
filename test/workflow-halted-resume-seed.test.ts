@@ -278,3 +278,25 @@ describe("beginPhaseRun — seed consumption (spec §2, D1)", () => {
 		expect(requestTextOf(noBase, b.handoffId)).not.toContain("Commit range");
 	});
 });
+
+describe("D3 — fresh round budget on the seeded chain", () => {
+	it("seeded chain escalates again at the configured max rounds", () => {
+		const s = setupHaltedAtMaxRounds();
+		s.broker.control.resumeWorkflow({ workflowId: s.workflowId, now: "2026-07-23T00:03:00Z" });
+		const { handoffId, chainId } = s.broker.control.beginPhaseRun({
+			workflowId: s.workflowId, phaseIndex: 0, phaseName: "spec-refining",
+			initialHandoffStep: "review", kickoffText: "Review the spec.",
+			sender: "claude", target: "codex", maxRounds: 1, now: "2026-07-23T00:04:00Z",
+		});
+		const chain = s.broker.control.getRelayChain(chainId);
+		expect(chain?.currentRound).toBe(1); // fresh chain starts at round 1
+		expect(chain?.maxRounds).toBe(1);    // configured budget, unchanged
+		s.broker.control.applyOrchestratorVerdict({
+			handoffId, verdict: "findings", confidence: 0.9, reason: "still failing",
+			now: "2026-07-23T00:05:00Z",
+		});
+		const wf = s.broker.control.getWorkflow(s.workflowId);
+		expect(wf?.status).toBe("halted");
+		expect(wf?.haltReason).toBe("max-rounds-reached (1/1)"); // full budget honored, then re-escalated
+	});
+});
