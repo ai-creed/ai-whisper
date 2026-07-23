@@ -142,6 +142,10 @@ export {
 	listCollabIdTables,
 	countCollabRows,
 	deleteCollabCascade,
+	LEDGER_TABLES,
+	DIAGNOSTICS_TABLES,
+	RUNTIME_TABLES,
+	assertCollabTablesClassified,
 	type CollabListRow,
 } from "./storage/repositories/collab-repository.js";
 export {

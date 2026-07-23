@@ -4,7 +4,13 @@ import path from "node:path";
 import os from "node:os";
 import { applyMigrations } from "../packages/broker/src/storage/apply-migrations.ts";
 import { openDatabase } from "../packages/broker/src/storage/open-database.ts";
-import { listCollabIdTables } from "../packages/broker/src/storage/repositories/collab-repository.ts";
+import {
+	LEDGER_TABLES,
+	DIAGNOSTICS_TABLES,
+	RUNTIME_TABLES,
+	assertCollabTablesClassified,
+	listCollabIdTables,
+} from "../packages/broker/src/storage/repositories/collab-repository.ts";
 
 // The drift-guard authority: tables with NO collab_id column that purge must
 // still account for. A NEW no-collab_id table lands outside this set and fails
@@ -68,5 +74,32 @@ describe("collab purge schema drift guard", () => {
 		expect(noCollabId).toEqual(EXPECTED_NO_COLLAB_ID);
 
 		db.close();
+	});
+});
+
+describe("ledger/runtime/diagnostics classification drift guard", () => {
+	it("every collab_id table is in exactly one explicit class", () => {
+		const db = migratedDb();
+		const all = new Set([...listCollabIdTables(db), "collab"]);
+		const ledger = new Set(LEDGER_TABLES);
+		const diagnostics = new Set(DIAGNOSTICS_TABLES);
+		const runtime = new Set(RUNTIME_TABLES);
+		for (const table of all) {
+			const memberships = [ledger.has(table), diagnostics.has(table), runtime.has(table)].filter(Boolean).length;
+			expect(memberships, `table ${table} must be classified exactly once`).toBe(1);
+		}
+		// classified names must exist in the live schema (catches typos/renames);
+		// workflow_phases is ledger-by-policy but child-via-parent (no collab_id).
+		for (const table of [...ledger, ...diagnostics, ...runtime]) {
+			if (table === "workflow_phases") continue;
+			expect(all.has(table), `classified table ${table} must exist with collab_id`).toBe(true);
+		}
+		expect(() => assertCollabTablesClassified(db)).not.toThrow();
+	});
+
+	it("a newly added collab_id table fails the guard until deliberately classified", () => {
+		const db = migratedDb();
+		db.exec("CREATE TABLE zz_new_feature_state (collab_id TEXT NOT NULL, blob TEXT)");
+		expect(() => assertCollabTablesClassified(db)).toThrow(/zz_new_feature_state/);
 	});
 });

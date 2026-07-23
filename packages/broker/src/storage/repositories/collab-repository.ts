@@ -90,6 +90,70 @@ export function listCollabIdTables(db: Database.Database): string[] {
 }
 
 /**
+ * Three-way classification of collab_id-bearing tables (run-ledger spec §1).
+ * LEDGER survives purge and sweep forever. DIAGNOSTICS is owned exclusively by
+ * the age-based sweep (diagnostics-sweep.ts) — purge must not touch it.
+ * Everything else with a collab_id column is RUNTIME and is what purge deletes.
+ * relay_chains is ledger: it is contract-visible and dashboard cards read chain
+ * status/rounds/terminal reason from it for archived runs.
+ */
+export const LEDGER_TABLES: readonly string[] = [
+	"collab",
+	"workflows",
+	"workflow_phases",
+	"relay_chains",
+	"relay_handoff",
+];
+
+export const DIAGNOSTICS_TABLES: readonly string[] = [
+	"relay_capture_diagnostics",
+	"relay_evaluator_diagnostics",
+	"relay_turn_event_diagnostics",
+];
+
+/**
+ * EXPLICIT runtime membership (spec §1). Never derived as a complement — an
+ * unknown table must trip assertCollabTablesClassified, not become purgeable.
+ * Inventory verified against the migrated schema on 2026-07-23.
+ */
+export const RUNTIME_TABLES: readonly string[] = [
+	"artifact_attachment",
+	"artifact_manifest",
+	"attach_claim",
+	"broker_daemon",
+	"companion_session",
+	"duo_assignment",
+	"duo_roll",
+	"event_log",
+	"recovery_state",
+	"relay_event",
+	"relay_monitor",
+	"relay_turn_state",
+	"reply",
+	"session",
+	"session_attachment",
+	"session_binding",
+	"thread",
+	"work_item",
+	"workflow_event_outbox",
+];
+
+/** Throws naming any collab_id table that is unclassified or doubly classified. */
+export function assertCollabTablesClassified(db: Database.Database): void {
+	const classes: Array<readonly string[]> = [LEDGER_TABLES, DIAGNOSTICS_TABLES, RUNTIME_TABLES];
+	const problems: string[] = [];
+	for (const table of [...listCollabIdTables(db), "collab"]) {
+		const n = classes.filter((c) => c.includes(table)).length;
+		if (n !== 1) problems.push(`${table} (classified ${n}x)`);
+	}
+	if (problems.length > 0) {
+		throw new Error(
+			`collab table classification drift — fix LEDGER_TABLES/DIAGNOSTICS_TABLES/RUNTIME_TABLES in collab-repository.ts: ${problems.join(", ")}`,
+		);
+	}
+}
+
+/**
  * Total rows a collab owns across every scoped table: the introspected
  * collab_id tables, the two child-via-parent tables, the special lease column,
  * and the collab row itself. Display/JSON only.
