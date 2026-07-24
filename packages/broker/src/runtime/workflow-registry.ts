@@ -769,6 +769,24 @@ export function renderTemplate(
 }
 
 /**
+ * Whether a phase's templates consume a commit range — i.e. a resumed phase
+ * with a recorded base must keep {commitRange} live (spec §3). True for
+ * base-establishing phases (execute-step / anchorCommitBaseOnEntry) and for
+ * any phase whose templates reference {commitRange}.
+ */
+export function phaseUsesCommitRange(phase: PhaseConfig): boolean {
+	if (phase.initialHandoffStep === "execute" || phase.anchorCommitBaseOnEntry === true) {
+		return true;
+	}
+	const templates: string[] = [
+		phase.kickoffTemplate,
+		...Object.values(phase.stepTemplates).filter((t): t is string => typeof t === "string"),
+	];
+	if (phase.acceptanceReviewTemplate !== undefined) templates.push(phase.acceptanceReviewTemplate);
+	return templates.some((t) => t.includes("{commitRange}"));
+}
+
+/**
  * Derive a plan file path from a design spec path.
  *
  * Expects `specPath` to end with `-design.md` (optionally prefixed with `YYYY-MM-DD-`).

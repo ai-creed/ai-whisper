@@ -1062,6 +1062,45 @@ export function listRelayHandoffs(
 	}));
 }
 
+export interface ChainHandoffRow {
+	handoffId: string;
+	roundNumber: number | null;
+	handoffStep: string | null;
+	handbackText: string | null;
+	orchestratorVerdict: string | null;
+	createdAt: string;
+}
+
+/** All handoffs of one chain, ascending — the resume seed's round history (spec §2). */
+export function listRelayHandoffsForChain(
+	db: Database.Database,
+	chainId: string,
+): ChainHandoffRow[] {
+	const rows = db
+		.prepare(
+			`SELECT handoff_id, round_number, handoff_step, handback_text, orchestrator_verdict, created_at
+			 FROM relay_handoff
+			 WHERE chain_id = ?
+			 ORDER BY created_at ASC, handoff_id ASC`,
+		)
+		.all(chainId) as Array<{
+		handoff_id: string;
+		round_number: number | null;
+		handoff_step: string | null;
+		handback_text: string | null;
+		orchestrator_verdict: string | null;
+		created_at: string;
+	}>;
+	return rows.map((r) => ({
+		handoffId: r.handoff_id,
+		roundNumber: r.round_number,
+		handoffStep: r.handoff_step,
+		handbackText: r.handback_text,
+		orchestratorVerdict: r.orchestrator_verdict,
+		createdAt: r.created_at,
+	}));
+}
+
 export function cleanupOrchestrationOnShutdownTxn(
 	db: Database.Database,
 	input: { collabId: string; reason: string; now: string },

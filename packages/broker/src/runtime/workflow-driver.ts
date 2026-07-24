@@ -9,7 +9,9 @@ import {
 	bugfixPaths,
 	deliberationRunDir,
 	deriveFindingsPath,
+	phaseUsesCommitRange,
 } from "./workflow-registry.js";
+import { readResumeSeedMarker } from "../control/resume-seed.js";
 import { ensureRalphWorkspace } from "./ralph-setup.js";
 import { ensureBugfixWorkspace } from "./bugfix-setup.js";
 import { ensureDeliberationWorkspace } from "./deliberation-setup.js";
@@ -34,7 +36,7 @@ export interface WorkflowDriverDeps {
 			getWorkflow: (id: string) => WorkflowRecordLike | null | undefined;
 			listWorkflows: (filter?: { status?: WorkflowStatus }) => WorkflowRecordLike[];
 			getWorkflowPhaseRuns: (id: string) => Array<{ phaseIndex: number; endedAt: string | null }>;
-			beginPhaseRun: (input: { workflowId: string; phaseIndex: number; phaseName: string; initialHandoffStep: "review" | "fix" | "implement" | "execute"; kickoffText: string; sender: AgentType; target: AgentType; maxRounds: number; executionBaseHeadSha?: string; now: string }) => { phaseRunId: string; chainId: string; handoffId: string };
+			beginPhaseRun: (input: { workflowId: string; phaseIndex: number; phaseName: string; initialHandoffStep: "review" | "fix" | "implement" | "execute"; kickoffText: string; sender: AgentType; target: AgentType; maxRounds: number; executionBaseHeadSha?: string; seedCommitBase?: string; now: string }) => { phaseRunId: string; chainId: string; handoffId: string };
 			haltWorkflow: (input: { workflowId: string; reason: string; now: string }) => void;
 			listSessionBindings: (collabId: string) => Array<{ agentType: string; bindingState: string }>;
 			getCollab: (collabId: string) => { workspaceRoot: string } | null;
@@ -149,17 +151,32 @@ export function createWorkflowDriver(deps: WorkflowDriverDeps): WorkflowDriver {
 
 		// Read HEAD sha for execute phases, and for phases that opt into
 		// commit-base anchoring on entry (complex-bug-fixing's diagnosis phase).
+		// Seeded resume (spec §3): when a pending seed targets this phase and a
+		// base is already recorded, inherit it — re-anchoring to the finished tip
+		// would collapse the review range to an empty diff.
+		const ctxForSeed = workflow.workflowContext as {
+			commitRange?: string;
+			baseBeforeExecution?: string;
+		};
+		const pendingSeed = readResumeSeedMarker(workflow.workflowContext);
+		const seedForThisPhase =
+			pendingSeed !== null && pendingSeed.phaseIndex === workflow.currentPhaseIndex;
+
 		let executionBaseHeadSha: string | undefined;
 		if (phase.initialHandoffStep === "execute" || phase.anchorCommitBaseOnEntry === true) {
-			try {
-				executionBaseHeadSha = await headReader.readHead(collab.workspaceRoot);
-			} catch (err) {
-				broker.control.haltWorkflow({
-					workflowId,
-					reason: `failed to read workspace HEAD: ${String(err)}`,
-					now,
-				});
-				return;
+			if (seedForThisPhase && ctxForSeed.baseBeforeExecution) {
+				executionBaseHeadSha = ctxForSeed.baseBeforeExecution;
+			} else {
+				try {
+					executionBaseHeadSha = await headReader.readHead(collab.workspaceRoot);
+				} catch (err) {
+					broker.control.haltWorkflow({
+						workflowId,
+						reason: `failed to read workspace HEAD: ${String(err)}`,
+						now,
+					});
+					return;
+				}
 			}
 		}
 
@@ -205,8 +222,16 @@ export function createWorkflowDriver(deps: WorkflowDriverDeps): WorkflowDriver {
 			// seed/date doesn't derive a findings path; fall back to specPath
 		}
 
-		// Render kickoff text
-		const ctx = workflow.workflowContext as { commitRange?: string };
+		// Render kickoff text. The seed's commit-range instruction derives ONLY from
+		// a PRE-EXISTING usable base (a prior attempt's anchor, spec §2/§3) — a HEAD
+		// just read for ordinary phase anchoring is not prior-attempt context and
+		// must not add a commit-range section to the seed.
+		const seedCommitBase =
+			seedForThisPhase &&
+			ctxForSeed.baseBeforeExecution !== undefined &&
+			phaseUsesCommitRange(phase)
+				? ctxForSeed.baseBeforeExecution
+				: undefined;
 		let planPath = workflow.specPath; // safe fallback
 		try {
 			planPath = derivePlanPath(workflow.specPath, workflow.createdAt);
@@ -216,7 +241,10 @@ export function createWorkflowDriver(deps: WorkflowDriverDeps): WorkflowDriver {
 		const kickoffText = renderTemplate(phase.kickoffTemplate, {
 			specPath: workflow.specPath,
 			planPath,
-			commitRange: ctx.commitRange ?? "HEAD",
+			commitRange:
+				seedCommitBase !== undefined
+					? `${seedCommitBase}..HEAD`
+					: (ctxForSeed.commitRange ?? "HEAD"),
 			ralphDir,
 			reviewMode: phase.reviewMode ?? "phase-review",
 			bugfixDir: bugfix.bugfixDir,
@@ -239,6 +267,7 @@ export function createWorkflowDriver(deps: WorkflowDriverDeps): WorkflowDriver {
 				...(executionBaseHeadSha !== undefined
 					? { executionBaseHeadSha }
 					: {}),
+				...(seedCommitBase !== undefined ? { seedCommitBase } : {}),
 				now,
 			});
 		} catch (err) {

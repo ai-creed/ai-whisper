@@ -10,7 +10,7 @@ export interface WorkflowResumeDeps {
 	};
 	workflowId: string;
 	now: string;
-	/** Optional operator note delivered to the agents on resume (paused workflows). */
+	/** Optional operator note delivered to the agents on resume (paused and halted workflows). */
 	message?: string;
 }
 

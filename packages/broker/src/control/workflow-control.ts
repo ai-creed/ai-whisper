@@ -17,10 +17,16 @@ import {
 import {
 	insertWorkflowPhaseRun,
 	listPhaseRunsForWorkflow,
+	getLatestPhaseRunForIndex,
 	hasOpenPhaseRunForIndex,
 	closeWorkflowPhaseRun,
 	type WorkflowPhaseRunRecord,
 } from "../storage/repositories/workflow-phase-repository.js";
+import {
+	composeResumeSeedText,
+	readResumeSeedMarker,
+	type ResumeSeedMarker,
+} from "./resume-seed.js";
 import {
 	insertRelayChain,
 	getRelayChain as getRelayChainRepo,
@@ -36,6 +42,7 @@ import {
 	hasInFlightAcceptedHandoffForWorkflow,
 	resetStrandedOrchestrationForWorkflow,
 	prependToPendingHandoffRequestText,
+	listRelayHandoffsForChain,
 } from "../storage/repositories/relay-handoff-repository.js";
 import { upsertRelayTurnState } from "../storage/repositories/relay-turn-state-repository.js";
 import {
@@ -265,6 +272,9 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 		target: AgentType;
 		maxRounds: number;
 		executionBaseHeadSha?: string;
+		/** Base SHA the resume seed's commit-range section states (spec §3). Set by the
+		 *  driver only for seeded kickoffs of phases that use a commit range. */
+		seedCommitBase?: string;
 		now: string;
 	}): { phaseRunId: string; chainId: string; handoffId: string } {
 		if (input.initialHandoffStep === "execute") {
@@ -304,6 +314,35 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 					`beginPhaseRun: open phase run already exists for workflow ${input.workflowId} index ${input.phaseIndex}`,
 				);
 			}
+			// Resume seed (spec §2): consume the one-shot marker in this same tx.
+			// Re-read the workflow inside the tx so the marker check is atomic.
+			const current = getWorkflowById(db, input.workflowId);
+			const marker = current ? readResumeSeedMarker(current.workflowContext) : null;
+			let kickoffText = input.kickoffText;
+			if (marker) {
+				if (marker.phaseIndex === input.phaseIndex) {
+					const rounds = marker.chainId
+						? listRelayHandoffsForChain(db, marker.chainId).map((r) => ({
+								roundNumber: r.roundNumber ?? 0,
+								step: r.handoffStep,
+								verdict: r.orchestratorVerdict,
+								handbackText: r.handbackText,
+							}))
+						: [];
+					const seed = composeResumeSeedText({
+						marker,
+						rounds,
+						commitBase: input.seedCommitBase ?? null,
+					});
+					kickoffText = `${seed}\n\n${input.kickoffText}`;
+				}
+				// Consumed on match, discarded on phase mismatch — one-shot either way.
+				updateWorkflowContext(db, {
+					workflowId: input.workflowId,
+					patch: { resumeSeed: null },
+					now: input.now,
+				});
+			}
 			insertRelayChain(db, {
 				chainId,
 				collabId: workflow.collabId,
@@ -323,7 +362,7 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 				collabId: workflow.collabId,
 				senderAgent: input.sender,
 				targetAgent: input.target,
-				requestText: input.kickoffText,
+				requestText: kickoffText,
 				chainId,
 				roundNumber: 1,
 				maxRounds: input.maxRounds,
@@ -1305,9 +1344,13 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 		maybeCaptureQuiesceSnapshot({ workflowId: input.workflowId, now: input.now });
 	}
 
-	// Existing halted → running resume, extracted VERBATIM so the legacy path is
-	// provably unchanged (regression guard). Only paused resume is new.
-	function resumeHaltedWorkflow(workflow: WorkflowRecord, now: string): void {
+	// Halted → running resume: flips status and captures a one-shot resume-seed
+	// marker (spec §1) before the status flip clears halt_reason.
+	function resumeHaltedWorkflow(
+		workflow: WorkflowRecord,
+		now: string,
+		message?: string,
+	): void {
 		const tx = db.transaction(() => {
 			const others = listWorkflowsRepo(db, { collabId: workflow.collabId }).filter(
 				(w) =>
@@ -1319,6 +1362,28 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 					`resumeWorkflow: another workflow is already active on collab ${workflow.collabId}`,
 				);
 			}
+			// Capture halt context BEFORE the status flip clears halt_reason — the
+			// marker is the only copy that survives to kickoff time (spec §1). The
+			// chain id is optional: some halts precede any phase run (spec §1/§5),
+			// and only an ESCALATED run is a failed prior attempt worth seeding —
+			// a ralph maxIterations halt closes its chain as `done` before halting,
+			// and that chain must not feed handback/digest sections.
+			const latestRun = getLatestPhaseRunForIndex(db, {
+				workflowId: workflow.workflowId,
+				phaseIndex: workflow.currentPhaseIndex,
+			});
+			const marker: ResumeSeedMarker = {
+				phaseIndex: workflow.currentPhaseIndex,
+				resumedAt: now,
+				haltReason: workflow.haltReason,
+				chainId: latestRun?.outcome === "escalated" ? latestRun.chainId : null,
+				message: message !== undefined && message.trim() !== "" ? message : null,
+			};
+			updateWorkflowContext(db, {
+				workflowId: workflow.workflowId,
+				patch: { resumeSeed: marker },
+				now,
+			});
 			setWorkflowStatus(db, {
 				workflowId: workflow.workflowId,
 				status: "running",
@@ -1355,7 +1420,7 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 			);
 		}
 		if (workflow.status === "halted") {
-			resumeHaltedWorkflow(workflow, input.now); // unchanged path
+			resumeHaltedWorkflow(workflow, input.now, input.message);
 			return;
 		}
 		if (workflow.status !== "paused") {
