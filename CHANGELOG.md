@@ -794,6 +794,7 @@ Requires `@ai-creed/ai-ezio` ≥ 0.2.0-beta.4 (the `@ai-ezio/surface` slash seam
   (Claude + Codex) driven by structured workflows, with npm metadata
   (description, repository, homepage).
 
+[0.16.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.16.0
 [0.15.1]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.15.1
 [0.15.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.15.0
 [0.14.0]: https://github.com/ai-creed/ai-whisper/releases/tag/v0.14.0

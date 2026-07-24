@@ -36,6 +36,13 @@ if git rev-parse "$TAG" >/dev/null 2>&1; then
 	exit 1
 fi
 
+# CHANGELOG.md must already carry this release's entry, so it lands in (or
+# before) the tagged release commit — the gate scripts never write it for you.
+if ! grep -q "^## \[$VERSION\]" CHANGELOG.md; then
+	echo "Error: CHANGELOG.md has no '## [$VERSION]' entry — add it before releasing"
+	exit 1
+fi
+
 # ─── Release gate ────────────────────────────────────────────────────────
 # Tagging must be impossible unless the full verification suite passes.
 # Mirrors ci.yml/publish.yml order. Typecheck must be the ROOT script:
