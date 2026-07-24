@@ -5,6 +5,26 @@ All notable changes to the `ai-whisper` package are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.0] - 2026-07-24
+
+### Added
+
+- **Workflow history is now a permanent run ledger.** Every `collab_id`-bearing table is explicitly classified as ledger (`collab`, `workflows`, `workflow_phases`, `relay_chains`, `relay_handoff` — never deleted), runtime (removed when a collab is archived), or diagnostics (owned solely by the 30-day age sweep), with a drift guard that fails the suite the moment a new table lands unclassified. The `collab` table gains an `archived_at` lifecycle column (schema v8, contract surface in `docs/state-db-read-contract.md`); archived collabs are hidden from every live path (start, mount, status, default dashboard wall), cannot have workflows resumed (explicit read-only-history error, no state change), and never block starting fresh work in the same workspace.
+- **Halted workflows now resume where they left off.** Resuming a halted workflow used to restart the active phase from round 1 with a fresh kickoff — all prior rounds' context discarded. Resume now captures a seed (halt reason as of resume time, the escalated chain's final handback, a per-round verdict digest, and the operator's `--message`) and the next kickoff prepends it, under deterministic size caps (24k budget with per-field caps and a fixed overflow order). The seeded chain gets the phase's full round budget, prior chains stay immutable, and seeds survive failed kickoff transactions. Works for every halt shape, including halts that never created a chain.
+- **One-shot recovery import** (`scripts/import-recovery.ts`, dev tooling): imports workflow history recovered from a purged database's SQLite freelist, with exact width+prefix record predicates, two-edge referential closure (workflow and chain parents; orphans skipped and counted, never fabricated), three-tier count verification that aborts before any write, archived tombstone collabs for missing parents, and a daemon-safe read-only preflight that leaves a refused target byte-identical (WAL included).
+
+### Changed
+
+- **`whisper collab purge` archives instead of deleting.** Stale (and `--force`d protected) collabs now have only their runtime rows removed; all workflow/chain/handoff history is kept and the collab is marked archived (`status='stopped'`, `archived_at` set). All decision-point copy says archive; there is no destructive escape hatch. Already-archived collabs are skipped on later purges.
+- **`whisper collab dashboard --window all` now implies the run-ledger view** (one card per workflow run, archived runs included and tagged), so "show me everything that ever ran" needs no extra flag; `--all` remains an explicit override at any window. Archived cards — compact and full variants alike, including force-archived paused/running runs — render their preserved chain status and `R<current>/<max>` round counters.
+- **Dashboard inspect view: `b` returns to the wall; Esc is unbound there.** Esc is the prefix byte of every ANSI escape sequence, so stray sequences from programs sharing the tty could kick the operator back to the wall mid-inspection. Esc still cancels a pending confirm prompt.
+
+### Fixed
+
+- **Collabs with workflows but no relay handoffs were invisible on the dashboard wall** regardless of window — eligibility now falls back to workflow recency, not just handoff activity.
+- **Operator `--message` was silently dropped when resuming a halted workflow** (the paused path delivered it; the halted path ignored it). It now lands verbatim in the seeded kickoff on every halted resume.
+- **Resuming a halted execute/review phase no longer corrupts the code-review commit range.** The driver used to re-anchor `baseBeforeExecution` to the workspace HEAD at resume time, collapsing the reviewer's range to an empty diff when the prior attempt's work was already committed (the manual "base re-anchor dance" workaround). Seeded kickoffs inherit the original base — for base-establishing and base-consuming phases both — and render `{commitRange}` live as `original-base..HEAD`.
+
 ## [0.15.1] - 2026-07-18
 
 ### Fixed
