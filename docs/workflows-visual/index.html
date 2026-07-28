@@ -1,4 +1,11 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ai-whisper · watch a workflow run</title>
+</head>
+<body>
 <style>
   :root {
     --bg: #F5F7FA; --surface: #FFFFFF; --surface2: #EDF1F6; --line: #D4DCE6;
@@ -8,6 +15,8 @@
     --ok: #1E8A5E; --halt: #C0392F;
     --term-bg: #10151C; --term-ink: #C9D4DF; --term-dim: #7A8794; --term-line: #232C38;
     --term-impl: #6FB3EF; --term-rev: #B49DEF; --term-gold: #E9B44C; --term-ok: #58C695; --term-halt: #E57F75;
+    --claude: #C25636; --codex: #2F6FBF;
+    --claude-term: #E5906B; --codex-term: #6FB0F0;
     --shadow: 0 1px 3px rgba(28,37,48,.08);
     --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
     --sans: -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
@@ -20,6 +29,7 @@
       --human: #E9B44C; --human-soft: rgba(233,180,76,.10);
       --ok: #46C08A; --halt: #E06256;
       --term-bg: #0B0F14; --term-line: #1D2631;
+      --claude: #E5906B; --codex: #6FB0F0;
       --shadow: 0 1px 3px rgba(0,0,0,.4);
     }
   }
@@ -30,6 +40,7 @@
     --human: #E9B44C; --human-soft: rgba(233,180,76,.10);
     --ok: #46C08A; --halt: #E06256;
     --term-bg: #0B0F14; --term-line: #1D2631;
+    --claude: #E5906B; --codex: #6FB0F0;
     --shadow: 0 1px 3px rgba(0,0,0,.4);
   }
   :root[data-theme="light"] {
@@ -39,6 +50,7 @@
     --human: #9C6E14; --human-soft: rgba(156,110,20,.10);
     --ok: #1E8A5E; --halt: #C0392F;
     --term-bg: #10151C; --term-line: #232C38;
+    --claude: #C25636; --codex: #2F6FBF;
     --shadow: 0 1px 3px rgba(28,37,48,.08);
   }
 
@@ -52,9 +64,13 @@
   .thesis { max-width: 68ch; margin: 0; color: var(--muted); }
   .thesis b { color: var(--ink); }
 
+  .deck {
+    position: sticky; top: 0; z-index: 30; background: var(--bg);
+    border-bottom: 1px solid var(--line); padding-bottom: 12px; margin-top: 20px;
+  }
   .controls {
     display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
-    margin: 20px 0 0; padding: 10px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+    padding: 10px 0; border-top: 1px solid var(--line);
   }
   .controls button, .controls select {
     font-family: var(--mono); font-size: 13px; padding: 8px 14px; border-radius: 6px;
@@ -66,7 +82,32 @@
   button:focus-visible, select:focus-visible { outline: 2px solid var(--impl); outline-offset: 2px; }
   .sim-note { margin-left: auto; font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
 
-  .scen { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 16px; }
+  .scrub { margin: 4px 0 0; }
+  .scrub .track {
+    position: relative; height: 30px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--surface); box-shadow: var(--shadow); display: flex; overflow: hidden;
+    cursor: pointer; touch-action: none;
+  }
+  .scrub .seg { height: 100%; border-right: 1px solid var(--line); min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0 8px; }
+  .scrub .seg:last-child { border-right: 0; }
+  .scrub .seg .n, .scrub .seg .nm, .scrub .seg .st {
+    font-family: var(--mono); font-size: 10px; color: var(--muted);
+    white-space: nowrap; pointer-events: none;
+  }
+  .scrub .seg .n { display: none; }
+  .scrub .seg .nm { overflow: hidden; text-overflow: ellipsis; }
+  .scrub .seg .st { font-size: 9px; letter-spacing: 1px; flex: none; }
+  .scrub .seg.active { box-shadow: inset 0 -3px 0 0 var(--ink); }
+  .scrub .seg.active .nm { color: var(--ink); font-weight: 700; }
+  .scrub .seg.active .st { color: var(--ink); }
+  .scrub .seg.done { box-shadow: inset 0 -3px 0 0 var(--ok); }
+  .scrub .seg.done .n, .scrub .seg.done .nm, .scrub .seg.done .st { color: var(--ok); }
+  .scrub .played { position: absolute; left: 0; top: 0; bottom: 0; background: var(--impl); opacity: .12; pointer-events: none; }
+  .scrub .head { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--impl); pointer-events: none; }
+  .scrub .track:focus-visible { outline: 2px solid var(--impl); outline-offset: 2px; }
+  .scrub .hintline { font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin-top: 5px; }
+
+  .scen { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 16px; }
   .scen button {
     font-family: var(--mono); font-size: 12.5px; padding: 8px 13px; border-radius: 999px;
     border: 1px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer;
@@ -77,6 +118,23 @@
 
   /* ---------- terminals ---------- */
   .terms { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .ttabs { display: none; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .ttabs button {
+    font-family: var(--mono); font-size: 12px; padding: 9px 10px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--surface); color: var(--muted);
+    display: flex; align-items: center; gap: 6px; justify-content: center; cursor: pointer;
+  }
+  .ttabs button b { font-weight: 600; }
+  .ttabs button[aria-selected="true"] { color: var(--ink); border-color: var(--ink); }
+  .ttabs .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .ttabs .di { background: var(--claude); } .ttabs .dr { background: var(--codex); }
+  .ttabs button[data-t="i"] b { color: var(--claude); }
+  .ttabs button[data-t="r"] b { color: var(--codex); }
+  .ttabs button.busy .dot { box-shadow: 0 0 7px 1px currentColor; }
+  @media (prefers-reduced-motion: no-preference) {
+    .ttabs button.busy .dot { animation: tabpulse 1s ease-in-out infinite; }
+    @keyframes tabpulse { 50% { opacity: .35; } }
+  }
   .term {
     background: var(--term-bg); border: 1px solid var(--term-line); border-radius: 10px;
     overflow: hidden; box-shadow: var(--shadow);
@@ -87,6 +145,8 @@
   }
   .term .bar .dot { width: 9px; height: 9px; border-radius: 50%; }
   .term .bar b { color: var(--term-ink); font-weight: 600; }
+  .term.impl .bar b { color: var(--claude-term); }
+  .term.rev .bar b { color: var(--codex-term); }
   .term .bar .idle { margin-left: auto; font-size: 11px; }
   .term .bar .idle.busy { color: var(--term-ok); }
   .term .scroll {
@@ -122,17 +182,21 @@
   .broker.gold { border-color: var(--human); color: var(--human); background: var(--human-soft); }
   .broker.gold .msg { color: var(--human); }
 
+  /* ---------- about card ---------- */
+  .about {
+    border: 1px solid var(--line); border-left: 3px solid var(--impl); background: var(--surface);
+    border-radius: 0 10px 10px 0; padding: 10px 14px; margin: 0 0 4px; box-shadow: var(--shadow);
+  }
+  .about .ab-eyebrow {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--muted); display: block; margin-bottom: 3px;
+  }
+  .about { margin-bottom: 22px; }
+  .about p { margin: 2px 0; font-size: 13.5px; }
+  .about .ab-when b { color: var(--human); }
+
   /* ---------- right panel ---------- */
   .panel { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
-  .phases { display: flex; gap: 6px; flex-wrap: wrap; }
-  .phase {
-    font-family: var(--mono); font-size: 11.5px; padding: 6px 10px; border-radius: 999px;
-    border: 1px solid var(--line); color: var(--muted); background: var(--surface);
-    display: inline-flex; gap: 8px; align-items: center;
-  }
-  .phase .rd { letter-spacing: 2px; font-size: 10px; }
-  .phase.active { border-color: var(--ink); color: var(--ink); font-weight: 700; }
-  .phase.done { border-color: var(--ok); color: var(--ok); }
   .hud {
     font-family: var(--mono); font-size: 12.5px; color: var(--muted);
     font-variant-numeric: tabular-nums; display: flex; gap: 14px; flex-wrap: wrap;
@@ -189,6 +253,27 @@
     font-family: var(--mono); font-size: 10.5px; color: var(--muted);
     font-variant-numeric: tabular-nums; margin-right: 7px;
   }
+  .runlog .en.link { cursor: pointer; border-radius: 0 6px 6px 0; }
+  .runlog .en.link:hover { background: var(--surface2); }
+  .runlog .en.link:focus-visible { outline: 2px solid var(--impl); outline-offset: -2px; }
+
+  .ticker {
+    display: none; align-items: baseline; gap: 8px; text-align: left; width: 100%;
+    border: 1px solid var(--line); border-left: 3px solid var(--line); background: var(--surface);
+    border-radius: 0 8px 8px 0; padding: 8px 10px; font-size: 12.5px; color: var(--ink);
+    font-family: var(--sans); cursor: pointer; box-shadow: var(--shadow); line-height: 1.45;
+  }
+  .ticker .tk {
+    flex: 1; min-width: 0; display: -webkit-box; -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .ticker .ts {
+    font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+    font-variant-numeric: tabular-nums; margin-right: 7px;
+  }
+  .ticker.gold { border-left-color: var(--human); background: var(--human-soft); }
+  .ticker.ok { border-left-color: var(--ok); }
+  .ticker .chev { color: var(--muted); flex: none; }
   .who-i { color: var(--impl); } .who-r { color: var(--rev); }
   .who-e { color: var(--eval); } .who-you { color: var(--human); }
 
@@ -196,14 +281,50 @@
   .legend .key { display: inline-flex; align-items: center; gap: 6px; }
   .swatch { width: 9px; height: 9px; border-radius: 50%; flex: none; }
 
-  footer { border-top: 1px solid var(--line); margin-top: 26px; padding: 16px 0 44px; color: var(--muted); font-size: 13px; }
-  footer p { max-width: 78ch; margin: 6px 0; }
-  footer code { font-family: var(--mono); font-size: 12px; }
+  footer { border-top: 1px solid var(--line); margin-top: 26px; padding: 16px 0 44px; color: var(--muted); font-size: 12.5px; }
+  footer p { max-width: 90ch; margin: 6px 0; }
+  footer code { font-family: var(--mono); font-size: 11.5px; }
+  footer a { color: var(--muted); }
 
   @media (max-width: 940px) {
     .stage { grid-template-columns: 1fr; }
     .term .scroll { height: 200px; }
     .sim-note { margin-left: 0; width: 100%; }
+  }
+  /* one-frame mobile stage: tabbed terminal + capped diagram + narration ticker */
+  @media (max-width: 700px) {
+    .controls .bl { display: none; }
+    .speedctl { display: none; }
+    .sim-note { display: none; }
+    .scrub .hintline { display: none; }
+    .deck { padding-bottom: 8px; }
+    .stage { gap: 10px; }
+    .ttabs { display: grid; }
+    .term .bar { display: none; }
+    .term.impl, .term.rev { display: none; }
+    html.mob-i .term.impl { display: block; }
+    html.mob-r .term.rev { display: block; }
+    .term { order: 1; } .broker { order: 2; }
+    .term .scroll { height: 176px; font-size: 11.5px; }
+    .broker { min-height: 0; padding: 5px 10px; font-size: 10.5px; }
+    .diagram svg { max-height: 272px; margin: 0 auto; }
+    .ticker { display: flex; }
+    .runlog { display: none; }
+    .runlog.open { display: block; max-height: 240px; }
+    .panel { gap: 8px; }
+    .hud { font-size: 11px; gap: 10px; }
+  }
+  @media (max-width: 560px) {
+    .wrap { padding: 0 12px; }
+    header { padding-top: 22px; }
+    .thesis { font-size: 15px; }
+    .controls { gap: 6px; }
+    .controls button, .controls select { padding: 7px 10px; font-size: 12px; }
+    .scrub .seg { padding: 0 6px; }
+    .scrub .seg .nm { display: none; }
+    .scrub .seg .n { display: inline; }
+    .about p { font-size: 13px; }
+    .legend { gap: 8px 14px; font-size: 11.5px; }
   }
 </style>
 
@@ -215,34 +336,47 @@
     broker passes a single baton between them and an evaluator routes every handback.
     <b>Pick a workflow, press play</b>, and watch a run go from your ask to a reviewed deliverable.</p>
 
-  <div class="controls">
-    <button id="btnPlay" class="primary">▶ play</button>
-    <button id="btnStep">⏭ step</button>
-    <button id="btnRestart">↺ restart</button>
-    <label style="font-family:var(--mono);font-size:12px;color:var(--muted)">speed
-      <select id="speed"><option value="1">1×</option><option value="1.6" selected>1.6×</option><option value="2.6">2.6×</option></select>
-    </label>
-    <span class="sim-note">scripted from real workflow semantics · registry @ ce6e63c</span>
+  <div class="deck">
+    <div class="controls">
+      <button id="btnPlay" class="primary">▶<span class="bl"> play</span></button>
+      <button id="btnStep">⏭<span class="bl"> step</span></button>
+      <button id="btnPhase">⏭⏭<span class="bl"> next phase</span></button>
+      <button id="btnRestart">↺<span class="bl"> restart</span></button>
+      <label class="speedctl" style="font-family:var(--mono);font-size:12px;color:var(--muted)">speed
+        <select id="speed"><option value="1">1×</option><option value="1.6" selected>1.6×</option><option value="2.6">2.6×</option></select>
+      </label>
+      <span class="sim-note">scripted from real workflow semantics · registry @ ce6e63c</span>
+    </div>
+    <div class="scrub">
+      <div class="track" id="scrubTrack" role="slider" tabindex="0"
+           aria-label="Run position — click or drag to jump; arrow keys step" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
+      <div class="hintline">timeline · segment widths are the phases' wall-clock share · click or drag to jump · click any log entry to jump to that moment</div>
+    </div>
   </div>
 </header>
 
 <div class="scen" id="scenPicker" role="tablist" aria-label="Workflow scenario"></div>
 
+<div class="about" id="about"></div>
+
 <div class="stage">
   <div class="terms">
+    <div class="ttabs" id="ttabs" role="tablist" aria-label="Agent terminal">
+      <button data-t="i" aria-selected="true"><span class="dot di"></span><b>claude</b>&nbsp;· <span id="tabRoleI">implementer</span></button>
+      <button data-t="r" aria-selected="false"><span class="dot dr"></span><b>codex</b>&nbsp;· <span id="tabRoleR">reviewer</span></button>
+    </div>
     <div class="term impl">
-      <div class="bar"><span class="dot" style="background:var(--term-impl)"></span><b>claude</b> · <span id="roleLabelI">implementer</span> <span class="idle" id="idle-i">idle</span></div>
+      <div class="bar"><span class="dot" style="background:var(--claude-term)"></span><b>claude</b> · <span id="roleLabelI">implementer</span> <span class="idle" id="idle-i">idle</span></div>
       <div class="scroll" id="scr-i"></div>
     </div>
     <div class="broker" id="broker"><span class="who">broker · evaluator</span><span class="msg" id="brokerMsg">waiting for kickoff…</span></div>
     <div class="term rev">
-      <div class="bar"><span class="dot" style="background:var(--term-rev)"></span><b>codex</b> · <span id="roleLabelR">reviewer</span> <span class="idle" id="idle-r">idle</span></div>
+      <div class="bar"><span class="dot" style="background:var(--codex-term)"></span><b>codex</b> · <span id="roleLabelR">reviewer</span> <span class="idle" id="idle-r">idle</span></div>
       <div class="scroll" id="scr-r"></div>
     </div>
   </div>
 
   <div class="panel">
-    <div class="phases" id="phases"></div>
     <div class="hud" id="hud"><span>phase <b id="hudP">–</b></span><span>round <b id="hudR">–</b></span><span>elapsed <b id="hudT">t+0m</b></span><span id="hudName"></span></div>
 
     <div class="diagram">
@@ -280,6 +414,11 @@
       </svg>
     </div>
 
+    <button class="ticker" id="ticker" aria-expanded="false">
+      <span class="tk" id="tickerTk">Press ▶ play — narration appears here as the run happens.</span>
+      <span class="chev">▾</span>
+    </button>
+
     <div class="runlog" id="runlog" aria-live="polite">
       <div class="en hint">Press ▶ play — the run will be narrated here, in plain English, as it happens.</div>
     </div>
@@ -296,15 +435,10 @@
 </div>
 
 <footer>
-  <p><b>What you're watching, honestly:</b> scripted simulations of all five real workflow types, faithful to
-    <code>packages/broker/src/runtime/workflow-registry.ts</code> (and <code>task-brief.ts</code> for the
-    quick-task scope gate) — the review-first kickoffs, the reviewer-less execution gate, the sequential
-    per-task sub-agent fan-out of the bundled <code>ai-whisper-plan-execution</code> skill, the ralph
-    completion markers, the deliberation Open Questions, the findings→fix rounds, the round budgets, and the
-    halt paths are all real behavior, compressed in time. Timelines are fixtures — illustrative wall-clock
-    shapes, compressed to seconds here. No agents ran to render this page.</p>
-  <p>Facts headers for every scenario are in the page source above the script data; the maintainer skill
-    diffs them against the registry on every change.</p>
+  <p>Simulated runs, scripted faithfully from the real workflow engine
+    (<code>workflow-registry.ts</code> @ <code>ce6e63c</code>) — timelines are illustrative; no agents ran to
+    render this page. Full guide:
+    <a href="https://github.com/ai-creed/ai-whisper/blob/master/docs/workflows.md">docs/workflows.md</a>.</p>
 </footer>
 </div>
 
@@ -330,7 +464,9 @@
 
   var SCENARIOS = {
     sdd: {
-      label: "sdd", roleI: "implementer", roleR: "reviewer",
+      label: "sdd", type: "spec-driven-development", roleI: "implementer", roleR: "reviewer",
+      about: "The flagship for feature work: your spec is hardened by review, turned into a plan, executed with per-task sub-agents, and acceptance-reviewed against the spec.",
+      when: "you can describe “done” up front and the change deserves a spec.",
       phases: [
         { name: "spec-refining", cap: 5, dur: "17m" },
         { name: "plan-writing", cap: 5, dur: "16m" },
@@ -415,7 +551,9 @@
     },
 
     quick: {
-      label: "quick-task", roleI: "implementer", roleR: "reviewer",
+      label: "quick-task", type: "quick-task", roleI: "implementer", roleR: "reviewer",
+      about: "One implement→review pass over a brief you already approved, with a hard scope gate at the door — at most 5 non-test files, no override.",
+      when: "the change is small and already agreed in chat — a spec would be overkill.",
       phases: [ { name: "implement-and-review", cap: 5, dur: "34m" } ],
       script: [
         { t:"i", k:"you", x:"start the quick task we agreed — brief at .ai-whisper/tasks/2026-07-28-collab-status-json.md",
@@ -455,7 +593,9 @@
     },
 
     bugfix: {
-      label: "bugfix", roleI: "implementer", roleR: "reviewer",
+      label: "bugfix", type: "complex-bug-fixing", roleI: "implementer", roleR: "reviewer",
+      about: "Diagnosis before treatment: reproduce for real, prove the root cause past an adversarial gate, fix and verify across the blast radius, then an honest post-mortem.",
+      when: "a bug is reported, the cause is unknown, and a verified, non-regressing fix matters.",
       phases: [
         { name: "diagnosis", cap: 5, dur: "31m" },
         { name: "fix-and-verify", cap: 5, dur: "38m" },
@@ -513,7 +653,9 @@
     },
 
     ralph: {
-      label: "ralph", roleI: "implementer", roleR: "reviewer",
+      label: "ralph", type: "ralph-loop", roleI: "implementer", roleR: "reviewer",
+      about: "A gated self-loop that grinds an open-ended goal chunk-by-chunk, with durable PROGRESS/LEARNINGS memory so late items remember early lessons.",
+      when: "the work is long-horizon or hard to fully plan — but you can write explicit completion criteria.",
       phases: [ { name: "ralph-iteration", cap: 5, dur: "4h 02m" } ],
       script: [
         { t:"i", k:"you", x:"run ralph on docs/goals/cli-error-messages.md",
@@ -561,7 +703,9 @@
     },
 
     delib: {
-      label: "deliberation", roleI: "explorer (implementer)", roleR: "challenger (reviewer)",
+      label: "deliberation", type: "deliberation", roleI: "explorer (implementer)", roleR: "challenger (reviewer)",
+      about: "An Explorer proposes and a Challenger attacks, layer by layer, until a findings doc lands the open decisions back with you — it never auto-chains into a spec.",
+      when: "you can't yet describe “done” — the idea needs mapping before any spec.",
       phases: [
         { name: "objectives", cap: 6, dur: "26m" },
         { name: "approaches", cap: 10, dur: "41m" },
@@ -627,11 +771,39 @@
   var hudP = document.getElementById("hudP"), hudR = document.getElementById("hudR"), hudName = document.getElementById("hudName");
   var hudT = document.getElementById("hudT");
   var roleLabelI = document.getElementById("roleLabelI"), roleLabelR = document.getElementById("roleLabelR");
-  var phasesEl = document.getElementById("phases");
+  var aboutEl = document.getElementById("about");
   var idleI = document.getElementById("idle-i"), idleR = document.getElementById("idle-r");
   var btnPlay = document.getElementById("btnPlay"), btnStep = document.getElementById("btnStep"), btnRestart = document.getElementById("btnRestart");
+  var btnPhase = document.getElementById("btnPhase");
   var speedSel = document.getElementById("speed");
   var scenPicker = document.getElementById("scenPicker");
+  var scrubTrack = document.getElementById("scrubTrack");
+  var scrubPlayed = null, scrubHead = null, totalEl = 1, currentKey = "sdd", curStepIdx = 0;
+  var ttabs = document.getElementById("ttabs");
+  var tabRoleI = document.getElementById("tabRoleI"), tabRoleR = document.getElementById("tabRoleR");
+  var ticker = document.getElementById("ticker"), tickerTk = document.getElementById("tickerTk");
+  var pinned = false;
+  var TICKER_HINT = "Press ▶ play — narration appears here as the run happens.";
+
+  function setPlayBtn(mode) {
+    btnPlay.innerHTML = mode === "pause" ? "⏸<span class='bl'> pause</span>"
+      : mode === "done" ? "✓<span class='bl'> finished — ↺ to replay</span>"
+      : "▶<span class='bl'> play</span>";
+  }
+
+  function setActiveTerm(t, byUser) {
+    if (byUser) {
+      var already = document.documentElement.classList.contains(t === "i" ? "mob-i" : "mob-r");
+      pinned = !(already && pinned);
+    }
+    document.documentElement.classList.toggle("mob-i", t === "i");
+    document.documentElement.classList.toggle("mob-r", t === "r");
+    ttabs.querySelectorAll("button").forEach(function (b) {
+      b.setAttribute("aria-selected", String(b.dataset.t === t));
+    });
+    var scr = t === "i" ? scrI : scrR;
+    scr.scrollTop = scr.scrollHeight;
+  }
   var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   var idx = 0, playing = false, timer = null, typerTimer = null;
@@ -640,23 +812,26 @@
   function fmt(m) { return m < 60 ? m + "m" : Math.floor(m / 60) + "h " + ("0" + (m % 60)).slice(-2) + "m"; }
 
   function renderPhases() {
-    phasesEl.innerHTML = "";
+    var segs = scrubTrack.querySelectorAll(".seg");
     PHASES.forEach(function (ph, i) {
-      var cls = "phase" + (i < state.p || state.done ? " done" : i === state.p ? " active" : "");
-      var rd = "";
-      if (i === state.p && !state.done) {
-        rd = " <span class='rd'>" + "●".repeat(state.r) + "○".repeat(Math.max(0, ph.cap - state.r)) + "</span>";
-      } else if (i < state.p || state.done) { rd = " <span class='rd'>✓ " + ph.dur + "</span>"; }
-      var el = document.createElement("span");
-      el.className = cls;
-      el.innerHTML = (i + 1) + " " + ph.name + rd;
-      phasesEl.appendChild(el);
+      var seg = segs[i];
+      if (!seg) return;
+      var isDone = i < state.p || state.done;
+      var isActive = i === state.p && !state.done;
+      seg.classList.toggle("done", isDone);
+      seg.classList.toggle("active", isActive);
+      seg.querySelector(".st").textContent = isDone
+        ? "✓ " + ph.dur
+        : isActive
+          ? "●".repeat(state.r) + "○".repeat(Math.max(0, ph.cap - state.r))
+          : "";
     });
     hudP.textContent = state.done ? PHASES.length + "/" + PHASES.length : (state.p + 1) + "/" + PHASES.length;
     hudR.textContent = state.r + "/" + PHASES[Math.min(state.p, PHASES.length - 1)].cap;
     hudT.textContent = "t+" + fmt(state.el);
     hudName.textContent = state.done ? "done ✓" : PHASES[state.p].name;
     hudName.style.color = state.done ? "var(--ok)" : "";
+    updateScrub();
   }
 
   function setDiagram(node, edges) {
@@ -710,8 +885,23 @@
       en.className = "en" + (s.lgGold ? " gold" : "") + (s.lgOk ? " ok" : "");
       en.innerHTML = "<span class='ts'>t+" + fmt(state.el) + "</span>" + s.lg +
         (s.lgSub ? "<span class='sub'>" + s.lgSub + "</span>" : "");
+      en.classList.add("link");
+      en.dataset.step = String(curStepIdx);
+      en.setAttribute("role", "button");
+      en.tabIndex = 0;
+      en.title = "Jump the run to this moment";
       runlog.appendChild(en);
       runlog.scrollTop = runlog.scrollHeight;
+      ticker.className = "ticker" + (s.lgGold ? " gold" : "") + (s.lgOk ? " ok" : "");
+      tickerTk.innerHTML = "<span class='ts'>t+" + fmt(state.el) + "</span>" + s.lg;
+    }
+    if (s.t === "i" || s.t === "r") {
+      ttabs.querySelectorAll("button").forEach(function (b) {
+        b.classList.toggle("busy", b.dataset.t === s.t);
+      });
+      if (!pinned) setActiveTerm(s.t, false);
+    } else {
+      ttabs.querySelectorAll("button").forEach(function (b) { b.classList.remove("busy"); });
     }
     idleI.textContent = "idle"; idleR.textContent = "idle";
     idleI.className = "idle"; idleR.className = "idle";
@@ -732,11 +922,13 @@
 
   function stepOnce(auto) {
     if (idx >= SCRIPT.length) { stop(); return; }
-    var s = SCRIPT[idx++];
+    var s = SCRIPT[idx];
+    curStepIdx = idx;
+    idx++;
     runStep(s, function () {
       if (idx >= SCRIPT.length) {
         stop();
-        btnPlay.textContent = "✓ finished — ↺ to replay";
+        setPlayBtn("done");
         btnPlay.disabled = true; btnStep.disabled = true;
         return;
       }
@@ -751,30 +943,115 @@
     playing = false;
     if (timer) { clearTimeout(timer); timer = null; }
     if (typerTimer) { clearInterval(typerTimer); typerTimer = null; }
-    btnPlay.textContent = "▶ play";
+    setPlayBtn("play");
+  }
+
+  function resetStage() {
+    idx = 0; state = { p: 0, r: 1, done: false, el: 0 };
+    scrI.innerHTML = ""; scrR.innerHTML = "";
+    brokerEl.className = "broker"; brokerMsg.textContent = "waiting for kickoff…";
+    runlog.innerHTML = "<div class='en hint'>Press ▶ play — the run will be narrated here, in plain English, as it happens. Click any entry (or the timeline above) to jump.</div>";
+    setDiagram(null, []);
+    document.getElementById("n-rev").classList.remove("off");
+    document.getElementById("n-fan").classList.remove("on");
+    ticker.className = "ticker";
+    tickerTk.textContent = TICKER_HINT;
+    pinned = false;
+    setActiveTerm("i", false);
+    ttabs.querySelectorAll("button").forEach(function (b) { b.classList.remove("busy"); });
+    renderPhases();
   }
 
   function resetRun() {
     stop();
-    idx = 0; state = { p: 0, r: 1, done: false, el: 0 };
-    scrI.innerHTML = ""; scrR.innerHTML = "";
-    brokerEl.className = "broker"; brokerMsg.textContent = "waiting for kickoff…";
-    runlog.innerHTML = "<div class='en hint'>Press ▶ play — the run will be narrated here, in plain English, as it happens.</div>";
-    setDiagram(null, []);
-    document.getElementById("n-rev").classList.remove("off");
-    document.getElementById("n-fan").classList.remove("on");
-    btnPlay.disabled = false; btnStep.disabled = false;
+    resetStage();
+    btnPlay.disabled = false; btnStep.disabled = false; setPlayBtn("play");
+  }
+
+  function seekTo(n) {
+    n = Math.max(0, Math.min(n, SCRIPT.length));
+    if (n === idx && !playing) return;
+    stop();
+    resetStage();
+    for (var i = 0; i < n; i++) { curStepIdx = i; runStep(SCRIPT[i], function () {}); }
+    idx = n;
+    if (idx >= SCRIPT.length) {
+      setPlayBtn("done");
+      btnPlay.disabled = true; btnStep.disabled = true;
+    } else {
+      btnPlay.disabled = false; btnStep.disabled = false; setPlayBtn("play");
+    }
+  }
+
+  function seekToEl(elTarget) {
+    var n = SCRIPT.length;
+    for (var i = 0; i < SCRIPT.length; i++) {
+      if ((SCRIPT[i].el || 0) >= elTarget) { n = i + 1; break; }
+    }
+    seekTo(n);
+  }
+
+  function buildScrub() {
+    totalEl = SCRIPT[SCRIPT.length - 1].el || 1;
+    var starts = PHASES.map(function () { return null; });
+    starts[0] = 0;
+    SCRIPT.forEach(function (s) {
+      if (typeof s.p === "number" && starts[s.p] === null) starts[s.p] = s.el || 0;
+    });
+    scrubTrack.innerHTML = "";
+    for (var i = 0; i < PHASES.length; i++) {
+      var a = starts[i] === null ? 0 : starts[i];
+      var b = i + 1 < PHASES.length && starts[i + 1] !== null ? starts[i + 1] : totalEl;
+      var seg = document.createElement("div");
+      seg.className = "seg";
+      seg.style.width = ((b - a) / totalEl * 100) + "%";
+      seg.title = PHASES[i].name + " · " + PHASES[i].dur;
+      seg.innerHTML = "<span class='n'>" + (i + 1) + "</span><span class='nm'>" + PHASES[i].name + "</span><span class='st'></span>";
+      scrubTrack.appendChild(seg);
+    }
+    scrubPlayed = document.createElement("div"); scrubPlayed.className = "played";
+    scrubHead = document.createElement("div"); scrubHead.className = "head";
+    scrubTrack.appendChild(scrubPlayed); scrubTrack.appendChild(scrubHead);
+    scrubTrack.setAttribute("aria-valuemax", String(totalEl));
     renderPhases();
   }
 
-  function setScenario(key) {
+  function updateScrub() {
+    if (!scrubHead) return;
+    var pct = Math.min(100, state.el / totalEl * 100);
+    scrubPlayed.style.width = pct + "%";
+    scrubHead.style.left = pct + "%";
+    scrubTrack.setAttribute("aria-valuenow", String(state.el));
+  }
+
+  var ALIAS = {
+    "sdd": "sdd", "spec-driven-development": "sdd",
+    "quick": "quick", "quick-task": "quick",
+    "bugfix": "bugfix", "complex-bug-fixing": "bugfix",
+    "ralph": "ralph", "ralph-loop": "ralph",
+    "delib": "delib", "deliberation": "delib"
+  };
+  function scenarioFromHash() {
+    return ALIAS[location.hash.replace(/^#/, "").toLowerCase()] || null;
+  }
+
+  function setScenario(key, updateHash) {
     var sc = SCENARIOS[key];
+    currentKey = key;
     PHASES = sc.phases; SCRIPT = sc.script;
     roleLabelI.textContent = sc.roleI; roleLabelR.textContent = sc.roleR;
+    tabRoleI.textContent = sc.roleI; tabRoleR.textContent = sc.roleR;
+    aboutEl.innerHTML = "<span class='ab-eyebrow'>about · " + sc.type + "</span>" +
+      "<p class='ab-lead'>" + sc.about + "</p>" +
+      "<p class='ab-when'><b>Choose it when</b> — " + sc.when + "</p>";
     scenPicker.querySelectorAll("button").forEach(function (b) {
       b.setAttribute("aria-selected", String(b.dataset.key === key));
     });
     resetRun();
+    buildScrub();
+    if (updateHash) {
+      try { history.replaceState(null, "", "#" + key); } catch (e) { /* sandboxed viewers */ }
+    }
   }
 
   Object.keys(SCENARIOS).forEach(function (key, i) {
@@ -783,19 +1060,73 @@
     b.setAttribute("aria-selected", String(i === 0));
     b.dataset.key = key;
     b.textContent = SCENARIOS[key].label;
-    b.addEventListener("click", function () { setScenario(key); });
+    b.addEventListener("click", function () { setScenario(key, true); });
     scenPicker.appendChild(b);
   });
 
   btnPlay.addEventListener("click", function () {
     if (playing) { stop(); return; }
     playing = true;
-    btnPlay.textContent = "⏸ pause";
+    setPlayBtn("pause");
     stepOnce(true);
   });
   btnStep.addEventListener("click", function () { stop(); stepOnce(false); });
   btnRestart.addEventListener("click", resetRun);
+  btnPhase.addEventListener("click", function () {
+    var target = SCRIPT.length;
+    for (var i = idx; i < SCRIPT.length; i++) {
+      var s = SCRIPT[i];
+      if ((typeof s.p === "number" && s.p > state.p) || s.done) { target = i + 1; break; }
+    }
+    seekTo(target);
+  });
 
-  renderPhases();
+  var dragging = false;
+  function scrubPointer(ev) {
+    var rect = scrubTrack.getBoundingClientRect();
+    var frac = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
+    seekToEl(frac * totalEl);
+  }
+  scrubTrack.addEventListener("pointerdown", function (ev) {
+    dragging = true;
+    try { scrubTrack.setPointerCapture(ev.pointerId); } catch (e) {}
+    scrubPointer(ev);
+  });
+  scrubTrack.addEventListener("pointermove", function (ev) { if (dragging) scrubPointer(ev); });
+  scrubTrack.addEventListener("pointerup", function () { dragging = false; });
+  scrubTrack.addEventListener("keydown", function (ev) {
+    if (ev.key === "ArrowRight") { ev.preventDefault(); seekTo(idx + 1); }
+    if (ev.key === "ArrowLeft") { ev.preventDefault(); seekTo(idx - 1); }
+  });
+
+  runlog.addEventListener("click", function (ev) {
+    var en = ev.target.closest(".en.link");
+    if (en) seekTo(parseInt(en.dataset.step, 10) + 1);
+  });
+  runlog.addEventListener("keydown", function (ev) {
+    if (ev.key !== "Enter" && ev.key !== " ") return;
+    var en = ev.target.closest(".en.link");
+    if (en) { ev.preventDefault(); seekTo(parseInt(en.dataset.step, 10) + 1); }
+  });
+
+  ttabs.querySelectorAll("button").forEach(function (b) {
+    b.addEventListener("click", function () { setActiveTerm(b.dataset.t, true); });
+  });
+
+  ticker.addEventListener("click", function () {
+    var open = runlog.classList.toggle("open");
+    ticker.setAttribute("aria-expanded", String(open));
+    ticker.querySelector(".chev").textContent = open ? "▴" : "▾";
+    if (open) runlog.scrollTop = runlog.scrollHeight;
+  });
+
+  window.addEventListener("hashchange", function () {
+    var k = scenarioFromHash();
+    if (k && k !== currentKey) setScenario(k, false);
+  });
+
+  setScenario(scenarioFromHash() || "sdd", false);
 })();
 </script>
+</body>
+</html>
