@@ -162,7 +162,7 @@ A bad capture (`captureStatus != "ok"`) bypasses the LLM and forces a re-issue a
 
 ## 2. Autonomous workflows
 
-An autonomous workflow is a multi-phase pipeline that drives both agents through a structured task. Four types are registered today — `spec-driven-development`, `ralph-loop`, `complex-bug-fixing`, and `deliberation`. They share the same relay and evaluator machinery and differ in their phases, artifacts, and evaluator keys; this section walks through `spec-driven-development` as the worked example, then [Other workflow types](#other-workflow-types) maps the rest onto the same model. For when to reach for each, see [Workflows](workflows.md).
+An autonomous workflow is a multi-phase pipeline that drives both agents through a structured task. Five types are registered today — `spec-driven-development`, `ralph-loop`, `complex-bug-fixing`, `deliberation`, and `quick-task`. They share the same relay and evaluator machinery and differ in their phases, artifacts, and evaluator keys; this section walks through `spec-driven-development` as the worked example, then [Other workflow types](#other-workflow-types) maps the rest onto the same model. For when to reach for each, see [Workflows](workflows.md).
 
 ### Starting a workflow
 
@@ -211,11 +211,11 @@ The orchestrator picks the prompt and schema based on `(evaluatorPromptKey, hand
 
 ### Other workflow types
 
-The same `(evaluatorPromptKey, handoffStep)` dispatch drives all four registered workflows — only the phases, artifacts, and keys differ. Four evaluator keys exist:
+The same `(evaluatorPromptKey, handoffStep)` dispatch drives all five registered workflows — only the phases, artifacts, and keys differ. Four evaluator keys exist:
 
 | evaluator key | verdict vocabulary | used by |
 |---------------|--------------------|---------|
-| `review-loop` | `approve` / `findings` / `escalate` | every review phase of `spec-driven-development` (spec-refining, plan-writing, code-review) **and** all three phases of `complex-bug-fixing` (diagnosis, fix-and-verify, post-mortem) |
+| `review-loop` | `approve` / `findings` / `escalate` | every review phase of `spec-driven-development` (spec-refining, plan-writing, code-review), all three phases of `complex-bug-fixing` (diagnosis, fix-and-verify, post-mortem), **and** `quick-task`'s single implement-and-review phase |
 | `execution-gate` | `execution-pass` / `execution-fail` / `escalate` | `spec-driven-development` plan-execution only |
 | `ralph-loop` | `approve` / `findings` / `escalate` | `ralph-loop`'s open-ended iteration phase, plus its final acceptance review against the goal |
 | `deliberation-loop` | `approve` / `findings` / `escalate` | all four `deliberation` layers (objectives → approaches → tradeoffs → synthesis) |
