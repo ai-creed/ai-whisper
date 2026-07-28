@@ -63,6 +63,8 @@
   h1 { font-family: var(--mono); font-size: clamp(24px, 4vw, 36px); letter-spacing: -.02em; margin: 8px 0 8px; text-wrap: balance; }
   .thesis { max-width: 68ch; margin: 0; color: var(--muted); }
   .thesis b { color: var(--ink); }
+  .thesis .cl { color: var(--claude); }
+  .thesis .cx { color: var(--codex); }
 
   .deck {
     position: sticky; top: 0; z-index: 30; background: var(--bg);
@@ -81,6 +83,7 @@
   .controls button:disabled { opacity: .45; cursor: default; }
   button:focus-visible, select:focus-visible { outline: 2px solid var(--impl); outline-offset: 2px; }
   .sim-note { margin-left: auto; font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+  .monly { display: none; }
 
   .scrub { margin: 4px 0 0; }
   .scrub .track {
@@ -299,6 +302,19 @@
     .scrub .hintline { display: none; }
     .deck { padding-bottom: 8px; }
     .stage { gap: 10px; }
+    .mhide { display: none !important; }
+    .monly { display: inline; }
+    .scen { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+    .scen button { flex: none; }
+    .hud { flex-wrap: nowrap; overflow: hidden; gap: 8px; }
+    .hud > span { white-space: nowrap; flex: none; }
+    .hud > #hudName { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .broker { align-items: center; }
+    .broker .msg { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+    .legend { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 10px; }
+    .legend .key { flex: none; white-space: nowrap; }
+    .ttabs button { white-space: nowrap; overflow: hidden; }
+    .ttabs .trole { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
     .ttabs { display: grid; }
     .term .bar { display: none; }
     .term.impl, .term.rev { display: none; }
@@ -317,6 +333,7 @@
   @media (max-width: 560px) {
     .wrap { padding: 0 12px; }
     header { padding-top: 22px; }
+    .eyebrow { font-size: 10px; letter-spacing: .07em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .thesis { font-size: 15px; }
     .controls { gap: 6px; }
     .controls button, .controls select { padding: 7px 10px; font-size: 12px; }
@@ -332,7 +349,8 @@
 <header>
   <p class="eyebrow">interactive demo · simulated runs · not live sessions</p>
   <h1>This is an autonomous workflow.</h1>
-  <p class="thesis">Two agent CLIs mounted in one collab — <b>claude implements, codex reviews</b> — while the
+  <p class="thesis">Two agent CLIs mounted in one collab — <b><span class="cl">claude</span> implements,
+    <span class="cx">codex</span> reviews</b> — while the
     broker passes a single baton between them and an evaluator routes every handback.
     <b>Pick a workflow, press play</b>, and watch a run go from your ask to a reviewed deliverable.</p>
 
@@ -362,14 +380,14 @@
 <div class="stage">
   <div class="terms">
     <div class="ttabs" id="ttabs" role="tablist" aria-label="Agent terminal">
-      <button data-t="i" aria-selected="true"><span class="dot di"></span><b>claude</b>&nbsp;· <span id="tabRoleI">implementer</span></button>
-      <button data-t="r" aria-selected="false"><span class="dot dr"></span><b>codex</b>&nbsp;· <span id="tabRoleR">reviewer</span></button>
+      <button data-t="i" aria-selected="true"><span class="dot di"></span><b>claude</b>&nbsp;· <span class="trole" id="tabRoleI">implementer</span></button>
+      <button data-t="r" aria-selected="false"><span class="dot dr"></span><b>codex</b>&nbsp;· <span class="trole" id="tabRoleR">reviewer</span></button>
     </div>
     <div class="term impl">
       <div class="bar"><span class="dot" style="background:var(--claude-term)"></span><b>claude</b> · <span id="roleLabelI">implementer</span> <span class="idle" id="idle-i">idle</span></div>
       <div class="scroll" id="scr-i"></div>
     </div>
-    <div class="broker" id="broker"><span class="who">broker · evaluator</span><span class="msg" id="brokerMsg">waiting for kickoff…</span></div>
+    <div class="broker" id="broker"><span class="who">broker<span class="mhide"> · evaluator</span></span><span class="msg" id="brokerMsg">waiting for kickoff…</span></div>
     <div class="term rev">
       <div class="bar"><span class="dot" style="background:var(--codex-term)"></span><b>codex</b> · <span id="roleLabelR">reviewer</span> <span class="idle" id="idle-r">idle</span></div>
       <div class="scroll" id="scr-r"></div>
@@ -377,7 +395,7 @@
   </div>
 
   <div class="panel">
-    <div class="hud" id="hud"><span>phase <b id="hudP">–</b></span><span>round <b id="hudR">–</b></span><span>elapsed <b id="hudT">t+0m</b></span><span id="hudName"></span></div>
+    <div class="hud" id="hud"><span><span class="mhide">phase </span><span class="monly">P</span><b id="hudP">–</b></span><span><span class="mhide">round </span><span class="monly">R</span><b id="hudR">–</b></span><span><span class="mhide">elapsed </span><b id="hudT">t+0m</b></span><span id="hudName"></span></div>
 
     <div class="diagram">
       <svg viewBox="0 0 480 400" role="img" aria-label="Workflow phase loop: kickoff to implementer or reviewer, handback to evaluator, review, verdict routes to approve, findings loop, or halt to you">
