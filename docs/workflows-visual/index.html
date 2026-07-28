@@ -1,0 +1,801 @@
+<title>ai-whisper · watch a workflow run</title>
+<style>
+  :root {
+    --bg: #F5F7FA; --surface: #FFFFFF; --surface2: #EDF1F6; --line: #D4DCE6;
+    --ink: #1C2530; --muted: #5A6878;
+    --impl: #2470B3; --rev: #6C55B8; --eval: #5F6E7E;
+    --human: #9C6E14; --human-soft: rgba(156,110,20,.10);
+    --ok: #1E8A5E; --halt: #C0392F;
+    --term-bg: #10151C; --term-ink: #C9D4DF; --term-dim: #7A8794; --term-line: #232C38;
+    --term-impl: #6FB3EF; --term-rev: #B49DEF; --term-gold: #E9B44C; --term-ok: #58C695; --term-halt: #E57F75;
+    --shadow: 0 1px 3px rgba(28,37,48,.08);
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --sans: -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0F1319; --surface: #171C24; --surface2: #1E2530; --line: #2A3342;
+      --ink: #E7EDF4; --muted: #93A0B0;
+      --impl: #5CA8EA; --rev: #A48FE0; --eval: #7C8A99;
+      --human: #E9B44C; --human-soft: rgba(233,180,76,.10);
+      --ok: #46C08A; --halt: #E06256;
+      --term-bg: #0B0F14; --term-line: #1D2631;
+      --shadow: 0 1px 3px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0F1319; --surface: #171C24; --surface2: #1E2530; --line: #2A3342;
+    --ink: #E7EDF4; --muted: #93A0B0;
+    --impl: #5CA8EA; --rev: #A48FE0; --eval: #7C8A99;
+    --human: #E9B44C; --human-soft: rgba(233,180,76,.10);
+    --ok: #46C08A; --halt: #E06256;
+    --term-bg: #0B0F14; --term-line: #1D2631;
+    --shadow: 0 1px 3px rgba(0,0,0,.4);
+  }
+  :root[data-theme="light"] {
+    --bg: #F5F7FA; --surface: #FFFFFF; --surface2: #EDF1F6; --line: #D4DCE6;
+    --ink: #1C2530; --muted: #5A6878;
+    --impl: #2470B3; --rev: #6C55B8; --eval: #5F6E7E;
+    --human: #9C6E14; --human-soft: rgba(156,110,20,.10);
+    --ok: #1E8A5E; --halt: #C0392F;
+    --term-bg: #10151C; --term-line: #232C38;
+    --shadow: 0 1px 3px rgba(28,37,48,.08);
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.5; }
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 0 20px; }
+
+  header { padding-top: 34px; }
+  .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  h1 { font-family: var(--mono); font-size: clamp(24px, 4vw, 36px); letter-spacing: -.02em; margin: 8px 0 8px; text-wrap: balance; }
+  .thesis { max-width: 68ch; margin: 0; color: var(--muted); }
+  .thesis b { color: var(--ink); }
+
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    margin: 20px 0 0; padding: 10px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  }
+  .controls button, .controls select {
+    font-family: var(--mono); font-size: 13px; padding: 8px 14px; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer;
+  }
+  .controls button.primary { border-color: var(--ok); color: var(--ok); font-weight: 700; }
+  .controls button:hover { border-color: var(--muted); }
+  .controls button:disabled { opacity: .45; cursor: default; }
+  button:focus-visible, select:focus-visible { outline: 2px solid var(--impl); outline-offset: 2px; }
+  .sim-note { margin-left: auto; font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+
+  .scen { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 16px; }
+  .scen button {
+    font-family: var(--mono); font-size: 12.5px; padding: 8px 13px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer;
+  }
+  .scen button[aria-selected="true"] { border-color: var(--ink); color: var(--ink); font-weight: 700; }
+
+  .stage { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 18px; align-items: start; }
+
+  /* ---------- terminals ---------- */
+  .terms { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .term {
+    background: var(--term-bg); border: 1px solid var(--term-line); border-radius: 10px;
+    overflow: hidden; box-shadow: var(--shadow);
+  }
+  .term .bar {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    border-bottom: 1px solid var(--term-line); font-family: var(--mono); font-size: 12px; color: var(--term-dim);
+  }
+  .term .bar .dot { width: 9px; height: 9px; border-radius: 50%; }
+  .term .bar b { color: var(--term-ink); font-weight: 600; }
+  .term .bar .idle { margin-left: auto; font-size: 11px; }
+  .term .bar .idle.busy { color: var(--term-ok); }
+  .term .scroll {
+    height: 238px; overflow-y: auto; padding: 10px 14px 14px;
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.62; color: var(--term-ink);
+  }
+  .tl { white-space: pre-wrap; word-break: break-word; }
+  .tl.cmd { color: var(--term-ink); }
+  .tl.cmd::before { content: "$ "; color: var(--term-dim); }
+  .tl.out { color: var(--term-dim); }
+  .tl.hin  { padding: 2px 8px; margin: 6px 0 2px; border-left: 2px solid; border-radius: 0 4px 4px 0; }
+  .tl.hout { margin-top: 2px; }
+  .term.impl .tl.hin { border-color: var(--term-impl); color: var(--term-impl); }
+  .term.rev  .tl.hin { border-color: var(--term-rev);  color: var(--term-rev); }
+  .tl.hout { color: var(--term-ink); }
+  .tl.hout::before { content: "▶ "; color: var(--term-dim); }
+  .tl.you { color: var(--term-gold); }
+  .tl.you::before { content: "you ▸ "; color: var(--term-dim); }
+  .tl.ok   { color: var(--term-ok); }
+  .tl.gold { color: var(--term-gold); }
+  .caret { display: inline-block; width: 7px; height: 13px; background: var(--term-ink); vertical-align: -2px; }
+  @media (prefers-reduced-motion: no-preference) { .caret { animation: blink 1s steps(1) infinite; } }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* broker rail */
+  .broker {
+    border: 1px dashed var(--line); border-radius: 8px; background: var(--surface2);
+    padding: 7px 12px; font-family: var(--mono); font-size: 11.5px; color: var(--eval);
+    display: flex; gap: 8px; align-items: baseline; min-height: 33px;
+  }
+  .broker .who { letter-spacing: .09em; text-transform: uppercase; font-size: 10px; flex: none; }
+  .broker .msg { color: var(--ink); }
+  .broker.gold { border-color: var(--human); color: var(--human); background: var(--human-soft); }
+  .broker.gold .msg { color: var(--human); }
+
+  /* ---------- right panel ---------- */
+  .panel { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+  .phases { display: flex; gap: 6px; flex-wrap: wrap; }
+  .phase {
+    font-family: var(--mono); font-size: 11.5px; padding: 6px 10px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--muted); background: var(--surface);
+    display: inline-flex; gap: 8px; align-items: center;
+  }
+  .phase .rd { letter-spacing: 2px; font-size: 10px; }
+  .phase.active { border-color: var(--ink); color: var(--ink); font-weight: 700; }
+  .phase.done { border-color: var(--ok); color: var(--ok); }
+  .hud {
+    font-family: var(--mono); font-size: 12.5px; color: var(--muted);
+    font-variant-numeric: tabular-nums; display: flex; gap: 14px; flex-wrap: wrap;
+  }
+  .hud b { color: var(--ink); }
+
+  .diagram { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); padding: 8px; }
+  .diagram svg { width: 100%; height: auto; display: block; }
+  .nd rect, .nd polygon { fill: var(--surface2); stroke: var(--line); stroke-width: 1.2; }
+  .nd text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
+  .nd .sub { font-size: 9px; }
+  .nd.role-i rect { stroke: var(--impl); } .nd.role-i text { fill: var(--impl); }
+  .nd.role-r rect { stroke: var(--rev); }  .nd.role-r text { fill: var(--rev); }
+  .nd.role-e polygon { stroke: var(--eval); } .nd.role-e text { fill: var(--eval); }
+  .nd.role-ok rect { stroke: var(--ok); } .nd.role-ok text { fill: var(--ok); }
+  .nd.role-you rect { stroke: var(--human); fill: var(--human-soft); } .nd.role-you text { fill: var(--human); }
+  .nd.active rect, .nd.active polygon { stroke-width: 2.4; }
+  .nd.off { opacity: .28; }
+  @media (prefers-reduced-motion: no-preference) {
+    .nd.active rect, .nd.active polygon { animation: pulse 1.1s ease-in-out infinite; }
+    @keyframes pulse { 50% { stroke-opacity: .45; } }
+  }
+  .ed { stroke: var(--line); stroke-width: 1.4; fill: none; }
+  .ed.lit { stroke-width: 2.6; }
+  .ed.lit.c-i { stroke: var(--impl); } .ed.lit.c-r { stroke: var(--rev); }
+  .ed.lit.c-ok { stroke: var(--ok); } .ed.lit.c-halt { stroke: var(--halt); }
+  .elabel { font-family: var(--mono); font-size: 9.5px; fill: var(--muted); }
+  .arrow { fill: var(--line); }
+  .fan { opacity: 0; pointer-events: none; }
+  @media (prefers-reduced-motion: no-preference) { .fan { transition: opacity .35s; } }
+  .fan.on { opacity: 1; }
+  .fanbox { fill: none; stroke: var(--impl); stroke-dasharray: 4 3; stroke-width: 1; }
+  .fanlabel { font-family: var(--mono); font-size: 8px; fill: var(--impl); letter-spacing: .03em; }
+  .fanrow rect { fill: var(--surface2); stroke-width: 1; }
+  .fanrow text { font-family: var(--mono); font-size: 8px; }
+  .fr-i rect { stroke: var(--impl); } .fr-i text { fill: var(--impl); }
+  .fr-r rect { stroke: var(--rev); } .fr-r text { fill: var(--rev); }
+  .fanlink { stroke: var(--impl); stroke-dasharray: 3 3; fill: none; }
+
+  .runlog {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow);
+    padding: 10px 14px; max-height: 230px; overflow-y: auto; font-size: 13px; line-height: 1.5; color: var(--ink);
+  }
+  .runlog .en { position: relative; padding: 5px 0 5px 16px; border-left: 2px solid var(--line); margin-left: 5px; }
+  .runlog .en::before {
+    content: ""; position: absolute; left: -5px; top: 11px; width: 8px; height: 8px;
+    border-radius: 50%; background: var(--muted);
+  }
+  .runlog .en.ok::before { background: var(--ok); }
+  .runlog .en.gold::before { background: var(--human); box-shadow: 0 0 6px var(--human); }
+  .runlog .en.hint { color: var(--muted); } .runlog .en.hint::before { background: var(--line); }
+  .runlog .sub { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .runlog .ts {
+    font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+    font-variant-numeric: tabular-nums; margin-right: 7px;
+  }
+  .who-i { color: var(--impl); } .who-r { color: var(--rev); }
+  .who-e { color: var(--eval); } .who-you { color: var(--human); }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 10px 18px; padding: 14px 0 6px; font-size: 12.5px; color: var(--muted); }
+  .legend .key { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+
+  footer { border-top: 1px solid var(--line); margin-top: 26px; padding: 16px 0 44px; color: var(--muted); font-size: 13px; }
+  footer p { max-width: 78ch; margin: 6px 0; }
+  footer code { font-family: var(--mono); font-size: 12px; }
+
+  @media (max-width: 940px) {
+    .stage { grid-template-columns: 1fr; }
+    .term .scroll { height: 200px; }
+    .sim-note { margin-left: 0; width: 100%; }
+  }
+</style>
+
+<div class="wrap">
+<header>
+  <p class="eyebrow">interactive demo · simulated runs · not live sessions</p>
+  <h1>This is an autonomous workflow.</h1>
+  <p class="thesis">Two agent CLIs mounted in one collab — <b>claude implements, codex reviews</b> — while the
+    broker passes a single baton between them and an evaluator routes every handback.
+    <b>Pick a workflow, press play</b>, and watch a run go from your ask to a reviewed deliverable.</p>
+
+  <div class="controls">
+    <button id="btnPlay" class="primary">▶ play</button>
+    <button id="btnStep">⏭ step</button>
+    <button id="btnRestart">↺ restart</button>
+    <label style="font-family:var(--mono);font-size:12px;color:var(--muted)">speed
+      <select id="speed"><option value="1">1×</option><option value="1.6" selected>1.6×</option><option value="2.6">2.6×</option></select>
+    </label>
+    <span class="sim-note">scripted from real workflow semantics · registry @ ce6e63c</span>
+  </div>
+</header>
+
+<div class="scen" id="scenPicker" role="tablist" aria-label="Workflow scenario"></div>
+
+<div class="stage">
+  <div class="terms">
+    <div class="term impl">
+      <div class="bar"><span class="dot" style="background:var(--term-impl)"></span><b>claude</b> · <span id="roleLabelI">implementer</span> <span class="idle" id="idle-i">idle</span></div>
+      <div class="scroll" id="scr-i"></div>
+    </div>
+    <div class="broker" id="broker"><span class="who">broker · evaluator</span><span class="msg" id="brokerMsg">waiting for kickoff…</span></div>
+    <div class="term rev">
+      <div class="bar"><span class="dot" style="background:var(--term-rev)"></span><b>codex</b> · <span id="roleLabelR">reviewer</span> <span class="idle" id="idle-r">idle</span></div>
+      <div class="scroll" id="scr-r"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="phases" id="phases"></div>
+    <div class="hud" id="hud"><span>phase <b id="hudP">–</b></span><span>round <b id="hudR">–</b></span><span>elapsed <b id="hudT">t+0m</b></span><span id="hudName"></span></div>
+
+    <div class="diagram">
+      <svg viewBox="0 0 480 400" role="img" aria-label="Workflow phase loop: kickoff to implementer or reviewer, handback to evaluator, review, verdict routes to approve, findings loop, or halt to you">
+        <defs><marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" class="arrow"/></marker></defs>
+        <path id="e-ki" class="ed" d="M240,64 C240,90 160,96 132,128" marker-end="url(#arr)"/>
+        <path id="e-kr" class="ed" d="M240,64 C240,90 320,96 348,128" marker-end="url(#arr)"/>
+        <path id="e-ie" class="ed" d="M150,176 C180,204 200,212 218,222" marker-end="url(#arr)"/>
+        <path id="e-er" class="ed" d="M262,222 C282,210 306,200 336,178" marker-end="url(#arr)"/>
+        <path id="e-re" class="ed" d="M356,190 C330,224 300,236 272,240" marker-end="url(#arr)"/>
+        <path id="e-fx" class="ed" d="M218,248 C170,262 112,240 100,182" marker-end="url(#arr)" stroke-dasharray="5 4"/>
+        <path id="e-ad" class="ed" d="M240,268 C240,290 240,300 240,318" marker-end="url(#arr)"/>
+        <path id="e-ht" class="ed" d="M266,258 C320,290 360,300 388,318" marker-end="url(#arr)" stroke-dasharray="5 4"/>
+        <text class="elabel" x="150" y="212">handback</text>
+        <text class="elabel" x="298" y="196">review</text>
+        <text class="elabel" x="292" y="242">verdict</text>
+        <text class="elabel" x="118" y="266">findings → fix</text>
+        <text class="elabel" x="248" y="300">approve</text>
+        <text class="elabel" x="318" y="308">cannot proceed / cap</text>
+        <g id="n-kick" class="nd role-you"><rect x="185" y="30" width="110" height="34" rx="8"/><text x="240" y="51" text-anchor="middle">you: kickoff</text></g>
+        <g id="n-impl" class="nd role-i"><rect x="42" y="128" width="116" height="48" rx="8"/><text x="100" y="148" text-anchor="middle">implementer</text><text x="100" y="164" text-anchor="middle" class="sub">work · commit · hand back</text></g>
+        <g id="n-rev" class="nd role-r"><rect x="326" y="128" width="116" height="48" rx="8"/><text x="384" y="148" text-anchor="middle">reviewer</text><text x="384" y="164" text-anchor="middle" class="sub">re-run · matrix · verdict</text></g>
+        <g id="n-eval" class="nd role-e"><polygon points="240,204 292,240 240,276 188,240"/><text x="240" y="236" text-anchor="middle">evaluator</text><text x="240" y="250" text-anchor="middle" class="sub">routes</text></g>
+        <g id="n-done" class="nd role-ok"><rect x="176" y="318" width="128" height="40" rx="8"/><text x="240" y="336" text-anchor="middle">phase advances</text><text x="240" y="350" text-anchor="middle" class="sub">…or run is done</text></g>
+        <g id="n-halt" class="nd role-you"><rect x="342" y="318" width="112" height="40" rx="8"/><text x="398" y="336" text-anchor="middle">halts to you</text><text x="398" y="350" text-anchor="middle" class="sub">designed exit</text></g>
+        <!-- per-task subagent fan-out (plan-execution phases only) -->
+        <g id="n-fan" class="fan">
+          <rect x="8" y="34" width="146" height="86" rx="8" class="fanbox"/>
+          <text x="16" y="47" class="fanlabel">fan-out · fresh sub-agent per task</text>
+          <g class="fanrow fr-i"><rect x="16" y="54" width="130" height="16" rx="4"/><text x="22" y="65">implement · sonnet / haiku</text></g>
+          <g class="fanrow fr-r"><rect x="16" y="76" width="130" height="16" rx="4"/><text x="22" y="87">spec review · opus</text></g>
+          <g class="fanrow fr-r"><rect x="16" y="98" width="130" height="16" rx="4"/><text x="22" y="109">quality review · opus · fix ↺</text></g>
+          <path class="fanlink" d="M80,120 C86,124 94,126 100,128"/>
+        </g>
+      </svg>
+    </div>
+
+    <div class="runlog" id="runlog" aria-live="polite">
+      <div class="en hint">Press ▶ play — the run will be narrated here, in plain English, as it happens.</div>
+    </div>
+
+    <div class="legend">
+      <span class="key"><span class="swatch" style="background:var(--impl)"></span>implementer</span>
+      <span class="key"><span class="swatch" style="background:var(--rev)"></span>reviewer</span>
+      <span class="key"><span class="swatch" style="background:var(--eval)"></span>evaluator</span>
+      <span class="key"><span class="swatch" style="background:var(--human)"></span>you</span>
+      <span class="key"><span class="swatch" style="background:var(--ok)"></span>advance/done</span>
+      <span class="key"><span class="swatch" style="background:var(--halt)"></span>halt path</span>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <p><b>What you're watching, honestly:</b> scripted simulations of all five real workflow types, faithful to
+    <code>packages/broker/src/runtime/workflow-registry.ts</code> (and <code>task-brief.ts</code> for the
+    quick-task scope gate) — the review-first kickoffs, the reviewer-less execution gate, the sequential
+    per-task sub-agent fan-out of the bundled <code>ai-whisper-plan-execution</code> skill, the ralph
+    completion markers, the deliberation Open Questions, the findings→fix rounds, the round budgets, and the
+    halt paths are all real behavior, compressed in time. Timelines are fixtures — illustrative wall-clock
+    shapes, compressed to seconds here. No agents ran to render this page.</p>
+  <p>Facts headers for every scenario are in the page source above the script data; the maintainer skill
+    diffs them against the registry on every change.</p>
+</footer>
+</div>
+
+<!-- facts: type=spec-driven-development phases=spec-refining,plan-writing,plan-execution,code-review
+     start=review,implement,execute,review rounds=5,5,1,5
+     source=packages/broker/src/runtime/workflow-registry.ts @ ce6e63c -->
+<!-- facts: type=quick-task phases=implement-and-review start=implement rounds=5
+     scope-gate=validateTaskBrief cap=5 non-test (packages/broker/src/runtime/task-brief.ts)
+     source=packages/broker/src/runtime/workflow-registry.ts @ ce6e63c -->
+<!-- facts: type=complex-bug-fixing phases=diagnosis,fix-and-verify,post-mortem
+     start=implement,implement,implement rounds=5,5,3
+     source=packages/broker/src/runtime/workflow-registry.ts @ ce6e63c -->
+<!-- facts: type=ralph-loop phases=ralph-iteration start=implement rounds=5 iterations<=100
+     markers=[[RALPH:ITEM-DELIVERED]],[[RALPH:GOAL-COMPLETE]]
+     source=packages/broker/src/runtime/workflow-registry.ts @ ce6e63c -->
+<!-- facts: type=deliberation phases=objectives,approaches,tradeoffs,synthesis
+     start=implement,implement,implement,implement rounds=6,10,10,5
+     source=packages/broker/src/runtime/workflow-registry.ts @ ce6e63c -->
+
+<script>
+(function () {
+  "use strict";
+
+  var SCENARIOS = {
+    sdd: {
+      label: "sdd", roleI: "implementer", roleR: "reviewer",
+      phases: [
+        { name: "spec-refining", cap: 5, dur: "17m" },
+        { name: "plan-writing", cap: 5, dur: "16m" },
+        { name: "plan-execution", cap: 1, dur: "44m" },
+        { name: "code-review", cap: 5, dur: "21m" }
+      ],
+      script: [
+        { t:"i", k:"you", x:"run SDD on docs/superpowers/specs/2026-07-28-workflow-chat-report-design.md",
+          n:"n-kick", p:0, r:1, el:0,
+          lg:"<b class='who-you'>You</b> kicked off the workflow — in plain words, with the spec you approved.", lgGold:true,
+          lgSub:"That's the whole ritual: the kickoff skill checks the collab is healthy, fires the run, and gets out of the way." },
+        { t:"i", k:"ok", x:"collab ready ✓ · starting spec-driven-development · run wf-02 · follow it on the dashboard", el:0 },
+        { t:"b", x:"run wf-02 created · claude = implementer · codex = reviewer", n:"n-kick", el:0 },
+        { t:"r", k:"hin", x:"◀ handoff · spec-refining · review the spec (round 1/5)", n:"n-rev", e:["e-kr c-r"], el:1,
+          lg:"<b class='who-r'>Codex</b> — the reviewer — starts by reviewing the spec.",
+          lgSub:"SDD's first phase begins at the reviewer: your spec is a starting point, not a contract." },
+        { t:"r", k:"out", x:"auditing spec: goals · CLI surface · acceptance criteria · error paths", el:3 },
+        { t:"r", k:"out", x:"matrix: goals ✓ · report trigger ✓ · report format ✗ under-specified · evaluator-down behavior ✗ missing", el:5 },
+        { t:"r", k:"hout", x:"verdict: Findings — 2 blocking: report format undefined; no behavior when the evaluator is unavailable.", n:"n-eval", e:["e-re c-r"], el:6,
+          lg:"<b class='who-r'>Codex</b> found 2 blocking findings — handing back to <b class='who-i'>Claude</b>, the implementer." },
+        { t:"b", x:"evaluator: findings → fix handoff → claude · next re-review spends round 2/5", n:"n-impl", e:["e-fx c-halt"], r:2, el:6,
+          lg:"The <b class='who-e'>evaluator</b> routes the findings back as a fix round.",
+          lgSub:"Each re-review spends one of 5 bounded rounds — no infinite ping-pong; at the cap the run halts to you." },
+        { t:"i", k:"hin", x:"◀ handoff · fix round · reviewer findings attached", el:7 },
+        { t:"i", k:"out", x:"spec updated: §4 report schema (summary · phases · rounds · cost) · §6 degraded mode when evaluator is down", el:11,
+          lg:"<b class='who-i'>Claude</b> read the findings and revised the spec." },
+        { t:"i", k:"hout", x:"handback: spec revised", n:"n-eval", e:["e-ie c-i"], el:12 },
+        { t:"b", x:"evaluator: delivered → re-review (round 2/5) → codex", n:"n-rev", e:["e-er c-r"], el:12 },
+        { t:"r", k:"out", x:"re-review: both findings addressed ✓ · matrix: all rows pass", el:15 },
+        { t:"r", k:"hout", x:"verdict: Approved. The spec is now testable end to end.", n:"n-eval", e:["e-re c-r"], el:17,
+          lg:"<b class='who-r'>Codex</b> re-reviewed: both findings addressed — <b>spec ratified</b>.", lgOk:true },
+        { t:"b", x:"evaluator: approve → spec-refining complete → plan-writing", n:"n-done", e:["e-ad c-ok"], p:1, r:1, d:400, el:17 },
+        { t:"i", k:"hin", x:"◀ handoff · plan-writing · write the implementation plan from the approved spec (round 1/5)", n:"n-impl", e:["e-ki c-i"], el:18,
+          lg:"Phase 2: <b class='who-i'>Claude</b> writes the implementation plan from the ratified spec." },
+        { t:"i", k:"out", x:"plan → docs/superpowers/plans/2026-07-28-workflow-chat-report.md · 9 steps · files · verification command", el:27 },
+        { t:"i", k:"hout", x:"handback: plan written", n:"n-eval", e:["e-ie c-i"], el:28 },
+        { t:"b", x:"evaluator: delivered → review handoff → codex", n:"n-rev", e:["e-er c-r"], el:28 },
+        { t:"r", k:"out", x:"plan vs spec: every acceptance criterion maps to a step ✓ · verification defined ✓", el:31 },
+        { t:"r", k:"hout", x:"verdict: Approved.", n:"n-eval", e:["e-re c-r"], el:33,
+          lg:"<b class='who-r'>Codex</b> checked the plan covers every acceptance criterion — approved.", lgOk:true },
+        { t:"b", x:"evaluator: approve → plan-writing complete → plan-execution", n:"n-done", e:["e-ad c-ok"], p:2, r:1, d:400, el:33 },
+        { t:"i", k:"hin", x:"◀ handoff · plan-execution · execute the whole plan, verify, commit (single shot)", n:"n-impl", e:["e-ki c-i"], revOff:true, fanOn:true, el:34,
+          lg:"Phase 3: <b class='who-i'>Claude</b> executes the plan — fanning out to a <b>fresh sub-agent per task</b> while <b class='who-r'>Codex</b> sits this one out.",
+          lgSub:"The plan-execution policy: each task gets its own implementer sub-agent, gated by spec- and quality-review sub-agents before the next task starts. Fresh context per task, expensive models only where they pay — quality and token efficiency at once." },
+        { t:"i", k:"out", x:"plan-execution skill: subagent dispatch available → fan-out · 9 tasks", el:35 },
+        { t:"i", k:"out", x:"task 1/9 report emitter → sub·implement (sonnet) → sub·review spec + quality (opus) ✓", el:41 },
+        { t:"i", k:"out", x:"task 4/9 CLI flag (mechanical) → sub·implement (haiku) → sub·review (opus) ✓", el:52 },
+        { t:"i", k:"out", x:"task 7/9 terminal-state wiring: sub-review failed ×2 → implementer bumped sonnet → opus · passed ✓", el:63,
+          lg:"Task 7 failed its sub-review twice — the policy escalated that task's implementer one model tier, and it passed.",
+          lgSub:"Reviewer tier never drops below implementer tier; a second failed review bumps the implementer. Nine micro review-loops ran inside this phase before its own gate." },
+        { t:"i", k:"out", x:"9/9 tasks settled · every sub-review approved", el:68 },
+        { t:"i", k:"ok",  x:"verification: pnpm test → 231 passed ✓", el:73 },
+        { t:"i", k:"cmd", x:"git commit -m \"feat: emit workflow chat-report on terminal states\"", el:75 },
+        { t:"i", k:"hout", x:"handback: commits 4d11c2e..8ae03b1 · verification attached · Execution mode: subagent-driven (superpowers)", n:"n-eval", e:["e-ie c-i"], el:76 },
+        { t:"b", x:"evaluator: execution gate → PASS → code-review", n:"n-done", e:["e-ad c-ok"], p:3, r:1, d:400, revOff:false, fanOn:false, el:77,
+          lg:"44 hands-off minutes, nine tasks, each pre-reviewed twice — the <b class='who-e'>evaluator</b>'s gate lets it through.", lgOk:true },
+        { t:"r", k:"hin", x:"◀ handoff · code-review · acceptance review of 4d11c2e..HEAD (round 1/5)", n:"n-rev", e:["e-kr c-r"], el:77,
+          lg:"Phase 4: <b class='who-r'>Codex</b> runs the full acceptance review against the spec.",
+          lgSub:"Everything re-verified: tests re-run, every criterion in the matrix, commit range tracking live HEAD." },
+        { t:"r", k:"cmd", x:"pnpm test", el:80 },
+        { t:"r", k:"out", x:"231 passed ✓ · acceptance matrix: report content ✓ · CLI flag ✓ · degraded mode ✗ untested", el:83 },
+        { t:"r", k:"hout", x:"verdict: Findings — 1 blocking: evaluator-down degraded mode has no covering test.", n:"n-eval", e:["e-re c-r"], el:85,
+          lg:"One blocking finding — an untested path. Back to <b class='who-i'>Claude</b>." },
+        { t:"b", x:"evaluator: findings → fix handoff → claude · next re-review spends round 2/5", n:"n-impl", e:["e-fx c-halt"], r:2, el:85 },
+        { t:"i", k:"hin", x:"◀ handoff · fix round · reviewer findings attached", el:86 },
+        { t:"i", k:"ok",  x:"added test: evaluator unavailable → report emitted in degraded mode ✓", el:91,
+          lg:"<b class='who-i'>Claude</b> added the missing test." },
+        { t:"i", k:"cmd", x:"git commit -m \"test: cover chat-report degraded mode\"", el:92 },
+        { t:"i", k:"hout", x:"handback: finding addressed · 9f4e77a", n:"n-eval", e:["e-ie c-i"], el:92 },
+        { t:"b", x:"evaluator: delivered → re-review (round 2/5) → codex", n:"n-rev", e:["e-er c-r"], el:93 },
+        { t:"r", k:"out", x:"re-review vs live HEAD: fix commit included ✓ · matrix: all rows pass", el:96 },
+        { t:"r", k:"hout", x:"verdict: Approved.", n:"n-eval", e:["e-re c-r"], el:97,
+          lg:"<b class='who-r'>Codex</b> re-reviewed against live HEAD — approved.", lgOk:true },
+        { t:"b", x:"evaluator: approve → workflow wf-02 done ✓", n:"n-done", e:["e-ad c-ok"], done:true, d:400, el:98,
+          lg:"<b>Final result:</b> feature implemented according to the spec — hardened spec, plan, and reviewed commits in the repo.", lgOk:true,
+          lgSub:"1h 38m of autonomous run time. Your only keystroke was the kickoff at t+0m." },
+        { t:"bg", x:"your turn — hardened spec, plan, and reviewed commits are in the repo · wf-02 done",
+          n:"n-done", el:98,
+          lg:"<b class='who-you'>Next step: you review, approve, ship it.</b>", lgGold:true,
+          lgSub:"A finished run is a strong draft — you are the final gatekeeper." }
+      ]
+    },
+
+    quick: {
+      label: "quick-task", roleI: "implementer", roleR: "reviewer",
+      phases: [ { name: "implement-and-review", cap: 5, dur: "34m" } ],
+      script: [
+        { t:"i", k:"you", x:"start the quick task we agreed — brief at .ai-whisper/tasks/2026-07-28-collab-status-json.md",
+          n:"n-kick", p:0, r:1, el:0,
+          lg:"<b class='who-you'>You</b> approved the approach in chat — that conversation was the only approach gate — then asked for kickoff.", lgGold:true,
+          lgSub:"The brief (Task · Approved approach · Scope · Acceptance checks) is gitignored run-state; the commits will be the only durable record." },
+        { t:"i", k:"ok", x:"brief validated ✓ · scope gate: 3 non-test files ≤ cap 5 · starting quick-task · run wf-03", el:0,
+          lg:"A deterministic scope gate checked the brief before any run existed.",
+          lgSub:"Oversized briefs are rejected with no workflow row created — there is no override flag; you split the task or escalate to SDD." },
+        { t:"b", x:"run wf-03 created · claude = implementer · codex = reviewer", n:"n-kick", el:0 },
+        { t:"i", k:"hin", x:"◀ handoff · implement-and-review · kickoff (round 1/5) · the brief is the ratified contract", n:"n-impl", e:["e-ki c-i"], el:1,
+          lg:"<b class='who-i'>Claude</b> implements the approved approach as written — redesigning it is out of bounds.",
+          lgSub:"Mid-flight scope guard: if the work outgrows the brief's Scope list, the run halts to you instead of pushing through — the dashed exit on the right." },
+        { t:"i", k:"out", x:"implementing per brief: `collab status --json` · 3 files, all inside Scope", el:9 },
+        { t:"i", k:"ok",  x:"verification: pnpm test → 231 passed ✓", el:14 },
+        { t:"i", k:"cmd", x:"git commit -m \"feat: add --json to collab status\"", el:15 },
+        { t:"i", k:"hout", x:"handback: commit 7e2d10c · verification attached", n:"n-eval", e:["e-ie c-i"], el:16 },
+        { t:"b", x:"evaluator: delivered → acceptance review → codex", n:"n-rev", e:["e-er c-r"], el:16 },
+        { t:"r", k:"hin", x:"◀ handoff · acceptance review (round 1/5) · commit range vs the brief", el:17,
+          lg:"<b class='who-r'>Codex</b> accepts against the brief's own checks — and confirms the change stayed inside the declared Scope.",
+          lgSub:"Touching non-test files beyond Scope would itself be a blocking finding — the implementer should have halted instead." },
+        { t:"r", k:"out", x:"acceptance checks ✓ · scope check: only declared files touched ✓ · error-path output shape ✗ untested", el:22 },
+        { t:"r", k:"hout", x:"verdict: Findings — 1 blocking: --json error path untested.", n:"n-eval", e:["e-re c-r"], el:24,
+          lg:"One blocking finding — back to <b class='who-i'>Claude</b>." },
+        { t:"b", x:"evaluator: findings → fix handoff → claude · next re-review spends round 2/5", n:"n-impl", e:["e-fx c-halt"], r:2, el:24 },
+        { t:"i", k:"ok",  x:"added test: error path emits a JSON error object ✓ · committed 90b1f4e", el:29,
+          lg:"<b class='who-i'>Claude</b> added the missing test." },
+        { t:"b", x:"evaluator: delivered → re-review (round 2/5) → codex", n:"n-rev", e:["e-er c-r"], el:30 },
+        { t:"r", k:"hout", x:"verdict: Approved.", n:"n-eval", e:["e-re c-r"], el:33,
+          lg:"<b class='who-r'>Codex</b> re-reviewed — approved.", lgOk:true },
+        { t:"b", x:"evaluator: approve → workflow wf-03 done ✓", n:"n-done", e:["e-ad c-ok"], done:true, d:400, el:34,
+          lg:"<b>Final result:</b> the task shipped exactly as scoped — two commits, nothing else.", lgOk:true,
+          lgSub:"34 minutes; the gitignored brief leaves no doc clutter — the commits are the record." },
+        { t:"bg", x:"your turn — review the two commits · wf-03 done", n:"n-done", el:34,
+          lg:"<b class='who-you'>Next step: you review, approve, ship it.</b>", lgGold:true }
+      ]
+    },
+
+    bugfix: {
+      label: "bugfix", roleI: "implementer", roleR: "reviewer",
+      phases: [
+        { name: "diagnosis", cap: 5, dur: "31m" },
+        { name: "fix-and-verify", cap: 5, dur: "38m" },
+        { name: "post-mortem", cap: 3, dur: "12m" }
+      ],
+      script: [
+        { t:"i", k:"you", x:"fix the bug I reported in docs/bugs/dashboard-stuck-alive.md",
+          n:"n-kick", p:0, r:1, el:0,
+          lg:"<b class='who-you'>You</b> wrote the bug report — symptom and reproduction, no theories — and asked for the fix.", lgGold:true,
+          lgSub:"Complex-bug-fixing keeps diagnosis out of the report on purpose: the workflow will prove the cause itself." },
+        { t:"i", k:"ok", x:"collab ready ✓ · starting complex-bug-fixing · run wf-01", el:0 },
+        { t:"b", x:"run wf-01 created · claude = implementer · codex = reviewer", n:"n-kick", el:0 },
+        { t:"i", k:"hin", x:"◀ handoff · diagnosis · kickoff (round 1/5)", n:"n-impl", e:["e-ki c-i"], el:1,
+          lg:"Phase 1: <b class='who-i'>Claude</b> must reproduce the bug for real — theorizing from reading code paths is not allowed." },
+        { t:"i", k:"out", x:"reproducing: kill agent mid-turn → dashboard keeps showing ● ALIVE", el:7 },
+        { t:"i", k:"out", x:"RED test written: dashboard-liveness.test.ts … FAIL (for the right reason) ✓ · committed 3f2a91c", el:13 },
+        { t:"i", k:"hout", x:"handback: diagnosis at .ai-whisper/bugfix/wf-01/diagnosis.md — cause chain · fix approach · blast radius · risks", n:"n-eval", e:["e-ie c-i"], el:15 },
+        { t:"b", x:"evaluator: delivered → diagnosis review → codex", n:"n-rev", e:["e-er c-r"], el:15 },
+        { t:"r", k:"hin", x:"◀ handoff · review diagnosis (round 1/5) · protocol: re-run everything yourself", el:16,
+          lg:"<b class='who-r'>Codex</b> independently re-runs the reproduction — pasted output is not trusted.",
+          lgSub:"The diagnosis gate is mutual agreement: approval requires the reviewer to confirm the cause itself. “Plausible” is not approval." },
+        { t:"r", k:"out", x:"repro re-run: FAIL ✓ reproduced independently · cause chain holds (heartbeat TTL never invalidated on crash)", el:24 },
+        { t:"r", k:"hout", x:"verdict: Approved. Cause proven; the fix is net-safe.", n:"n-eval", e:["e-re c-r"], el:30,
+          lg:"<b class='who-r'>Codex</b> confirmed the cause independently — <b>diagnosis ratified</b>.", lgOk:true },
+        { t:"b", x:"evaluator: approve → diagnosis complete → fix-and-verify", n:"n-done", e:["e-ad c-ok"], p:1, r:1, d:400, el:31 },
+        { t:"i", k:"hin", x:"◀ handoff · fix-and-verify · kickoff (round 1/5) · the approved diagnosis is ground truth", n:"n-impl", e:["e-ki c-i"], el:32,
+          lg:"Phase 2: the fix. If the approved cause turned out wrong here, the run would halt to you — never a silent second theory.",
+          lgSub:"That wrong-cause exit is the dashed path on the right: a designed return to the human, not a crash." },
+        { t:"i", k:"ok",  x:"fix: invalidate heartbeat on session exit · RED → GREEN ✓ · suite + blast radius: 214 passed", el:48 },
+        { t:"i", k:"cmd", x:"git commit -m \"fix: report STUCK when heartbeat lapses after crash\"", el:50 },
+        { t:"i", k:"hout", x:"handback: fix 9c04e7d · repro GREEN · suite green", n:"n-eval", e:["e-ie c-i"], el:51 },
+        { t:"b", x:"evaluator: delivered → acceptance review → codex", n:"n-rev", e:["e-er c-r"], el:51 },
+        { t:"r", k:"out", x:"re-ran repro GREEN ✓ · suite ✓ · root cause removed, not relocated ✓ · coverage: crash-during-handback untested ✗", el:58 },
+        { t:"r", k:"hout", x:"verdict: Findings — 1 blocking: missing edge-case test.", n:"n-eval", e:["e-re c-r"], el:60,
+          lg:"Thin coverage is a blocking finding — back to <b class='who-i'>Claude</b>." },
+        { t:"b", x:"evaluator: findings → fix handoff → claude · next re-review spends round 2/5", n:"n-impl", e:["e-fx c-halt"], r:2, el:60 },
+        { t:"i", k:"ok",  x:"added test: crash during handback → STUCK within TTL ✓ · committed 1f83b02", el:65,
+          lg:"<b class='who-i'>Claude</b> covered the edge case." },
+        { t:"b", x:"evaluator: delivered → re-review (round 2/5) → codex", n:"n-rev", e:["e-er c-r"], el:66 },
+        { t:"r", k:"hout", x:"verdict: Approved.", n:"n-eval", e:["e-re c-r"], el:69,
+          lg:"Root cause removed — not relocated — with coverage. <b>Approved.</b>", lgOk:true },
+        { t:"b", x:"evaluator: approve → fix-and-verify complete → post-mortem", n:"n-done", e:["e-ad c-ok"], p:2, r:1, d:400, el:69 },
+        { t:"i", k:"hin", x:"◀ handoff · post-mortem · kickoff (round 1/3)", n:"n-impl", e:["e-ki c-i"], el:70,
+          lg:"Phase 3: an honest recap written for you — confirmed cause, the fix, coverage gaps, residual risks, lessons." },
+        { t:"i", k:"hout", x:"handback: postmortem.md written (gitignored — for your eyes)", n:"n-eval", e:["e-ie c-i"], el:76 },
+        { t:"b", x:"evaluator: delivered → review → codex", n:"n-rev", e:["e-er c-r"], el:76 },
+        { t:"r", k:"hout", x:"verdict: Approved — faithful to the run; gloss-overs would be findings.", n:"n-eval", e:["e-re c-r"], el:80, lgOk:true,
+          lg:"The recap is honest — reviewed for faithfulness, not rubber-stamped." },
+        { t:"b", x:"evaluator: approve → workflow wf-01 done ✓", n:"n-done", e:["e-ad c-ok"], done:true, d:400, el:81,
+          lg:"<b>Final result:</b> bug fixed at the proven root cause — RED test, fix, and edge-case coverage committed.", lgOk:true,
+          lgSub:"1h 21m autonomous; diagnosis.md and postmortem.md wait for you in the gitignored run dir." },
+        { t:"bg", x:"your turn — read postmortem.md, review the diff · wf-01 done", n:"n-done", el:81,
+          lg:"<b class='who-you'>Next step: you review, approve, ship it.</b>", lgGold:true }
+      ]
+    },
+
+    ralph: {
+      label: "ralph", roleI: "implementer", roleR: "reviewer",
+      phases: [ { name: "ralph-iteration", cap: 5, dur: "4h 02m" } ],
+      script: [
+        { t:"i", k:"you", x:"run ralph on docs/goals/cli-error-messages.md",
+          n:"n-kick", p:0, r:1, el:0,
+          lg:"<b class='who-you'>You</b> wrote an open-ended goal with explicit completion criteria — ralph grinds it chunk by chunk.", lgGold:true,
+          lgSub:"Ralph's memory is two gitignored files: PROGRESS.md (the work ledger) and LEARNINGS.md (anti-amnesia notes), re-read at the start of every item." },
+        { t:"i", k:"ok", x:"collab ready ✓ · starting ralph-loop · run wf-04 · bounds: ≤100 items, ≤5 review rounds each", el:0 },
+        { t:"b", x:"run wf-04 created · claude = implementer · codex = reviewer", n:"n-kick", el:0 },
+        { t:"i", k:"hin", x:"◀ handoff · ralph-iteration · item 1 (round 1/5)", n:"n-impl", e:["e-ki c-i"], el:1,
+          lg:"Item 1: <b class='who-i'>Claude</b> re-orients from the goal + PROGRESS + LEARNINGS — not from chat memory — and picks the smallest verifiable chunk." },
+        { t:"i", k:"out", x:"chunk: rewrite `collab mount` error messages · PROGRESS.md updated · committed a41c9de", el:14 },
+        { t:"i", k:"hout", x:"handback: chunk done · [[RALPH:ITEM-DELIVERED]]", n:"n-eval", e:["e-ie c-i"], el:15,
+          lg:"The handback ends with the exact marker <b>[[RALPH:ITEM-DELIVERED]]</b> on its own final line — the loop's deterministic signal." },
+        { t:"b", x:"evaluator: delivered → chunk review → codex", n:"n-rev", e:["e-er c-r"], el:15 },
+        { t:"r", k:"out", x:"chunk-review: judged against the goal slice only — the whole goal need not be done ✓", el:20 },
+        { t:"r", k:"hout", x:"verdict: Approved.", n:"n-eval", e:["e-re c-r"], el:22,
+          lg:"Item 1 approved — the loop re-kicks the same phase for item 2.", lgOk:true },
+        { t:"b", x:"evaluator: approve + item delivered → iteration 2 of ≤100", n:"n-impl", e:["e-ki c-i"], r:1, el:22 },
+        { t:"i", k:"out", x:"item 2: `workflow start` errors · committed 5b7722f · [[RALPH:ITEM-DELIVERED]]", el:37 },
+        { t:"r", k:"hout", x:"verdict: Findings — 1 blocking: error text drops the remediation hint the goal requires.", n:"n-eval", e:["e-re c-r"], el:44,
+          lg:"Item 2 came back with a finding." },
+        { t:"b", x:"evaluator: findings → fix handoff → claude (round 2/5 for this item)", n:"n-impl", e:["e-fx c-halt"], r:2, el:44 },
+        { t:"i", k:"ok",  x:"fixed ✓ · generalizable lesson appended to LEARNINGS.md: “every error names its remedy”", el:51,
+          lg:"The finding became a LEARNINGS.md entry — item 9 will not repeat item 2's mistake.",
+          lgSub:"Lessons must be generalizable; one-off typos are just fixed. This is the anti-amnesia mechanism." },
+        { t:"b", x:"evaluator: delivered → re-review (round 2/5) → codex", n:"n-rev", e:["e-er c-r"], el:52 },
+        { t:"r", k:"hout", x:"verdict: Approved.", n:"n-eval", e:["e-re c-r"], el:56, lgOk:true,
+          lg:"Item 2 approved on round 2." },
+        { t:"b", x:"items 3–11 delivered and reviewed · one oversized chunk split after failing review twice", n:"n-impl", e:["e-ki c-i"], r:1, el:218,
+          lg:"Nine more items over the next 2¾ hours — including one chunk that failed review twice and was split, per the sizing rule.",
+          lgSub:"An item that exhausted its 5 rounds would halt the whole run: one item burning its budget signals a structural problem, and halting for you is cheaper than grinding." },
+        { t:"i", k:"out", x:"item 12: PROGRESS.md and the repo show no remaining work → claiming completion", el:225 },
+        { t:"i", k:"hout", x:"handback: completion summary · [[RALPH:GOAL-COMPLETE]]", n:"n-eval", e:["e-ie c-i"], el:226,
+          lg:"The goal-complete claim flips the next review into a full acceptance gate." },
+        { t:"r", k:"hin", x:"◀ handoff · ACCEPTANCE review · verify the ENTIRE goal's criteria against the repository", n:"n-rev", e:["e-er c-r"], el:227 },
+        { t:"r", k:"out", x:"acceptance matrix vs goal criteria: every command's errors actionable ✓ · tests present ✓", el:236 },
+        { t:"r", k:"hout", x:"verdict: Approved.", n:"n-eval", e:["e-re c-r"], el:240,
+          lg:"The acceptance gate confirmed the <b>whole goal</b> — not just the last chunk.", lgOk:true },
+        { t:"b", x:"evaluator: approve on completion claim → workflow wf-04 done ✓", n:"n-done", e:["e-ad c-ok"], done:true, d:400, el:242,
+          lg:"<b>Final result:</b> goal complete — 12 reviewed chunks over 4h 02m, every commit gated.", lgOk:true,
+          lgSub:"Bounded by ≤5 rounds per item and ≤100 items; PROGRESS.md and LEARNINGS.md stay behind for your audit." },
+        { t:"bg", x:"your turn — skim PROGRESS.md and the commit log · wf-04 done", n:"n-done", el:242,
+          lg:"<b class='who-you'>Next step: you review, approve, ship it.</b>", lgGold:true }
+      ]
+    },
+
+    delib: {
+      label: "deliberation", roleI: "explorer (implementer)", roleR: "challenger (reviewer)",
+      phases: [
+        { name: "objectives", cap: 6, dur: "26m" },
+        { name: "approaches", cap: 10, dur: "41m" },
+        { name: "tradeoffs", cap: 10, dur: "33m" },
+        { name: "synthesis", cap: 5, dur: "19m" }
+      ],
+      script: [
+        { t:"i", k:"you", x:"deliberate on docs/seeds/third-party-adapters.md",
+          n:"n-kick", p:0, r:1, el:0,
+          lg:"<b class='who-you'>You</b> planted a fuzzy seed — one line about supporting third-party adapters — and asked the pair to think it through.", lgGold:true,
+          lgSub:"Deliberation never auto-chains into SDD: its output is a findings doc whose decisions stay yours." },
+        { t:"i", k:"ok", x:"collab ready ✓ · starting deliberation · run wf-05 · Explorer = claude · Challenger = codex", el:0 },
+        { t:"b", x:"run wf-05 created", n:"n-kick", el:0 },
+        { t:"i", k:"hin", x:"◀ layer 1/4 · OBJECTIVES (round 1/6)", n:"n-impl", e:["e-ki c-i"], el:1,
+          lg:"Layer 1: the <b class='who-i'>Explorer</b> derives objectives from evidence in the repo — not by restating your seed." },
+        { t:"i", k:"out", x:"grounded in packages/adapter-*: derived 4 objectives + known-unknowns → objectives.md", el:11 },
+        { t:"i", k:"hout", x:"handback: objectives proposed", n:"n-eval", e:["e-ie c-i"], el:12 },
+        { t:"b", x:"evaluator: delivered → challenge → codex", n:"n-rev", e:["e-er c-r"], el:12 },
+        { t:"r", k:"out", x:"independent derivation FIRST, then diff: my objectives vs yours → 1 material gap (third-party code security)", el:18,
+          lg:"The <b class='who-r'>Challenger</b> derived its own objectives before reading the Explorer's — agreement must be earned, not assumed." },
+        { t:"r", k:"hout", x:"verdict: not approved — 1 decision-material finding.", n:"n-eval", e:["e-re c-r"], el:19 },
+        { t:"b", x:"evaluator: findings → fix (round 2/6) → claude", n:"n-impl", e:["e-fx c-halt"], r:2, el:19 },
+        { t:"i", k:"ok",  x:"objectives revised: added supply-chain/security objective, grounded in the adapter loading path", el:24,
+          lg:"The <b class='who-i'>Explorer</b> closed the gap with evidence." },
+        { t:"b", x:"evaluator: delivered → re-challenge (round 2/6) → codex", n:"n-rev", e:["e-er c-r"], el:24 },
+        { t:"r", k:"hout", x:"verdict: Approved — objectives ratified.", n:"n-eval", e:["e-re c-r"], el:26, lgOk:true,
+          lg:"Objectives <b>ratified</b> — later layers treat them as ground truth." },
+        { t:"b", x:"evaluator: approve → objectives complete → approaches", n:"n-done", e:["e-ad c-ok"], p:1, r:1, d:400, el:26 },
+        { t:"i", k:"hin", x:"◀ layer 2/4 · APPROACHES (round 1/10) · picking a winner here is forbidden", n:"n-impl", e:["e-ki c-i"], el:27,
+          lg:"Layer 2: at least three genuinely distinct approaches, each grounded in a real precedent — and no winner allowed yet.",
+          lgSub:"The no-winner rule is the guard against premature convergence." },
+        { t:"i", k:"out", x:"3 approaches → approaches.md: npm plugin packages · adapter SDK + manifest · in-repo contrib pattern — each with precedent", el:48 },
+        { t:"r", k:"out", x:"external verification only: re-ran the greps, opened cited files, checked the npm API claim — “matches what I know” is disallowed", el:58,
+          lg:"Every material claim is verified against an external source; shared priors mean shared blind spots." },
+        { t:"r", k:"hout", x:"verdict: Approved — the set is complete and grounded.", n:"n-eval", e:["e-re c-r"], el:67, lgOk:true },
+        { t:"b", x:"evaluator: approve → approaches complete → tradeoffs", n:"n-done", e:["e-ad c-ok"], p:2, r:1, d:400, el:67 },
+        { t:"i", k:"hin", x:"◀ layer 3/4 · TRADEOFFS (round 1/10)", n:"n-impl", e:["e-ki c-i"], el:68,
+          lg:"Layer 3: honest costs — feasibility and blast radius stress-tested against the actual codebase, no cherry-picking." },
+        { t:"i", k:"out", x:"per-approach tradeoffs/difficulty/risks → tradeoffs.md · one fork hangs on your appetite for an API-stability commitment", el:88 },
+        { t:"r", k:"hout", x:"verdict: Approved — 1 preference fork RECORDED as an Open Question, not resolved.", n:"n-eval", e:["e-re c-r"], el:100, lgOk:true,
+          lg:"Material-but-preference-dependent forks are <b>recorded for you</b> — the Challenger may not decide them." },
+        { t:"b", x:"evaluator: approve → tradeoffs complete → synthesis", n:"n-done", e:["e-ad c-ok"], p:3, r:1, d:400, el:100 },
+        { t:"i", k:"hin", x:"◀ layer 4/4 · SYNTHESIS (round 1/5)", n:"n-impl", e:["e-ki c-i"], el:101,
+          lg:"Layer 4: collapse the ratified layers into one findings doc built for a fast read." },
+        { t:"i", k:"out", x:"findings doc committed → docs/superpowers/deliberations/2026-07-28-third-party-adapters.md (TL;DR · PROPOSAL · Open Questions)", el:112,
+          lg:"The working notes stay gitignored; the findings doc is the one committed artifact." },
+        { t:"r", k:"hout", x:"verdict: Approved — faithful; no material decision silently resolved, none invented.", n:"n-eval", e:["e-re c-r"], el:117, lgOk:true },
+        { t:"b", x:"evaluator: approve → workflow wf-05 done ✓", n:"n-done", e:["e-ad c-ok"], done:true, d:400, el:119,
+          lg:"<b>Final result:</b> a ratified findings doc — recommendation clearly marked PROPOSAL, grounding footer, 2 Open Questions.", lgOk:true,
+          lgSub:"1h 59m of structured dialectic. The transcript is exhaust; the refined end-state is the product." },
+        { t:"bg", x:"your turn — read the TL;DR, decide the 2 Open Questions · wf-05 done", n:"n-done", el:119,
+          lg:"<b class='who-you'>Next step: you decide — then hand it to SDD only if you choose.</b>", lgGold:true }
+      ]
+    }
+  };
+
+  var PHASES = SCENARIOS.sdd.phases;
+  var SCRIPT = SCENARIOS.sdd.script;
+
+  var scrI = document.getElementById("scr-i"), scrR = document.getElementById("scr-r");
+  var brokerEl = document.getElementById("broker"), brokerMsg = document.getElementById("brokerMsg");
+  var runlog = document.getElementById("runlog");
+  var hudP = document.getElementById("hudP"), hudR = document.getElementById("hudR"), hudName = document.getElementById("hudName");
+  var hudT = document.getElementById("hudT");
+  var roleLabelI = document.getElementById("roleLabelI"), roleLabelR = document.getElementById("roleLabelR");
+  var phasesEl = document.getElementById("phases");
+  var idleI = document.getElementById("idle-i"), idleR = document.getElementById("idle-r");
+  var btnPlay = document.getElementById("btnPlay"), btnStep = document.getElementById("btnStep"), btnRestart = document.getElementById("btnRestart");
+  var speedSel = document.getElementById("speed");
+  var scenPicker = document.getElementById("scenPicker");
+  var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  var idx = 0, playing = false, timer = null, typerTimer = null;
+  var state = { p: 0, r: 1, done: false, el: 0 };
+
+  function fmt(m) { return m < 60 ? m + "m" : Math.floor(m / 60) + "h " + ("0" + (m % 60)).slice(-2) + "m"; }
+
+  function renderPhases() {
+    phasesEl.innerHTML = "";
+    PHASES.forEach(function (ph, i) {
+      var cls = "phase" + (i < state.p || state.done ? " done" : i === state.p ? " active" : "");
+      var rd = "";
+      if (i === state.p && !state.done) {
+        rd = " <span class='rd'>" + "●".repeat(state.r) + "○".repeat(Math.max(0, ph.cap - state.r)) + "</span>";
+      } else if (i < state.p || state.done) { rd = " <span class='rd'>✓ " + ph.dur + "</span>"; }
+      var el = document.createElement("span");
+      el.className = cls;
+      el.innerHTML = (i + 1) + " " + ph.name + rd;
+      phasesEl.appendChild(el);
+    });
+    hudP.textContent = state.done ? PHASES.length + "/" + PHASES.length : (state.p + 1) + "/" + PHASES.length;
+    hudR.textContent = state.r + "/" + PHASES[Math.min(state.p, PHASES.length - 1)].cap;
+    hudT.textContent = "t+" + fmt(state.el);
+    hudName.textContent = state.done ? "done ✓" : PHASES[state.p].name;
+    hudName.style.color = state.done ? "var(--ok)" : "";
+  }
+
+  function setDiagram(node, edges) {
+    document.querySelectorAll(".nd").forEach(function (n) { n.classList.remove("active"); });
+    document.querySelectorAll(".ed").forEach(function (e) { e.classList.remove("lit", "c-i", "c-r", "c-ok", "c-halt"); });
+    if (node) document.getElementById(node).classList.add("active");
+    (edges || []).forEach(function (spec) {
+      var parts = spec.split(" ");
+      var el = document.getElementById(parts[0]);
+      el.classList.add("lit"); if (parts[1]) el.classList.add(parts[1]);
+    });
+  }
+
+  function speed() { return parseFloat(speedSel.value); }
+
+  function addLine(term, kind, text, cb) {
+    var scr = term === "i" ? scrI : scrR;
+    var el = document.createElement("div");
+    el.className = "tl " + (kind || "out");
+    scr.appendChild(el);
+    var typeIt = playing && !reduced && (kind === "cmd" || kind === "you");
+    if (!typeIt) {
+      el.textContent = text;
+      scr.scrollTop = scr.scrollHeight;
+      cb(0);
+      return;
+    }
+    var i = 0, per = Math.max(6, 16 / speed());
+    var caret = document.createElement("span"); caret.className = "caret";
+    el.appendChild(caret);
+    typerTimer = setInterval(function () {
+      i++;
+      el.textContent = text.slice(0, i);
+      if (i < text.length) el.appendChild(caret);
+      scr.scrollTop = scr.scrollHeight;
+      if (i >= text.length) { clearInterval(typerTimer); typerTimer = null; cb(0); }
+    }, per);
+  }
+
+  function applyMeta(s) {
+    if (s.n || s.e) setDiagram(s.n, s.e);
+    if (typeof s.revOff === "boolean") document.getElementById("n-rev").classList.toggle("off", s.revOff);
+    if (typeof s.fanOn === "boolean") document.getElementById("n-fan").classList.toggle("on", s.fanOn);
+    if (typeof s.p === "number") { state.p = s.p; }
+    if (typeof s.r === "number") { state.r = s.r; }
+    if (s.done) state.done = true;
+    if (typeof s.el === "number") state.el = s.el;
+    renderPhases();
+    if (s.lg) {
+      var en = document.createElement("div");
+      en.className = "en" + (s.lgGold ? " gold" : "") + (s.lgOk ? " ok" : "");
+      en.innerHTML = "<span class='ts'>t+" + fmt(state.el) + "</span>" + s.lg +
+        (s.lgSub ? "<span class='sub'>" + s.lgSub + "</span>" : "");
+      runlog.appendChild(en);
+      runlog.scrollTop = runlog.scrollHeight;
+    }
+    idleI.textContent = "idle"; idleR.textContent = "idle";
+    idleI.className = "idle"; idleR.className = "idle";
+    if (s.t === "i") { idleI.textContent = "busy"; idleI.className = "idle busy"; }
+    if (s.t === "r") { idleR.textContent = "busy"; idleR.className = "idle busy"; }
+  }
+
+  function runStep(s, cb) {
+    applyMeta(s);
+    if (s.t === "b" || s.t === "bg") {
+      brokerEl.className = "broker" + (s.t === "bg" ? " gold" : "");
+      brokerMsg.textContent = s.x;
+      cb();
+    } else {
+      addLine(s.t, s.k, s.x, function () { cb(); });
+    }
+  }
+
+  function stepOnce(auto) {
+    if (idx >= SCRIPT.length) { stop(); return; }
+    var s = SCRIPT[idx++];
+    runStep(s, function () {
+      if (idx >= SCRIPT.length) {
+        stop();
+        btnPlay.textContent = "✓ finished — ↺ to replay";
+        btnPlay.disabled = true; btnStep.disabled = true;
+        return;
+      }
+      if (auto && playing) {
+        var base = (s.k === "hout" || s.t === "b" || s.lg ? 1500 : 850) + (s.d || 0);
+        timer = setTimeout(function () { stepOnce(true); }, base / speed());
+      }
+    });
+  }
+
+  function stop() {
+    playing = false;
+    if (timer) { clearTimeout(timer); timer = null; }
+    if (typerTimer) { clearInterval(typerTimer); typerTimer = null; }
+    btnPlay.textContent = "▶ play";
+  }
+
+  function resetRun() {
+    stop();
+    idx = 0; state = { p: 0, r: 1, done: false, el: 0 };
+    scrI.innerHTML = ""; scrR.innerHTML = "";
+    brokerEl.className = "broker"; brokerMsg.textContent = "waiting for kickoff…";
+    runlog.innerHTML = "<div class='en hint'>Press ▶ play — the run will be narrated here, in plain English, as it happens.</div>";
+    setDiagram(null, []);
+    document.getElementById("n-rev").classList.remove("off");
+    document.getElementById("n-fan").classList.remove("on");
+    btnPlay.disabled = false; btnStep.disabled = false;
+    renderPhases();
+  }
+
+  function setScenario(key) {
+    var sc = SCENARIOS[key];
+    PHASES = sc.phases; SCRIPT = sc.script;
+    roleLabelI.textContent = sc.roleI; roleLabelR.textContent = sc.roleR;
+    scenPicker.querySelectorAll("button").forEach(function (b) {
+      b.setAttribute("aria-selected", String(b.dataset.key === key));
+    });
+    resetRun();
+  }
+
+  Object.keys(SCENARIOS).forEach(function (key, i) {
+    var b = document.createElement("button");
+    b.setAttribute("role", "tab");
+    b.setAttribute("aria-selected", String(i === 0));
+    b.dataset.key = key;
+    b.textContent = SCENARIOS[key].label;
+    b.addEventListener("click", function () { setScenario(key); });
+    scenPicker.appendChild(b);
+  });
+
+  btnPlay.addEventListener("click", function () {
+    if (playing) { stop(); return; }
+    playing = true;
+    btnPlay.textContent = "⏸ pause";
+    stepOnce(true);
+  });
+  btnStep.addEventListener("click", function () { stop(); stepOnce(false); });
+  btnRestart.addEventListener("click", resetRun);
+
+  renderPhases();
+})();
+</script>

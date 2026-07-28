@@ -103,7 +103,7 @@ whisper collab mount claude
 whisper collab mount codex
 ```
 
-The first `mount` creates the collab and starts the broker daemon for the workspace; the second binds the other agent. From either session, start a workflow against a spec or goal file — `spec-driven-development` for a spec, `ralph-loop` for an open-ended goal, plus `quick-task`, `complex-bug-fixing`, and `deliberation` (see [Workflows](docs/workflows.md)). Watch it run with:
+The first `mount` creates the collab and starts the broker daemon for the workspace; the second binds the other agent. From either session, start a workflow against a spec or goal file — `spec-driven-development` for a spec, `ralph-loop` for an open-ended goal, plus `quick-task`, `complex-bug-fixing`, and `deliberation` (see [Workflows](docs/workflows.md)). Not sure what an autonomous run looks like? The [interactive demo](https://ai-creed.github.io/ai-whisper/workflows-visual/) plays back a simulated run of each workflow, gates and all. Watch a real one with:
 
 ```bash
 whisper collab dashboard

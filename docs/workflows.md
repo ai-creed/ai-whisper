@@ -6,6 +6,8 @@ The outcome of a run is mostly decided by two choices you make before anything s
 
 ai-whisper ships five workflows today. All run an implementer and a reviewer that take turns — the agent you trigger the run from becomes the implementer and the other becomes the reviewer (override with `--implementer` / `--reviewer`) — and all are gated by the LLM evaluator that decides, after each handback, whether to advance, loop, or escalate.
 
+> **See one run:** the [interactive workflow demo](https://ai-creed.github.io/ai-whisper/workflows-visual/) plays back a simulated run of each workflow — the two agent terminals, the gates, the round budgets, and every point where control returns to you. (Also viewable locally: open `docs/workflows-visual/index.html`.)
+
 ## The five workflows at a glance
 
 **`spec-driven-development`** is a phased pipeline. It moves through spec-refining → plan-writing → plan-execution → code-review. Each phase has its own gate and loops until it is approved or it escalates, then the next phase begins. You give it a spec; it sharpens that spec into a plan and executes the plan under review. Use it when you can describe the deliverable up front.
