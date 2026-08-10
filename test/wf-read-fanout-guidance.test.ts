@@ -3,7 +3,22 @@ import { describe, expect, it } from "vitest";
 // NOT on the broker package index).
 import {
 	WORKFLOW_READ_FANOUT_GUIDANCE,
+	CODE_REVIEW_SKILL_GUIDANCE,
+	SPEC_DRIVEN_DEVELOPMENT,
+	RALPH_LOOP,
+	COMPLEX_BUG_FIXING,
+	QUICK_TASK,
 } from "../packages/broker/src/runtime/workflow-registry.ts";
+
+/** Pull a phase's review-step template from a real exported workflow def. */
+function reviewTemplate(
+	def: typeof SPEC_DRIVEN_DEVELOPMENT,
+	phaseName: string,
+): string {
+	const phase = def.phases.find((p) => p.name === phaseName);
+	if (!phase) throw new Error(`no phase ${phaseName}`);
+	return phase.stepTemplates.review ?? "";
+}
 
 describe("WORKFLOW_READ_FANOUT_GUIDANCE fragment", () => {
 	it("is harness-conditional", () => {
@@ -35,4 +50,39 @@ describe("WORKFLOW_READ_FANOUT_GUIDANCE fragment", () => {
 	it("ends with a paragraph break so it composes by + and by interpolation", () => {
 		expect(WORKFLOW_READ_FANOUT_GUIDANCE.endsWith("\n\n")).toBe(true);
 	});
+});
+
+describe("code-review guidance composes read fan-out by construction", () => {
+	// THE structural invariant: any template that carries the code-review
+	// skill pointer — including templates that do not exist yet — inherits
+	// the fan-out fragment, because the pointer constant itself contains it.
+	it("CODE_REVIEW_SKILL_GUIDANCE contains WORKFLOW_READ_FANOUT_GUIDANCE", () => {
+		expect(CODE_REVIEW_SKILL_GUIDANCE).toContain(WORKFLOW_READ_FANOUT_GUIDANCE);
+	});
+});
+
+describe("code-bearing review prompts carry the read fan-out fragment", () => {
+	// Integration checks derived from the real exported workflow definitions —
+	// these follow from the invariant above but pin today's five templates.
+	const codeBearing: Array<[string, string]> = [
+		["sdd code-review", reviewTemplate(SPEC_DRIVEN_DEVELOPMENT, "code-review")],
+		["quick-task review", reviewTemplate(QUICK_TASK, "implement-and-review")],
+		["ralph per-item", reviewTemplate(RALPH_LOOP, "ralph-iteration")],
+		[
+			"ralph acceptance",
+			RALPH_LOOP.phases.find((p) => p.name === "ralph-iteration")
+				?.acceptanceReviewTemplate ?? "",
+		],
+		["bugfix fix-and-verify", reviewTemplate(COMPLEX_BUG_FIXING, "fix-and-verify")],
+	];
+	for (const [label, template] of codeBearing) {
+		it(`${label} template contains the fragment`, () => {
+			expect(template).toContain(WORKFLOW_READ_FANOUT_GUIDANCE);
+		});
+		it(`${label} keeps the fragment before the review protocol`, () => {
+			expect(template.indexOf(WORKFLOW_READ_FANOUT_GUIDANCE)).toBeLessThan(
+				template.indexOf("--- ai-whisper workflow review protocol"),
+			);
+		});
+	}
 });

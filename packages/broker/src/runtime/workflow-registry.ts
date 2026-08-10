@@ -207,7 +207,10 @@ export const WORKFLOW_READ_FANOUT_GUIDANCE =
 // authoritative for output shape and evaluator semantics. Keep it BEFORE the
 // protocol so the verdict-before-`Non-blocking risks:` invariant is untouched.
 export const CODE_REVIEW_SKILL_GUIDANCE =
-	"Use the ai-whisper-code-review skill to evaluate the delivered code. The workflow review protocol below controls your output format and evaluator semantics; the skill controls how you inspect code and decide which code-quality issues are blocking.\n\n";
+	"Use the ai-whisper-code-review skill to evaluate the delivered code. The workflow review protocol below controls your output format and evaluator semantics; the skill controls how you inspect code and decide which code-quality issues are blocking.\n\n" +
+	// Read fan-out rides along BY CONSTRUCTION: every template that carries
+	// this code-review pointer — including future ones — inherits it.
+	WORKFLOW_READ_FANOUT_GUIDANCE;
 
 // Plan-execution skill guidance appended to the SDD plan-execution handoffs.
 // It tells the implementer to use the ai-whisper-plan-execution skill for HOW
