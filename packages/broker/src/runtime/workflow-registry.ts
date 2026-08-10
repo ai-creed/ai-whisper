@@ -388,7 +388,7 @@ Write a diagnosis artifact to {diagnosisPath} (create the file) with these secti
 4. Blast radius — every area/module/contract the fix could affect.
 5. Residual risks — foreseeable risks remaining after the fix.
 
-Commit the RED reproduction test (do NOT commit {bugfixDir}; it is gitignored). End your handback with a 1-2 sentence summary; your reply must be at least two sentences, well over 100 characters — never hand back only a single word.`;
+${WORKFLOW_READ_FANOUT_GUIDANCE}Commit the RED reproduction test (do NOT commit {bugfixDir}; it is gitignored). End your handback with a 1-2 sentence summary; your reply must be at least two sentences, well over 100 characters — never hand back only a single word.`;
 
 const BUGFIX_DIAGNOSIS_REVIEW =
 	"Review the diagnosis artifact at {diagnosisPath} for the bug reported at {specPath}. This is an autonomous workflow with no human in the loop.\n\n" +
@@ -510,7 +510,7 @@ LAYER 1 of 4: OBJECTIVES. Read the seed at {specPath}. Research the REAL situati
 
 Write your objectives working notes to {deliberationDir}/objectives.md: each derived objective with why-it-matters and its grounding source; the interpretation you took (and any you discarded) when the seed was vague; and an explicit list of known-unknowns. Append one JSON line to {deliberationDir}/metrics.jsonl with the two signals spec §12.6 requires — "materialFindings" (0 on this initial proposal) and "revisionMagnitude" ("initial" on the first proposal) — plus "layer" and "round". Example: {"layer":"objectives","round":1,"materialFindings":0,"revisionMagnitude":"initial"}.
 
-${DELIBERATION_CRAFT_SKILL_GUIDANCE}End your handback with a 1-2 sentence summary; your reply must be at least two sentences, well over 100 characters — never hand back only a single word.`;
+${DELIBERATION_CRAFT_SKILL_GUIDANCE}${WORKFLOW_READ_FANOUT_GUIDANCE}End your handback with a 1-2 sentence summary; your reply must be at least two sentences, well over 100 characters — never hand back only a single word.`;
 
 const DELIB_APPROACHES = `You are the Explorer in an autonomous Deliberation workflow — no human is in the loop; do the work yourself.
 
@@ -518,7 +518,7 @@ LAYER 2 of 4: APPROACHES. The objectives in {deliberationDir}/objectives.md are 
 
 Write your approaches working notes to {deliberationDir}/approaches.md: one section per approach (gist, grounding/precedent, why it is distinct), plus the known-unknowns each carries. Append one JSON line to {deliberationDir}/metrics.jsonl with "materialFindings" and "revisionMagnitude" (plus "layer" and "round"), the two per-round signals spec §12.6 requires.
 
-${DELIBERATION_CRAFT_SKILL_GUIDANCE}End your handback with a 1-2 sentence summary; your reply must be at least two sentences, well over 100 characters — never hand back only a single word.`;
+${DELIBERATION_CRAFT_SKILL_GUIDANCE}${WORKFLOW_READ_FANOUT_GUIDANCE}End your handback with a 1-2 sentence summary; your reply must be at least two sentences, well over 100 characters — never hand back only a single word.`;
 
 const DELIB_TRADEOFFS = `You are the Explorer in an autonomous Deliberation workflow — no human is in the loop; do the work yourself.
 
@@ -526,7 +526,7 @@ LAYER 3 of 4: TRADEOFFS & DIFFICULTY. The approaches in {deliberationDir}/approa
 
 Write your tradeoffs working notes to {deliberationDir}/tradeoffs.md: a per-approach tradeoff/difficulty/risk breakdown, with the grounding for each claim. Append one JSON line to {deliberationDir}/metrics.jsonl with "materialFindings" and "revisionMagnitude" (plus "layer" and "round"), the two per-round signals spec §12.6 requires.
 
-${DELIBERATION_CRAFT_SKILL_GUIDANCE}End your handback with a 1-2 sentence summary; your reply must be at least two sentences, well over 100 characters — never hand back only a single word.`;
+${DELIBERATION_CRAFT_SKILL_GUIDANCE}${WORKFLOW_READ_FANOUT_GUIDANCE}End your handback with a 1-2 sentence summary; your reply must be at least two sentences, well over 100 characters — never hand back only a single word.`;
 
 const DELIB_SYNTHESIS_FIX =
 	"Apply the Challenger's findings by RE-WRITING the corrected findings document to {findingsPath} (keep the §9 skeleton). Then RE-COMMIT it: `git add {findingsPath} && git commit` (do NOT commit {deliberationDir}; it is gitignored). Re-ground against the seed at {specPath} to confirm the revision is consistent. Append one JSON line to {deliberationDir}/metrics.jsonl with the two signals spec §12.6 requires — \"materialFindings\" (the count of decision-material findings you are addressing this round) and \"revisionMagnitude\" (how much your output changed: \"none\"/\"minor\"/\"moderate\"/\"major\") — plus \"layer\" and \"round\". End your handback with a 1-2 sentence summary of what you changed; your reply must be at least two sentences, well over 100 characters — never hand back only a single word.\n\n" +

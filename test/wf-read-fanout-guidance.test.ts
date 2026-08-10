@@ -8,6 +8,7 @@ import {
 	RALPH_LOOP,
 	COMPLEX_BUG_FIXING,
 	QUICK_TASK,
+	DELIBERATION,
 } from "../packages/broker/src/runtime/workflow-registry.ts";
 
 /** Pull a phase's review-step template from a real exported workflow def. */
@@ -85,4 +86,28 @@ describe("code-bearing review prompts carry the read fan-out fragment", () => {
 			);
 		});
 	}
+});
+
+describe("deliberation Explorer research layers carry the fragment; Synthesis does not", () => {
+	const kickoff = (phaseName: string): string => {
+		const phase = DELIBERATION.phases.find((p) => p.name === phaseName);
+		if (!phase) throw new Error(`no phase ${phaseName}`);
+		return phase.kickoffTemplate;
+	};
+	for (const layer of ["objectives", "approaches", "tradeoffs"]) {
+		it(`${layer} kickoff contains the fragment`, () => {
+			expect(kickoff(layer)).toContain(WORKFLOW_READ_FANOUT_GUIDANCE);
+		});
+	}
+	it("synthesis kickoff does NOT contain the fragment (composition, not breadth research)", () => {
+		expect(kickoff("synthesis")).not.toContain(WORKFLOW_READ_FANOUT_GUIDANCE);
+	});
+});
+
+describe("bugfix diagnosis kickoff carries the fragment", () => {
+	it("diagnosis implementer kickoff contains the fragment", () => {
+		const phase = COMPLEX_BUG_FIXING.phases.find((p) => p.name === "diagnosis");
+		if (!phase) throw new Error("no diagnosis phase");
+		expect(phase.kickoffTemplate).toContain(WORKFLOW_READ_FANOUT_GUIDANCE);
+	});
 });
