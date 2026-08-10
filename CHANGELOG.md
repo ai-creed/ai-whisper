@@ -5,6 +5,12 @@ All notable changes to the `ai-whisper` package are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Read-heavy workflow phases now license harness-side parallel read subagents.** A canonical `WORKFLOW_READ_FANOUT_GUIDANCE` fragment rides every code-review handoff (SDD code-review, quick-task review, ralph chunk + acceptance reviews, bugfix fix review), the three deliberation Explorer research layers, and the bugfix diagnosis kickoff: read-only fan-out with synthesis before handback, writes and handbacks strictly serial, relay isolation intact. Deliberation Synthesis is deliberately excluded (composition, not breadth research). The `ai-whisper-deliberation-craft` (0.2.0) and `ai-whisper-code-review` (0.2.0) skills carry matching how-to sections.
+
 ## [0.16.0] - 2026-07-24
 
 ### Added
