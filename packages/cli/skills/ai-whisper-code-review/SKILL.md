@@ -1,7 +1,7 @@
 ---
 name: ai-whisper-code-review
 description: Use when an ai-whisper workflow or user asks to review agent-written code — implementation output, bug fixes, committed changes, diff/commit ranges, Ralph code chunks, or a final code-quality acceptance gate — reviews the diff against the task artifact and reports only blocking findings, in the workflow handoff's required output format when one applies.
-version: 0.1.0
+version: 0.2.0
 ---
 
 # ai-whisper-code-review
@@ -45,6 +45,12 @@ architecture polish unless the issue causes a concrete code failure.
 5. Do one adversarial pass: assume the code is subtly wrong and look for the
    highest-impact failure.
 6. Keep only findings that meet the blocking standard below.
+
+Breadth reads (steps 1–3) fan out where your harness supports subagent
+dispatch: parallel read-only subagents for the diff sweep, the task-artifact
+cross-check, and surrounding-code reads, synthesized by you before judging.
+Verification runs and the findings you report always stay yours; without
+subagent support, do the same reads sequentially.
 
 Passing tests are supporting evidence, not proof. A green suite does not
 excuse a test that checks the wrong layer or misses the required condition.
