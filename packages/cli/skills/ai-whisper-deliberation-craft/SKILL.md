@@ -1,7 +1,7 @@
 ---
 name: ai-whisper-deliberation-craft
 description: Use when acting as Explorer or Challenger inside an active ai-whisper Deliberation run and need craft guidance to research or attack a layer (Objectives/Approaches/Tradeoffs) or verify a claim — not for starting a Deliberation (see ai-whisper-deliberation) — gives the Explorer research contract, Challenger attack taxonomy, and verification standard; the deliberation protocol stays authoritative for gate, verdict, and output format.
-version: 0.1.0
+version: 0.2.0
 ---
 
 # ai-whisper-deliberation-craft
@@ -45,13 +45,19 @@ the output format. Do not restate or re-derive those rules here.
    Challenger where to dig.
 5. Allocate research depth by decision-impact — go deep only where a gap
    would change a choice.
+6. Fan breadth reads out where your harness supports subagent dispatch —
+   parallel read-only subagents for source surveys, file sweeps, and
+   precedent checks, synthesized by you before the handback. Writes and the
+   handback itself always stay yours; without subagent support, do the same
+   reads sequentially.
 
 #### Per-layer research shape
 
 - **Objectives:** research the real situation (current state, actual pain,
   constraints); derive objectives from evidence, do not restate the seed.
 - **Approaches:** survey the space (prior art + in-repo idioms + candidate
-  techniques); >= 3 distinct, each grounded in a real precedent; do not pick
+  techniques — a natural fan-out: one read subagent per source family where
+  supported); >= 3 distinct, each grounded in a real precedent; do not pick
   a winner.
 - **Tradeoffs:** stress-test survivors against reality — feasibility checks,
   blast radius/difficulty in the actual codebase, named risks.
