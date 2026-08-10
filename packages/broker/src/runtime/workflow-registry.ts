@@ -189,6 +189,18 @@ Non-blocking risks:
 - <risk that does NOT block this gate, or "None.">
 --- end protocol ---`;
 
+// Read fan-out guidance carried by read-heavy kickoff/review handoffs: every
+// code-bearing review template (by construction — CODE_REVIEW_SKILL_GUIDANCE
+// below composes this fragment, so present and FUTURE code-review templates
+// inherit it), the three deliberation Explorer research-layer kickoffs, and
+// the bugfix diagnosis kickoff. It licenses harness-side parallel subagents
+// for READS ONLY — the single-baton relay contract is untouched (writes stay
+// serial; subagents never touch the relay). Deliberation Synthesis is
+// deliberately excluded (composition work, not breadth research). Must stay
+// defined ABOVE CODE_REVIEW_SKILL_GUIDANCE.
+export const WORKFLOW_READ_FANOUT_GUIDANCE =
+	"If your harness supports dispatching subagents (e.g. Claude Code), fan read-only work — research sweeps, file reads, blast-radius enumeration — out to parallel subagents and synthesize the results yourself before handing back. Anything that writes (files, commits, or run state) stays inline and serial. A subagent never hands back, never touches the relay, and never communicates with the other agent. If your harness has no subagent dispatch, do the same reads sequentially.\n\n";
+
 // Code-review skill guidance prepended to code-bearing review handoffs only.
 // It tells the reviewer to use the ai-whisper-code-review skill for HOW to
 // inspect code, while WORKFLOW_REVIEW_PROTOCOL (which follows it) remains
