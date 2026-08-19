@@ -12,7 +12,7 @@ A reusable, resumable evaluation campaign comparing three arms on a purpose-buil
 - **Arm B — Solo + self-review:** same agent, with a mandated structured self-review protocol.
 - **Arm C — ai-whisper pair:** claude implements, codex reviews, driven through real ai-whisper workflows.
 
-The measured delta between arms isolates the *review structure*: the same model drives A, B, and C's implementer.
+**What this measures:** an **end-to-end system comparison** — the ai-whisper pair as shipped versus a solo agent with the same implementer model — not a single-variable isolation of "review structure." Arm C necessarily differs from A/B in more than review: workflow prompts and generated artifacts, a second model in the reviewer seat, the evaluator, and mounted interactive sessions versus headless mode. The parity controls below hold equal everything that can be held equal — implementer model, task content, per-run budget ceiling — and `report.md` must name the residual confounds explicitly rather than claim clean isolation.
 
 **Scale (decided):** 15 tasks × 3 arms × 2 trials = 90 runs, executed in resumable slices.
 
@@ -44,18 +44,34 @@ eval/
 
 - **A — Solo:** fresh fixture copy; `claude -p` headless with `task.md` as the prompt payload; JSON output format for token usage capture.
 - **B — Solo + self-review:** as A, plus an appended protocol: after implementing, run a structured review of your own diff against the acceptance criteria, fix the findings, maximum 2 review-fix cycles, then stop.
-- **C — Pair:** runner generates the quick-task brief (four required sections, scope list) or SDD spec from `task.md`; tmux-automated `whisper collab mount claude` / `whisper collab mount codex` in the fixture workspace; `whisper workflow start --type=quick-task|spec-driven-development --spec=...`; completion detected by polling the state DB per `docs/state-db-read-contract.md` (never by chat); rounds, per-step verdicts, and cost read from the run ledger. Escalated runs are recorded as escalations, graded as-is.
+- **C — Pair:** runner generates the quick-task brief (four required sections, scope list) or SDD spec from `task.md`; tmux-automated `whisper collab mount claude` / `whisper collab mount codex` in the fixture workspace; `whisper workflow start --type=quick-task|spec-driven-development --spec=...`; completion detected by polling the state DB per `docs/state-db-read-contract.md` (never by chat); rounds and per-step verdicts read from the run ledger; tokens and cost per **Token & cost accounting** below. Escalated runs are recorded as escalations, graded as-is.
 
-**Controls:** identical implementer model across arms; CLI versions pinned and recorded in the ledger; fresh fixture copy per trial; per-task budget caps enforced by the runner; read-fanout guidance (Spec 1) already landed, so Arm C measures the current pair.
+**Parity controls:**
+
+- Identical implementer model across arms, pinned and recorded in the ledger; CLI versions pinned and recorded; fresh fixture copy per trial.
+- Prompt parity: `task.md` is the single task statement for every arm. Arm C's generated brief/spec embeds `task.md`'s content verbatim and adds only the structural sections the workflow's shape gate requires; the generated artifact is saved in the run dir for audit.
+- Equal budget: each task's `budget.json` caps bind the **whole run** in every arm — Arm C's combined usage (implementer + reviewer + evaluator) counts against the same ceiling as a solo run. A run that exhausts its budget is stopped and graded as delivered.
+- Run order: the manifest randomizes task×arm×trial order once at init with a recorded seed, so no arm systematically runs earlier, later, or clustered.
+- Read-fanout guidance (Spec 1) already landed, so Arm C measures the current pair.
+
+## Token & cost accounting
+
+The broker run ledger's usage totals are character-based estimates, not metered usage (`packages/cli/src/runtime/dashboard-state.ts` labels them "not metered"), so they are never reported as tokens. Instead:
+
+- **Arms A/B (metered):** token usage and cost come from the `claude -p --output-format json` result per run — authoritative.
+- **Arm C:** the runner harvests metered usage from each seat's own CLI session records where the CLI exposes them (claude session transcripts carry per-turn usage; codex session logs carry token counts), summed per run across the components it can meter (implementer, reviewer, evaluator). Any component without a metered source falls back to the broker's character-based estimate for that component.
+- Every ledger row records `token_source: "metered" | "estimated"`; a run is `metered` only if all of its components are. Cross-arm token/cost tables in `report.md` are computed over metered runs only; estimated-only rows appear in a separate column explicitly labeled "character-based estimate — not comparable across arms".
+- Mid-run budget enforcement uses the best source available at that moment, and the ledger records which source enforced the cap.
 
 ## Grading & metrics
 
 Mechanical, no human judgment in the primary metric:
 
-1. Copy the run's resulting workspace to a grading dir; apply `grade/`; run typecheck + lint (hygiene gate) and the held-out tests.
-2. **Primary:** held-out test pass rate per arm.
-3. **Secondary:** defects caught by review (Arm C: `findings` verdicts in the run trail; Arm B: parsed self-review findings), rounds used, escalation rate, tokens, wall-clock.
-4. Output: `ledger.jsonl` (one row per run: task, arm, trial, pass counts, tokens, seconds, rounds, escalated, CLI versions) + a generated `report.md` with per-arm tables and explicit n=2 caveats (directional, not statistical proof).
+1. Copy the run's resulting workspace to a grading dir; apply `grade/`; run the hygiene gate (the fixture's own typecheck, lint, and pre-existing tests) and the held-out grade tests.
+2. **Per-run score — binary task success:** a run succeeds iff the hygiene gate is fully green AND 100% of the held-out grade tests pass. A hygiene failure fails the run regardless of grade-test results.
+3. **Primary metric:** per-arm task success rate = successful runs ÷ scheduled runs (30 per arm), with a per-task breakdown (successes out of 2 trials). Denominator rules: agent-caused failures (gave up, empty or broken delivery, budget exhausted) stay in the denominator as unsuccessful runs; escalated Arm C runs are graded as delivered and scored normally, with escalation tracked separately; harness failures (infra faults the runner classifies before grading — tmux/mount/daemon errors, never agent output) are retried once, and a second harness failure marks the run `failed` in the manifest, removes it from the denominator, and is listed run-by-run in the report.
+4. **Secondary:** micro-averaged held-out test pass fraction (grade tests passed ÷ total, averaged per arm — partial credit, never a substitute for the primary); defects caught by review (Arm C: `findings` verdicts in the run trail; Arm B: parsed self-review findings); rounds used; escalation rate; tokens/cost per **Token & cost accounting**; wall-clock.
+5. Output: `ledger.jsonl` (one row per run: task, arm, trial, task_success, grade tests passed/total, hygiene result, tokens, token_source, cost, seconds, rounds, escalated, CLI versions) + a generated `report.md` with per-arm tables, the named residual confounds, and explicit n=2 caveats (directional, not statistical proof).
 
 ## Campaign operations
 
@@ -72,7 +88,7 @@ Mechanical, no human judgment in the primary metric:
 ## Risks (accepted, mitigated)
 
 - **tmux/idle-detection flakiness** → reuse the proven smoke-script mount patterns and turn events; failed runs are marked `failed` in the manifest and retried once, then reported as harness failures, never silently dropped.
-- **Cost overrun** → per-task budgets, slice execution, pausable manifest, running cost visible on the dashboard.
+- **Cost overrun** → per-task budgets, slice execution, pausable manifest, running cost visible on the dashboard (a character-based estimate — good enough for overrun watching, never for reporting; see Token & cost accounting).
 - **Fixture-authorship bias** (kit author also tuned the system under test) → acknowledged in the report; the primary metric stays mechanical.
 
 ## Acceptance criteria
@@ -83,7 +99,7 @@ Mechanical, no human judgment in the primary metric:
 4. One real smoke task completes across all three arms and produces correct ledger rows.
 5. `report.md` generator produces the per-arm comparison table from the ledger.
 6. Raw run outputs are gitignored; manifest, ledger, and report are committable.
-7. Root `pnpm typecheck` / `pnpm test` remain green (eval kit code is typechecked; fixtures are excluded from the root test run).
+7. Root `pnpm typecheck` / `pnpm test` / `pnpm lint` / `pnpm build` all remain green (eval kit code is typechecked and linted; fixtures are excluded from the root test and lint runs).
 
 ## Sequencing
 
