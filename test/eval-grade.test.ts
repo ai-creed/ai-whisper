@@ -1,12 +1,13 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { gradeRun, parseVitestJson } from "../eval/runner/grade.ts";
 import { HarnessFailure, type TaskMeta } from "../eval/runner/types.ts";
 
-// Requires `pnpm eval -- toolchain` (Task 2): the toolchain lives outside the repo.
+// The real-tooling cases need `pnpm eval -- toolchain`: the toolchain lives outside the repo, so they skip without it.
 const toolchain = process.env.AI_WHISPER_EVAL_TOOLCHAIN ?? join(homedir(), ".ai-whisper-eval", "toolchain", "node_modules");
+const toolchainReady = existsSync(join(toolchain, ".bin", "vitest"));
 
 function fixture(ws: string, opts: { impl: string; breakTooling?: boolean }) {
 	mkdirSync(join(ws, "src"), { recursive: true });
@@ -21,7 +22,7 @@ function task(root: string, gradeSrc?: string): TaskMeta {
 	return { slug: "t", category: "feature", shape: "quick-task", dir, title: "t", taskSection: "x", scopeBullets: ["src/add.ts"], acceptanceSection: "x", approach: "x", budget: { wallClockSeconds: 1, tokenCap: 1 } };
 }
 
-describe("gradeRun", () => {
+describe.skipIf(!toolchainReady)("gradeRun (needs the eval toolchain: run `pnpm eval -- toolchain`)", () => {
 	let root: string;
 	afterEach(() => rmSync(root, { recursive: true, force: true }));
 
