@@ -204,10 +204,14 @@ export async function runPairArm(input: PairArmInput): Promise<RunOutcome> {
 			}
 		}
 	} finally {
-		trust?.release();
 		try { execFileSync(process.execPath, [input.whisperCli, "collab", "stop"], { cwd: input.workspaceDir, env, stdio: "ignore", timeout: 20_000 }); } catch { /* best effort */ }
 		for (const p of ptys) { try { p.kill(); } catch { /* already gone */ } }
+		// Release trust only after the mounts have actually exited: claude rewrites ~/.claude.json on shutdown and would
+		// otherwise re-add the project entry after we removed it.
+		const exitDeadline = Date.now() + 10_000;
+		while (exited.size < ptys.length && Date.now() < exitDeadline) await sleep(200);
 		await sleep(1000);
+		trust?.release();
 	}
 	const endedAt = now();
 
