@@ -1,0 +1,75 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { readLedger } from "../eval/runner/ledger.ts";
+import { buildManifest, loadManifest, runKey, saveManifest } from "../eval/runner/manifest.ts";
+import { DriftError } from "../eval/runner/pins.ts";
+import { runOne, type RunOneDeps } from "../eval/runner/run-one.ts";
+import { HarnessFailure, type Pins, type RunOutcome } from "../eval/runner/types.ts";
+import type { GradeResult } from "../eval/runner/grade.ts";
+
+const pins: Pins = { implementerModel: "impl", reviewerModel: "rev", evaluator: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, cliVersions: { whisper: "0.16.0+a", claude: "2.0.0", codex: "0.50.0" } };
+const outcome = (arm: "A" | "B" | "C"): RunOutcome => ({ stopReason: "completed", stopSource: null, usage: { inputTokens: 1, outputTokens: 1, cacheWriteTokens: 0, cacheReadTokens: 0 }, tokenSource: "metered", costUsd: 0.01, seconds: 1, rounds: arm === "C" ? 1 : null, escalated: false, reviewFindings: arm === "C" ? 0 : null, failureMode: null, reviewerModel: arm === "C" ? "rev" : null, evaluator: arm === "C" ? { ...pins.evaluator, fallbackUsed: false } : null, workspaceDir: "/ws" });
+const green: GradeResult = { hygiene: { typecheck: "pass", lint: "pass", tests: "pass" }, gradeTestsPassed: 1, gradeTestsTotal: 1, taskSuccess: true, logs: { typecheck: "", lint: "", tests: "", grade: "" } };
+
+function campaign(root: string) {
+	const tasksRoot = join(root, "tasks"); const dir = join(tasksRoot, "t1");
+	mkdirSync(join(dir, "fixture"), { recursive: true }); mkdirSync(join(dir, "grade"));
+	writeFileSync(join(dir, "task.md"), "# T\n\n## Task\nx\n\n## Scope\n- src/a.ts\n\n## Acceptance criteria\n- y\n");
+	writeFileSync(join(dir, "approach.md"), "a\n"); writeFileSync(join(dir, "budget.json"), JSON.stringify({ wallClockSeconds: 10, tokenCap: 10 }));
+	writeFileSync(join(dir, "meta.json"), JSON.stringify({ category: "feature", shape: "quick-task" })); writeFileSync(join(dir, "grade", "a.grade.test.ts"), "");
+	const campaignDir = join(root, "results", "c"); mkdirSync(campaignDir, { recursive: true });
+	saveManifest(campaignDir, buildManifest({ campaignId: "c", taskSlugs: ["t1"], trials: 1, seed: 1, pins, sourceStateRoot: root, now: "x" }));
+	return { campaignDir, tasksRoot };
+}
+const deps = (over: Partial<RunOneDeps> = {}): Partial<RunOneDeps> => ({
+	runSolo: async (i) => outcome(i.arm), runPair: async () => outcome("C"), grade: () => green,
+	prepare: (i) => ({ workspaceDir: i.dest, baselineSha: "0".repeat(40) }),
+	liveReviewerModel: () => "rev", liveEvaluator: () => pins.evaluator, liveCliVersions: () => pins.cliVersions, now: () => "2026-08-19T00:00:00.000Z", ...over,
+});
+
+describe("runOne", () => {
+	let root: string;
+	afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+	it("drives, grades, appends a row and marks the run done", async () => {
+		root = mkdtempSync(join(tmpdir(), "eval-runone-")); const { campaignDir, tasksRoot } = campaign(root);
+		const key = runKey({ task: "t1", arm: "A", trial: 1 });
+		let dest = "";
+		const r = await runOne({ campaignDir, tasksRoot, toolchainNodeModules: root, whisperCli: "x", workspaceRoot: join(root, "ws-outside"), key }, deps({ prepare: (i) => { dest = i.dest; return { workspaceDir: i.dest, baselineSha: "0".repeat(40) }; } }));
+		expect(r.status).toBe("done");
+		expect(dest).toBe(join(root, "ws-outside", "c", "t1", "A", "1", "attempt-1"));
+		expect(readLedger(campaignDir)[0]).toMatchObject({ campaign_id: "c", seed: 1, scheduled_per_arm: 1 });
+		expect(readLedger(campaignDir)).toHaveLength(1);
+		expect(loadManifest(campaignDir).runs.find((x) => runKey(x) === key)?.status).toBe("done");
+	});
+
+	it("refuses an Arm C run on pin drift before claiming it", async () => {
+		root = mkdtempSync(join(tmpdir(), "eval-runone-")); const { campaignDir, tasksRoot } = campaign(root);
+		const key = runKey({ task: "t1", arm: "C", trial: 1 });
+		await expect(runOne({ campaignDir, tasksRoot, toolchainNodeModules: root, whisperCli: "x", workspaceRoot: join(root, "ws-outside"), key }, deps({ liveEvaluator: () => ({ ...pins.evaluator, fallbackModel: "changed" }) }))).rejects.toBeInstanceOf(DriftError);
+		expect(loadManifest(campaignDir).runs.find((x) => runKey(x) === key)?.status).toBe("pending");
+		expect(readLedger(campaignDir)).toHaveLength(0);
+	});
+
+	it("first harness failure leaves the run reclaimable; second writes a harness_failure row", async () => {
+		root = mkdtempSync(join(tmpdir(), "eval-runone-")); const { campaignDir, tasksRoot } = campaign(root);
+		const key = runKey({ task: "t1", arm: "B", trial: 1 });
+		const d = deps({ runSolo: async () => { throw new HarnessFailure("ENOSPC"); } });
+		await expect(runOne({ campaignDir, tasksRoot, toolchainNodeModules: root, whisperCli: "x", workspaceRoot: join(root, "ws-outside"), key }, d)).rejects.toMatchObject({ retryable: true });
+		expect(loadManifest(campaignDir).runs.find((x) => runKey(x) === key)).toMatchObject({ status: "running", attempts: 1 });
+		const r = await runOne({ campaignDir, tasksRoot, toolchainNodeModules: root, whisperCli: "x", workspaceRoot: join(root, "ws-outside"), key }, d);
+		expect(r.status).toBe("failed");
+		expect(r.row?.stop_reason).toBe("harness_failure");
+		expect(loadManifest(campaignDir).runs.find((x) => runKey(x) === key)).toMatchObject({ status: "failed", attempts: 2 });
+	});
+
+	it("an Arm C product-stack failure is an unsuccessful run even when the workspace grades green, and not a harness failure", async () => {
+		root = mkdtempSync(join(tmpdir(), "eval-runone-")); const { campaignDir, tasksRoot } = campaign(root);
+		const key = runKey({ task: "t1", arm: "C", trial: 1 });
+		const r = await runOne({ campaignDir, tasksRoot, toolchainNodeModules: root, whisperCli: "x", workspaceRoot: join(root, "ws-outside"), key }, deps({ runPair: async () => ({ ...outcome("C"), stopReason: "agent_failure", failureMode: "mount_bind_timeout" }), grade: () => green }));
+		expect(r.status).toBe("done");
+		expect(r.row).toMatchObject({ stop_reason: "agent_failure", failure_mode: "mount_bind_timeout", task_success: false, grade_tests_passed: 1 });
+	});
+});
