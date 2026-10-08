@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, wri
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { computePairCost, runPairArm } from "../eval/runner/arms/pair.ts";
+import { MAX_SOCKET_PATH, computePairCost, runPairArm, turnEventSocketPathLength } from "../eval/runner/arms/pair.ts";
 import type { TaskMeta } from "../eval/runner/types.ts";
 
 const task: TaskMeta = { slug: "t", category: "feature", shape: "quick-task", dir: "/t", title: "T", taskSection: "do", scopeBullets: ["src/a.ts"], acceptanceSection: "- ok", approach: "plan", budget: { wallClockSeconds: 30, tokenCap: 1_000_000 } };
@@ -39,6 +39,7 @@ if (cmd === "collab" && sub === "mount") {
   db.close(); process.stdin.resume();
   setInterval(() => { const d = openDatabase(dbPath); d.prepare("UPDATE broker_daemon SET last_heartbeat_at = ?").run(new Date().toISOString()); d.close(); }, 5000);
   process.on("SIGTERM", () => process.exit(0));
+  if (process.env.FAKE_MOUNT_EXIT === "1") setTimeout(() => process.exit(1), 300); // the mount crashes after binding
 } else if (cmd === "workflow" && sub === "start" && process.env.FAKE_WF_NO_ROW === "1") {
   db.close(); console.log("Workflow started: wf_1");
 } else if (cmd === "workflow" && sub === "start") {
@@ -72,25 +73,29 @@ describe("computePairCost", () => {
 
 describe("runPairArm", () => {
 	let root: string;
-	afterEach(() => rmSync(root, { recursive: true, force: true }));
+	// State roots must be SHORT: the real mount listens on a Unix socket under them and macOS caps socket paths at
+	// 104 bytes, which the driver now enforces — so the tests cannot put them under the (long) macOS tmpdir.
+	const stateDirs: string[] = [];
+	const shortStateRoot = (): string => { const d = mkdtempSync("/tmp/aiwe-"); stateDirs.push(d); return join(d, "state"); };
+	afterEach(() => { rmSync(root, { recursive: true, force: true }); for (const d of stateDirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
 
 	it("mounts, starts, detects done, and records an estimated-usage row when no transcripts exist", async () => {
 		root = mkdtempSync(join(tmpdir(), "eval-pair-"));
 		const ws = join(root, "ws"); mkdirSync(ws);
-		const out = await runPairArm({ task, workspaceDir: ws, runDir: join(root, "run"), stateRoot: join(root, "state"), implementerModel: "m-impl", reviewerModel: "m-rev", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: join(root, "no-such"), whisperCli: fakeWhisper(root), pollMs: 100, homeDir: join(root, "home"), pricing: {} });
+		const out = await runPairArm({ task, workspaceDir: ws, runDir: join(root, "run"), stateRoot: shortStateRoot(), implementerModel: "m-impl", reviewerModel: "m-rev", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: join(root, "no-such"), whisperCli: fakeWhisper(root), pollMs: 100, homeDir: join(root, "home"), pricing: {} });
 		expect(out.stopReason).toBe("completed");
 		expect(out.tokenSource).toBe("estimated");
 		expect(out.costUsd).toBeNull();
 		expect(out.reviewerModel).toBe("m-rev");
 		expect(out.evaluator).toEqual({ provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null, fallbackUsed: false });
-		expect(existsSync(join(root, "state", "state.db"))).toBe(true); // the run's AI_WHISPER_STATE_ROOT is the external sibling, not under eval/results
+		expect(existsSync(join(stateDirs[0] as string, "state", "state.db"))).toBe(true); // the run's AI_WHISPER_STATE_ROOT is the external sibling, not under eval/results
 	}, 30_000);
 
 	it("finds the collab when the workspace path is a symlink alias (the real mount stores the realpath)", async () => {
 		root = mkdtempSync(join(tmpdir(), "eval-pair-"));
 		mkdirSync(join(root, "real-ws"));
 		symlinkSync(join(root, "real-ws"), join(root, "ws-alias"), "dir");
-		const out = await runPairArm({ task, workspaceDir: join(root, "ws-alias"), runDir: join(root, "run"), stateRoot: join(root, "state"), implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: fakeWhisper(root), pollMs: 100, homeDir: root, pricing: {} });
+		const out = await runPairArm({ task, workspaceDir: join(root, "ws-alias"), runDir: join(root, "run"), stateRoot: shortStateRoot(), implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: fakeWhisper(root), pollMs: 100, homeDir: root, pricing: {} });
 		expect(out.stopReason).toBe("completed");
 		expect(out.workspaceDir).toBe(join(root, "ws-alias"));
 	}, 30_000);
@@ -104,10 +109,27 @@ describe("runPairArm", () => {
 		await expect(runPairArm({ ...base, stateRoot: join(root, "alias", "results", "x", "state") })).rejects.toThrow(/outside the repository/);
 	});
 
+	it("a mount that dies after binding is a mount_exited product failure, not a cap stop", async () => {
+		root = mkdtempSync(join(tmpdir(), "eval-pair-"));
+		const ws = join(root, "ws"); mkdirSync(ws);
+		const out = await runPairArm({ task, workspaceDir: ws, runDir: join(root, "run"), stateRoot: shortStateRoot(), implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: fakeWhisper(root), env: { FAKE_MOUNT_EXIT: "1", FAKE_WF_STATUS: "running" }, pollMs: 100, homeDir: root, pricing: {} });
+		expect(out.stopReason).toBe("agent_failure");
+		expect(out.failureMode).toBe("mount_exited");
+		expect(out.seconds).toBeLessThan(20);
+	}, 30_000);
+
+	it("refuses a state root whose turn-event socket path would exceed the macOS limit", async () => {
+		root = mkdtempSync(join(tmpdir(), "eval-pair-"));
+		const ws = join(root, "ws"); mkdirSync(ws);
+		const longRoot = join(root, "a".repeat(80), "b".repeat(40));
+		expect(turnEventSocketPathLength(longRoot)).toBeGreaterThan(MAX_SOCKET_PATH);
+		await expect(runPairArm({ task, workspaceDir: ws, runDir: join(root, "run"), stateRoot: longRoot, implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: fakeWhisper(root), homeDir: root, pricing: {} })).rejects.toThrow(/socket path/);
+	});
+
 	it("classifies a max-rounds halt as escalated", async () => {
 		root = mkdtempSync(join(tmpdir(), "eval-pair-"));
 		const ws = join(root, "ws"); mkdirSync(ws);
-		const out = await runPairArm({ task, workspaceDir: ws, runDir: join(root, "run"), stateRoot: join(root, "state"), implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: fakeWhisper(root), env: { FAKE_WF_STATUS: "halted", FAKE_WF_HALT: "max-rounds-reached (5/5)" }, pollMs: 100, homeDir: root, pricing: {} });
+		const out = await runPairArm({ task, workspaceDir: ws, runDir: join(root, "run"), stateRoot: shortStateRoot(), implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: fakeWhisper(root), env: { FAKE_WF_STATUS: "halted", FAKE_WF_HALT: "max-rounds-reached (5/5)" }, pollMs: 100, homeDir: root, pricing: {} });
 		expect(out.stopReason).toBe("escalated");
 		expect(out.escalated).toBe(true);
 	}, 30_000);
@@ -115,7 +137,7 @@ describe("runPairArm", () => {
 	it("classifies an evaluator escalation as escalated from structured state, whatever the halt reason text", async () => {
 		root = mkdtempSync(join(tmpdir(), "eval-pair-"));
 		const ws = join(root, "ws"); mkdirSync(ws);
-		const out = await runPairArm({ task, workspaceDir: ws, runDir: join(root, "run"), stateRoot: join(root, "state"), implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: fakeWhisper(root), env: { FAKE_WF_STATUS: "halted", FAKE_WF_HALT: "low-confidence: reviewer verdict unclear", FAKE_WF_ESCALATED_PHASE: "1" }, pollMs: 100, homeDir: root, pricing: {} });
+		const out = await runPairArm({ task, workspaceDir: ws, runDir: join(root, "run"), stateRoot: shortStateRoot(), implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: fakeWhisper(root), env: { FAKE_WF_STATUS: "halted", FAKE_WF_HALT: "low-confidence: reviewer verdict unclear", FAKE_WF_ESCALATED_PHASE: "1" }, pollMs: 100, homeDir: root, pricing: {} });
 		expect(out.stopReason).toBe("escalated");
 		expect(out.escalated).toBe(true);
 		expect(out.failureMode).toBeNull();
@@ -124,7 +146,7 @@ describe("runPairArm", () => {
 	it("gives up on a workflow row that never appears as collab_missing, well before the wall clock", async () => {
 		root = mkdtempSync(join(tmpdir(), "eval-pair-"));
 		const ws = join(root, "ws"); mkdirSync(ws);
-		const out = await runPairArm({ task: { ...task, budget: { ...task.budget, wallClockSeconds: 30 } }, workspaceDir: ws, runDir: join(root, "run"), stateRoot: join(root, "state"), implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: fakeWhisper(root), env: { FAKE_WF_NO_ROW: "1" }, pollMs: 50, homeDir: root, pricing: {} });
+		const out = await runPairArm({ task: { ...task, budget: { ...task.budget, wallClockSeconds: 30 } }, workspaceDir: ws, runDir: join(root, "run"), stateRoot: shortStateRoot(), implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: fakeWhisper(root), env: { FAKE_WF_NO_ROW: "1" }, pollMs: 50, homeDir: root, pricing: {} });
 		expect(out.stopReason).toBe("agent_failure");
 		expect(out.failureMode).toBe("collab_missing");
 		expect(out.seconds).toBeLessThan(15);
@@ -135,7 +157,7 @@ describe("runPairArm", () => {
 		const ws = join(root, "ws"); mkdirSync(ws);
 		const never = join(root, "never.mjs");
 		writeFileSync(never, "#!/usr/bin/env node\nif (process.argv.includes(\"stop\")) process.exit(0);\nprocess.stdin.resume(); setInterval(() => {}, 1e9);\n"); chmodSync(never, 0o755);
-		const out = await runPairArm({ task, workspaceDir: ws, runDir: join(root, "run"), stateRoot: join(root, "state"), implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: never, pollMs: 100, bindTimeoutMs: 1500, homeDir: root, pricing: {} });
+		const out = await runPairArm({ task, workspaceDir: ws, runDir: join(root, "run"), stateRoot: shortStateRoot(), implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: never, pollMs: 100, bindTimeoutMs: 1500, homeDir: root, pricing: {} });
 		expect(out.stopReason).toBe("agent_failure");
 		expect(out.failureMode).toBe("mount_bind_timeout");
 	}, 30_000);

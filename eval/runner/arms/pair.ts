@@ -11,7 +11,13 @@ import { writePairArtifact } from "./pair-brief.ts";
 import { readBoundAgents, readCollabForWorkspace, readDaemonHeartbeat, readEvaluatorUsage, readWorkflow, readWorkflowProgress } from "./pair-state.ts";
 import { harvestClaudeUsage, harvestCodexUsage } from "./session-usage.ts";
 
-export const PRODUCT_FAILURE_MODES = ["mount_bind_timeout", "workflow_start_error", "daemon_dead", "workflow_halted", "collab_missing"] as const;
+export const PRODUCT_FAILURE_MODES = ["mount_bind_timeout", "mount_exited", "workflow_start_error", "daemon_dead", "workflow_halted", "collab_missing"] as const;
+
+/** macOS sun_path is 104 bytes including the NUL; the mount listens on `<stateRoot>/sockets/<16 hex>-<agent>.sock`. */
+export const MAX_SOCKET_PATH = 103;
+export function turnEventSocketPathLength(stateRoot: string): number {
+	return join(stateRoot, "sockets", `${"0".repeat(16)}-claude.sock`).length;
+}
 export type ProductFailureMode = (typeof PRODUCT_FAILURE_MODES)[number];
 
 /** The CLI's own default evaluator model when none is configured (relay-orchestrator-evaluator.ts); other providers have no priceable default. */
@@ -60,13 +66,13 @@ export interface PairArmInput {
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-function spawnMount(input: PairArmInput, agent: "claude" | "codex", model: string, env: NodeJS.ProcessEnv): pty.IPty {
+function spawnMount(input: PairArmInput, agent: "claude" | "codex", model: string, env: NodeJS.ProcessEnv, onExit: () => void): pty.IPty {
 	const log = createWriteStream(join(input.runDir, `mount-${agent}.log`));
 	const p = pty.spawn(process.execPath, [input.whisperCli, "collab", "mount", agent, "--workspace", input.workspaceDir, "--", "--model", model], {
 		name: "xterm-color", cols: 120, rows: 40, cwd: input.workspaceDir, env: env as Record<string, string>,
 	});
 	p.onData((d) => log.write(d));
-	p.onExit(() => log.end());
+	p.onExit(() => { log.end(); onExit(); });
 	return p;
 }
 
@@ -78,6 +84,9 @@ export async function runPairArm(input: PairArmInput): Promise<RunOutcome> {
 	const stateRoot = resolve(input.stateRoot); // as given; the guard below compares physical paths
 	try {
 		assertOutsideRepo("Arm C state root", stateRoot, DEFAULT_REPO_ROOT);
+		if (turnEventSocketPathLength(stateRoot) > MAX_SOCKET_PATH) {
+			throw new Error(`Arm C state root is too long: the mount's turn-event socket path would exceed ${MAX_SOCKET_PATH} bytes (macOS sun_path); use a shorter --workspace-root. Got ${stateRoot}`);
+		}
 	} catch (e) {
 		throw new HarnessFailure((e as Error).message, e);
 	}
@@ -102,6 +111,7 @@ export async function runPairArm(input: PairArmInput): Promise<RunOutcome> {
 	const startedAt = now();
 	const deadline = startedAt + input.task.budget.wallClockSeconds * 1000;
 	const ptys: pty.IPty[] = [];
+	const exited = new Set<string>(); // mount processes that died while the run was live
 	let failureMode: ProductFailureMode | null = null;
 	let stopReason: RunOutcome["stopReason"] = "agent_failure";
 	let stopSource: RunOutcome["stopSource"] = null;
@@ -111,24 +121,27 @@ export async function runPairArm(input: PairArmInput): Promise<RunOutcome> {
 
 	// The real mount stores the realpath as collab.workspace_root; everything else keeps the path as given.
 	const physicalWorkspace = physicalPath(input.workspaceDir);
-	const waitBound = async (agent: string): Promise<boolean> => {
+	const waitBound = async (agent: string): Promise<"bound" | "exited" | "timeout"> => {
 		const until = Math.min(now() + bindTimeoutMs, deadline);
 		while (now() < until) {
+			if (exited.has(agent)) return "exited";
 			try {
 				const collab = readCollabForWorkspace(stateRoot, physicalWorkspace);
-				if (collab) { collabId = collab.collabId; if (readBoundAgents(stateRoot, collab.collabId).includes(agent)) return true; }
+				if (collab) { collabId = collab.collabId; if (readBoundAgents(stateRoot, collab.collabId).includes(agent)) return "bound"; }
 			} catch { /* DB not created yet */ }
 			await sleep(Math.min(pollMs, 500));
 		}
-		return false;
+		return exited.has(agent) ? "exited" : "timeout";
 	};
 
 	try {
-		ptys.push(spawnMount(input, "claude", input.implementerModel, env));
-		if (!(await waitBound("claude"))) { failureMode = "mount_bind_timeout"; }
+		ptys.push(spawnMount(input, "claude", input.implementerModel, env, () => exited.add("claude")));
+		const claudeBind = await waitBound("claude");
+		if (claudeBind !== "bound") failureMode = claudeBind === "exited" ? "mount_exited" : "mount_bind_timeout";
 		if (!failureMode) {
-			ptys.push(spawnMount(input, "codex", input.reviewerModel, env));
-			if (!(await waitBound("codex"))) failureMode = "mount_bind_timeout";
+			ptys.push(spawnMount(input, "codex", input.reviewerModel, env, () => exited.add("codex")));
+			const codexBind = await waitBound("codex");
+			if (codexBind !== "bound") failureMode = codexBind === "exited" ? "mount_exited" : "mount_bind_timeout";
 		}
 		if (!failureMode) {
 			let artifact: string;
@@ -153,6 +166,7 @@ export async function runPairArm(input: PairArmInput): Promise<RunOutcome> {
 			// Consecutive polls with no workflow row, no heartbeat row, or an unreadable DB: an ambiguous state, not a wait.
 			let anomalies = 0;
 			for (;;) {
+				if (exited.size > 0) { failureMode = "mount_exited"; break; }
 				if (now() >= deadline) { stopReason = "wall_clock_cap"; stopSource = "estimated"; break; }
 				let anomalous = false;
 				try {
