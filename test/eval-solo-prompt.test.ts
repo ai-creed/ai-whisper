@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SELF_REVIEW_PROTOCOL, composeSoloPrompt } from "../eval/runner/arms/solo-prompt.ts";
+import { SELF_REVIEW_PROTOCOL, SOLO_PREAMBLE, TOOLING_PRESERVATION_LINE, composeSoloPrompt } from "../eval/runner/arms/solo-prompt.ts";
 import type { TaskMeta } from "../eval/runner/types.ts";
 
 const task: TaskMeta = {
@@ -10,6 +10,9 @@ const task: TaskMeta = {
 };
 
 describe("composeSoloPrompt", () => {
+	it("builds the preamble from the shared tooling-preservation line", () => {
+		expect(SOLO_PREAMBLE).toContain(TOOLING_PRESERVATION_LINE);
+	});
 	it("embeds task.md content and approach.md verbatim for Arm A", () => {
 		const p = composeSoloPrompt(task, "A");
 		expect(p).toContain("# CSV: quoted fields");

@@ -1,7 +1,9 @@
 import type { TaskMeta } from "../types.ts";
 
+export const TOOLING_PRESERVATION_LINE = "Keep the project's existing tooling intact (package.json scripts, tsconfig, vitest and eslint config). Run the project's own `npm run typecheck`, `npm run lint` and `npm test` and make them pass before you stop.";
+
 export const SOLO_PREAMBLE = `You are working alone in the project at the current directory. No human will respond — never ask for confirmation, permission, or clarification; make the changes yourself.
-Implement the task below. Keep the project's existing tooling intact (package.json scripts, tsconfig, vitest and eslint config). Run the project's own \`npm run typecheck\`, \`npm run lint\` and \`npm test\` and make them pass before you stop. Commit your work with git when done.
+Implement the task below. ${TOOLING_PRESERVATION_LINE} Commit your work with git when done.
 
 `;
 
@@ -15,12 +17,24 @@ After you believe the implementation is complete, run a structured review of you
 4. End the cycle with one line in exactly this form: \`SELF-REVIEW CYCLE <n> COMPLETE: <k> findings\` (k = the number of FINDING lines in that cycle; 0 is valid).
 Repeat steps 1–4 for a maximum of 2 review-fix cycles, then stop. Do not start a third cycle.`;
 
+export function renderTaskSection(task: TaskMeta): string {
+	return `## Task\n${task.taskSection}`;
+}
+
+export function renderScopeBullets(task: TaskMeta): string {
+	return task.scopeBullets.map((p) => `- ${p}`).join("\n");
+}
+
+export function renderAcceptanceBody(task: TaskMeta): string {
+	return task.acceptanceSection;
+}
+
 export function renderTaskContent(task: TaskMeta): string {
 	const parts = [
 		`# ${task.title}`,
-		`## Task\n${task.taskSection}`,
-		`## Scope\n${task.scopeBullets.map((p) => `- ${p}`).join("\n")}`,
-		`## Acceptance criteria\n${task.acceptanceSection}`,
+		renderTaskSection(task),
+		`## Scope\n${renderScopeBullets(task)}`,
+		`## Acceptance criteria\n${renderAcceptanceBody(task)}`,
 	];
 	if (task.approach !== null) parts.push(`## Approved approach\n${task.approach.trim()}`);
 	return parts.join("\n\n");

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { validateTaskBrief } from "@ai-whisper/broker";
 import { afterEach, describe, expect, it } from "vitest";
 import { composeQuickTaskBrief, composeSddSpec, writePairArtifact } from "../eval/runner/arms/pair-brief.ts";
-import { renderTaskContent } from "../eval/runner/arms/solo-prompt.ts";
+import { renderAcceptanceBody, renderScopeBullets, renderTaskContent, renderTaskSection } from "../eval/runner/arms/solo-prompt.ts";
 import type { TaskMeta } from "../eval/runner/types.ts";
 
 const task: TaskMeta = {
@@ -22,9 +22,17 @@ describe("composeQuickTaskBrief", () => {
 	it("embeds approach.md verbatim and the task's scope bullets", () => {
 		const b = composeQuickTaskBrief(task);
 		expect(b).toContain("## Approved approach\nExtend the tokenizer state machine.");
-		expect(b).toContain("## Scope\n- `src/parse.ts`\n- `src/tokenize.ts`\n- `test/parse.test.ts`");
+		expect(b).toContain("## Scope\n- src/parse.ts\n- src/tokenize.ts\n- test/parse.test.ts");
 		expect(b).toContain("## Acceptance checks\n- parse handles quotes");
 		expect(b).toMatch(/^# Task: CSV: quoted fields/);
+	});
+	it("shares its Task, Scope and acceptance text byte-for-byte with the solo renderer", () => {
+		const brief = composeQuickTaskBrief(task);
+		const solo = renderTaskContent(task);
+		for (const part of [renderTaskSection(task), renderScopeBullets(task), renderAcceptanceBody(task)]) {
+			expect(brief).toContain(part);
+			expect(solo).toContain(part);
+		}
 	});
 });
 
