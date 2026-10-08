@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Read-heavy workflow phases now license harness-side parallel read subagents.** A canonical `WORKFLOW_READ_FANOUT_GUIDANCE` fragment rides every code-review handoff (SDD code-review, quick-task review, ralph chunk + acceptance reviews, bugfix fix review), the three deliberation Explorer research layers, and the bugfix diagnosis kickoff: read-only fan-out with synthesis before handback, writes and handbacks strictly serial, relay isolation intact. Deliberation Synthesis is deliberately excluded (composition, not breadth research). The `ai-whisper-deliberation-craft` (0.2.0) and `ai-whisper-code-review` (0.2.0) skills carry matching how-to sections.
+- **Pair-vs-solo evaluation kit (`eval/`).** A resumable 90-run campaign runner comparing a solo headless implementer, a solo implementer with a mandated self-review protocol, and the ai-whisper pair on 15 fresh TypeScript tasks with held-out mechanical grading, metered-vs-estimated token accounting, pinned reviewer/evaluator configuration with pre-spend drift refusal, and a ledger-reproducible `report.md`. Dev tooling only; nothing ships in the CLI package.
 
 ## [0.16.0] - 2026-07-24
 
