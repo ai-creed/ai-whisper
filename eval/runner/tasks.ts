@@ -11,6 +11,7 @@ export const TASK_LAYOUT_RULES: readonly string[] = [
 	"fixture/ has no node_modules (the runner links the shared toolchain)",
 	"no fixture file, task.md, or approach.md references eval/tasks or a grade/ path (held-out leak)",
 	"fixture/ contains no symbolic links (a link could alias grade/ or the repo; the copy drops them anyway)",
+	"task.md has no sections beyond Task/Scope/Acceptance criteria; Scope holds only single-bare-path bullets (annotations belong in ## Task)",
 ];
 
 const LEAK_RE = /eval\/tasks|\bgrade\//;
@@ -51,17 +52,21 @@ function section(lines: string[], name: string): string | null {
 	return text.length > 0 ? text : null;
 }
 
-function scopeBulletsFrom(text: string): string[] {
+function scopeBulletsFrom(text: string, violations: string[]): string[] {
 	const out: string[] = [];
 	for (const raw of text.split("\n")) {
+		if (raw.trim() === "") continue;
 		const m = /^\s*[-*]\s+(.+)$/.exec(raw);
-		if (!m) continue;
-		const first = (m[1] ?? "").trim().split(/\s+/)[0] ?? "";
-		const path = first.replace(/^`|`$/g, "");
-		if (path) out.push(path);
+		if (!m) { violations.push("Scope must contain only bullets"); continue; }
+		const text = (m[1] ?? "").trim();
+		const bare = /^`([^`\s]+)`$/.exec(text)?.[1] ?? (/^[^`\s]+$/.test(text) ? text : null);
+		if (bare === null) { violations.push(`Scope bullet must be a single bare path: ${text}`); continue; }
+		out.push(bare);
 	}
 	return out;
 }
+
+const ALLOWED_SECTIONS = new Set(["task", "scope", "acceptance criteria"]);
 
 export function parseTaskMd(content: string): { title: string; taskSection: string; scopeBullets: string[]; acceptanceSection: string } {
 	const lines = content.split(/\r?\n/);
@@ -75,9 +80,13 @@ export function parseTaskMd(content: string): { title: string; taskSection: stri
 	if (!taskSection) missing.push("## Task");
 	if (!scope) missing.push("## Scope");
 	if (!acceptanceSection) missing.push("## Acceptance criteria");
-	const scopeBullets = scope ? scopeBulletsFrom(scope) : [];
-	if (scope && scopeBullets.length === 0) missing.push("## Scope bullets");
-	if (missing.length > 0) throw new Error(`task.md is missing: ${missing.join(", ")}`);
+	const scopeBullets = scope ? scopeBulletsFrom(scope, missing) : [];
+	if (scope && scopeBullets.length === 0 && missing.length === 0) missing.push("## Scope bullets");
+	for (const l of lines) {
+		const h = /^#{2,3}\s+(.+?)\s*$/.exec(l.trim());
+		if (h && !ALLOWED_SECTIONS.has((h[1] ?? "").toLowerCase())) missing.push(`unexpected section: ${h[1]}`);
+	}
+	if (missing.length > 0) throw new Error(`task.md is invalid: ${missing.join(", ")}`);
 	return { title, taskSection: taskSection as string, scopeBullets, acceptanceSection: acceptanceSection as string };
 }
 

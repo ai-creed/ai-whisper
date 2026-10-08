@@ -43,6 +43,18 @@ describe("parseTaskMd", () => {
 	});
 });
 
+describe("parseTaskMd strictness", () => {
+	it("rejects annotated scope bullets, stray scope text and extra sections", () => {
+		const bad = "# T\n\n## Task\nx\n\n## Scope\n- `src/a.ts` — entry point\n- src/b.ts src/c.ts\nstray text\n\n## Notes\nhi\n\n## Acceptance criteria\n- ok\n";
+		let msg = "";
+		try { parseTaskMd(bad); } catch (e) { msg = (e as Error).message; }
+		expect(msg).toContain("Scope bullet must be a single bare path: `src/a.ts` — entry point");
+		expect(msg).toContain("Scope bullet must be a single bare path: src/b.ts src/c.ts");
+		expect(msg).toContain("Scope must contain only bullets");
+		expect(msg).toContain("unexpected section: Notes");
+	});
+});
+
 describe("loadTask / discoverTasks", () => {
 	let root: string;
 	afterEach(() => rmSync(root, { recursive: true, force: true }));

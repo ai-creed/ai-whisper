@@ -8,7 +8,7 @@ Implement the task below. Keep the project's existing tooling intact (package.js
 export const SELF_REVIEW_PROTOCOL = `
 
 --- Self-review protocol ---
-After you believe the implementation is complete, run a structured review of your own diff (\`git diff\` against the baseline commit) against the acceptance criteria above:
+After you believe the implementation is complete, run a structured review of your own diff (\`git diff\` against the \`fixture baseline\` commit (the first commit in \`git log\`)) against the acceptance criteria above:
 1. For each acceptance criterion, state whether the diff satisfies it and cite the code that does.
 2. List concrete findings: missed criteria, edge cases the criteria imply but your code does not handle, failing or missing tests, tooling you changed. Write each finding in your reply on its own line in exactly this form: \`FINDING: <one sentence>\`.
 3. Fix every finding, re-run typecheck, lint and tests, and commit.
