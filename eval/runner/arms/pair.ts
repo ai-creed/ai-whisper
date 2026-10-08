@@ -138,10 +138,10 @@ export async function runPairArm(input: PairArmInput): Promise<RunOutcome> {
 				throw new HarnessFailure(`could not write pair artifact: ${(e as Error).message}`, e);
 			}
 			try {
-				const out = execFileSync(process.execPath, [input.whisperCli, "workflow", "start", "--type", input.task.shape, "--spec", artifact, "--implementer", "claude", "--reviewer", "codex"], { cwd: input.workspaceDir, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+				const out = execFileSync(process.execPath, [input.whisperCli, "workflow", "start", "--type", input.task.shape, "--spec", artifact, "--implementer", "claude", "--reviewer", "codex"], { cwd: input.workspaceDir, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 60_000 });
 				workflowId = /Workflow started: (wf_[a-z0-9]+)/.exec(out)?.[1] ?? null;
 				if (!workflowId) failureMode = "workflow_start_error";
-			} catch { failureMode = "workflow_start_error"; }
+			} catch { failureMode = "workflow_start_error"; /* non-zero exit or the 60 s timeout */ }
 		}
 		if (!failureMode && workflowId && !collabId) failureMode = "collab_missing";
 		if (!failureMode && workflowId && collabId) {
