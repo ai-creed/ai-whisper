@@ -210,6 +210,12 @@ export async function runPairArm(input: PairArmInput): Promise<RunOutcome> {
 		// otherwise re-add the project entry after we removed it.
 		const exitDeadline = Date.now() + 10_000;
 		while (exited.size < ptys.length && Date.now() < exitDeadline) await sleep(200);
+		if (exited.size < ptys.length) {
+			// A mount that ignores the pty hang-up (claude keeps running and flushes its config late) is force-killed.
+			for (const p of ptys) { try { p.kill("SIGKILL"); } catch { /* already gone */ } }
+			const killDeadline = Date.now() + 5_000;
+			while (exited.size < ptys.length && Date.now() < killDeadline) await sleep(200);
+		}
 		await sleep(1000);
 		trust?.release();
 	}
