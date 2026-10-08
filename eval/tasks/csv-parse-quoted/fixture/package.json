@@ -1,0 +1,10 @@
+{
+	"name": "csv-parse-quoted",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"typecheck": "tsc -p tsconfig.json",
+		"lint": "eslint .",
+		"test": "vitest run --exclude __grade__"
+	}
+}
