@@ -16,8 +16,9 @@ export const DEFAULT_REPO_ROOT = resolve(import.meta.dirname, "..", "..");
 export function prepareWorkspace(input: { task: TaskMeta; dest: string; toolchainNodeModules: string; repoRoot?: string }): { workspaceDir: string; baselineSha: string } {
 	const repoRoot = input.repoRoot ?? DEFAULT_REPO_ROOT;
 	const dest = resolve(input.dest); // as given (not realpath'd): callers and the manifest refer to this string
+	const toolchain = resolve(input.toolchainNodeModules); // the guarded path and the link target must be the same absolute string
 	assertOutsideRepo("workspace", dest, repoRoot);
-	assertOutsideRepo("toolchain", input.toolchainNodeModules, repoRoot); // a workspace's node_modules symlink must not resolve into the repo
+	assertOutsideRepo("toolchain", toolchain, repoRoot); // a workspace's node_modules symlink must not resolve into the repo
 	mkdirSync(dest, { recursive: true });
 	cpSync(join(input.task.dir, "fixture"), dest, {
 		recursive: true,
@@ -27,7 +28,7 @@ export function prepareWorkspace(input: { task: TaskMeta; dest: string; toolchai
 		// inspected, not its target.
 		filter: (src) => !/(^|[\\/])node_modules([\\/]|$)/.test(src) && !lstatSync(src).isSymbolicLink(),
 	});
-	symlinkSync(input.toolchainNodeModules, join(dest, "node_modules"), "dir");
+	symlinkSync(toolchain, join(dest, "node_modules"), "dir");
 	writeFileSync(join(dest, ".gitignore"), "node_modules/\n.ai-whisper/\n");
 	git(dest, ["init", "-q", "-b", "main"]);
 	git(dest, ["add", "-A"]);

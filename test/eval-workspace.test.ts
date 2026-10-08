@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { prepareWorkspace } from "../eval/runner/workspace.ts";
 import type { TaskMeta } from "../eval/runner/types.ts";
@@ -40,6 +40,14 @@ describe("prepareWorkspace", () => {
 		const { workspaceDir } = prepareWorkspace({ task: { slug: "t", dir: taskDir } as TaskMeta, dest, toolchainNodeModules: root, repoRoot: join(root, "repo") });
 		expect(workspaceDir).toBe(dest);
 		expect(existsSync(join(root, "real", "ws", ".gitignore"))).toBe(true);
+	});
+	it("resolves a relative toolchain path so the link target is the guarded absolute path", () => {
+		root = mkdtempSync(join(tmpdir(), "eval-ws-"));
+		const taskDir = join(root, "task"); mkdirSync(join(taskDir, "fixture"), { recursive: true });
+		const toolchainDir = join(root, "toolchain-nm"); mkdirSync(toolchainDir);
+		const dest = join(root, "ws");
+		prepareWorkspace({ task: { slug: "t", dir: taskDir } as TaskMeta, dest, toolchainNodeModules: relative(process.cwd(), toolchainDir) });
+		expect(readlinkSync(join(dest, "node_modules"))).toBe(resolve(toolchainDir));
 	});
 	it("refuses a destination inside the repository (held-out isolation)", () => {
 		root = mkdtempSync(join(tmpdir(), "eval-ws-"));
