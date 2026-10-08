@@ -155,7 +155,7 @@ export async function runPairArm(input: PairArmInput): Promise<RunOutcome> {
 					const wf = readWorkflow(stateRoot, workflowId);
 					if (wf?.status === "done") { stopReason = "completed"; break; }
 					if (wf?.status === "halted") {
-						if (/max-rounds|escalat/i.test(wf.haltReason ?? "")) { stopReason = "escalated"; escalated = true; }
+						if (readWorkflowProgress(stateRoot, workflowId).escalated || /max-rounds|escalat/i.test(wf.haltReason ?? "")) { stopReason = "escalated"; escalated = true; }
 						else failureMode = "workflow_halted";
 						break;
 					}

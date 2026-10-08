@@ -15,8 +15,9 @@ const repoRoot = join(import.meta.dirname, "..");
  * AI_WHISPER_STATE_ROOT/state.db using the real broker migrations (storing the
  * realpath of --workspace as the real mount does), refreshes the
  * daemon heartbeat every 5 s, and stays alive; `workflow start` inserts a workflow
- * row with the status given by FAKE_WF_STATUS and prints the real "Workflow started:"
- * line; anything with `stop` in argv exits 0 immediately.
+ * row with the status given by FAKE_WF_STATUS (plus, with FAKE_WF_ESCALATED_PHASE=1, an
+ * escalated phase and chain as the broker's escalate path writes them) and prints the
+ * real "Workflow started:" line; anything with `stop` in argv exits 0 immediately.
  */
 function fakeWhisper(dir: string): string {
 	const p = join(dir, "fake-whisper.mjs");
@@ -41,6 +42,10 @@ if (cmd === "collab" && sub === "mount") {
 } else if (cmd === "workflow" && sub === "start") {
   db.prepare("INSERT INTO workflows (workflow_id, collab_id, workflow_type, spec_path, role_bindings, status, current_phase_index, halt_reason, workflow_context, created_at, updated_at) VALUES ('wf_1','c1','quick-task','x','{}',?,0,?, '{}', ?, ?)")
     .run(process.env.FAKE_WF_STATUS ?? "done", process.env.FAKE_WF_HALT ?? null, t, t);
+  if (process.env.FAKE_WF_ESCALATED_PHASE === "1") {
+    db.prepare("INSERT INTO relay_chains (chain_id, collab_id, status, current_round, max_rounds, created_at, updated_at) VALUES ('ch_1','c1','escalated',2,5,?,?)").run(t, t);
+    db.prepare("INSERT INTO workflow_phases (phase_run_id, workflow_id, phase_index, phase_name, chain_id, started_at, ended_at, outcome) VALUES ('p_1','wf_1',0,'implement-and-review','ch_1',?,?,'escalated')").run(t, t);
+  }
   db.close(); console.log("Workflow started: wf_1");
 } else { db.close(); }
 `);
@@ -103,6 +108,15 @@ describe("runPairArm", () => {
 		const out = await runPairArm({ task, workspaceDir: ws, runDir: join(root, "run"), stateRoot: join(root, "state"), implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: fakeWhisper(root), env: { FAKE_WF_STATUS: "halted", FAKE_WF_HALT: "max-rounds-reached (5/5)" }, pollMs: 100, homeDir: root, pricing: {} });
 		expect(out.stopReason).toBe("escalated");
 		expect(out.escalated).toBe(true);
+	}, 30_000);
+
+	it("classifies an evaluator escalation as escalated from structured state, whatever the halt reason text", async () => {
+		root = mkdtempSync(join(tmpdir(), "eval-pair-"));
+		const ws = join(root, "ws"); mkdirSync(ws);
+		const out = await runPairArm({ task, workspaceDir: ws, runDir: join(root, "run"), stateRoot: join(root, "state"), implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: fakeWhisper(root), env: { FAKE_WF_STATUS: "halted", FAKE_WF_HALT: "low-confidence: reviewer verdict unclear", FAKE_WF_ESCALATED_PHASE: "1" }, pollMs: 100, homeDir: root, pricing: {} });
+		expect(out.stopReason).toBe("escalated");
+		expect(out.escalated).toBe(true);
+		expect(out.failureMode).toBeNull();
 	}, 30_000);
 
 	it("reports mount_bind_timeout as an unsuccessful run, not a harness failure", async () => {

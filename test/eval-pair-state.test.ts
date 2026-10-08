@@ -32,7 +32,7 @@ describe("pair-state read-only queries", () => {
 		expect(readBoundAgents(root, "c1")).toEqual(["claude"]);
 		expect(readCollabForWorkspace(root, "/ws")).toEqual({ collabId: "c1", status: "active" });
 		expect(readWorkflow(root, "wf1")).toEqual({ status: "halted", haltReason: "max-rounds-reached (5/5)", currentPhaseIndex: 0 });
-		expect(readWorkflowProgress(root, "wf1")).toEqual({ rounds: 5, reviewFindings: 1, estimatedChars: 600, phases: [{ name: "implement-and-review", outcome: "escalated" }] });
+		expect(readWorkflowProgress(root, "wf1")).toEqual({ rounds: 5, reviewFindings: 1, estimatedChars: 600, phases: [{ name: "implement-and-review", outcome: "escalated" }], escalated: true });
 		const ev = readEvaluatorUsage(root, "wf1");
 		expect(ev.fallbackUsed).toBe(true);
 		expect(ev.calls).toBe(2);
@@ -45,5 +45,24 @@ describe("pair-state read-only queries", () => {
 		const db = openDatabase(join(root, "state.db")); applyMigrations(db); db.close();
 		expect(readWorkflow(root, "nope")).toBeNull();
 		expect(readCollabForWorkspace(root, "/none")).toBeNull();
+	});
+
+	it("flags escalation from structured state: an escalated phase outcome or an escalated phase chain", () => {
+		root = mkdtempSync(join(tmpdir(), "eval-state-"));
+		const db = openDatabase(join(root, "state.db")); applyMigrations(db);
+		const t = "2026-08-19T00:00:00.000Z";
+		db.prepare("INSERT INTO collab (collab_id, workspace_root, display_name, status, created_at, updated_at) VALUES (?,?,?,?,?,?)").run("c1", "/ws", "ws", "active", t, t);
+		const wf = db.prepare("INSERT INTO workflows (workflow_id, collab_id, workflow_type, spec_path, role_bindings, status, current_phase_index, halt_reason, workflow_context, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)");
+		const chain = db.prepare("INSERT INTO relay_chains (chain_id, collab_id, status, current_round, max_rounds, created_at, updated_at) VALUES (?,?,?,?,?,?,?)");
+		const phase = db.prepare("INSERT INTO workflow_phases (phase_run_id, workflow_id, phase_index, phase_name, chain_id, started_at, ended_at, outcome) VALUES (?,?,?,?,?,?,?,?)");
+		wf.run("wf-chain", "c1", "quick-task", "x", "{}", "halted", 0, "low-confidence: reviewer verdict unclear", "{}", t, t);
+		chain.run("ch-esc", "c1", "escalated", 2, 5, t, t);
+		phase.run("p-chain", "wf-chain", 0, "implement-and-review", "ch-esc", t, null, null);
+		wf.run("wf-plain", "c1", "quick-task", "x", "{}", "halted", 0, "canceled by operator", "{}", t, t);
+		chain.run("ch-ok", "c1", "active", 1, 5, t, t);
+		phase.run("p-plain", "wf-plain", 0, "implement-and-review", "ch-ok", t, null, null);
+		db.close();
+		expect(readWorkflowProgress(root, "wf-chain").escalated).toBe(true);
+		expect(readWorkflowProgress(root, "wf-plain").escalated).toBe(false);
 	});
 });

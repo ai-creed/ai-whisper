@@ -33,18 +33,21 @@ export function readWorkflow(stateRoot: string, workflowId: string): { status: s
 	});
 }
 
-export function readWorkflowProgress(stateRoot: string, workflowId: string): { rounds: number; reviewFindings: number; estimatedChars: number; phases: Array<{ name: string; outcome: string | null }> } {
+export function readWorkflowProgress(stateRoot: string, workflowId: string): { rounds: number; reviewFindings: number; estimatedChars: number; phases: Array<{ name: string; outcome: string | null }>; escalated: boolean } {
 	return withDb(stateRoot, (db) => {
 		const phases = db.prepare("SELECT phase_name, chain_id, outcome FROM workflow_phases WHERE workflow_id = ? ORDER BY phase_index, started_at").all(workflowId) as Array<{ phase_name: string; chain_id: string | null; outcome: string | null }>;
 		let rounds = 0;
+		// The broker's escalate path closes the phase as 'escalated' and marks its chain 'escalated'; halt_reason is free text.
+		let escalated = phases.some((p) => p.outcome === "escalated");
 		for (const p of phases) {
 			if (!p.chain_id) continue;
-			const c = db.prepare("SELECT current_round FROM relay_chains WHERE chain_id = ?").get(p.chain_id) as { current_round: number } | undefined;
+			const c = db.prepare("SELECT current_round, status FROM relay_chains WHERE chain_id = ?").get(p.chain_id) as { current_round: number; status: string } | undefined;
 			rounds += c?.current_round ?? 0;
+			if (c?.status === "escalated") escalated = true;
 		}
 		const findings = db.prepare("SELECT COUNT(*) AS n FROM relay_handoff WHERE workflow_id = ? AND handoff_step = 'review' AND orchestrator_verdict = 'findings'").get(workflowId) as { n: number };
 		const chars = db.prepare("SELECT COALESCE(SUM(length(request_text) + length(COALESCE(handback_text, ''))), 0) AS n FROM relay_handoff WHERE workflow_id = ?").get(workflowId) as { n: number };
-		return { rounds, reviewFindings: findings.n, estimatedChars: chars.n, phases: phases.map((p) => ({ name: p.phase_name, outcome: p.outcome })) };
+		return { rounds, reviewFindings: findings.n, estimatedChars: chars.n, phases: phases.map((p) => ({ name: p.phase_name, outcome: p.outcome })), escalated };
 	});
 }
 
