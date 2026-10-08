@@ -20,6 +20,7 @@ describe("eval/ repo wiring", () => {
 		const gi = readFileSync(join(root, ".gitignore"), "utf8");
 		expect(gi).toContain("eval/results/*/runs/");
 		expect(gi).toContain("eval/toolchain/node_modules/");
+		expect(gi).toContain("eval/results/dry-run-*/");
 	});
 	it("exposes the runner through a root script", () => {
 		const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { scripts: Record<string, string> };
