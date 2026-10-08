@@ -47,6 +47,15 @@ describe("commands", () => {
 		expect(md).toContain("## Primary metric");
 	});
 
+	it("init with a tasks filter schedules only those tasks", () => {
+		root = mkdtempSync(join(tmpdir(), "eval-cli-"));
+		const tasksRoot = join(root, "tasks"); writeTask(tasksRoot, "t1", "feature", "quick-task"); writeTask(tasksRoot, "t2", "bugfix", "quick-task");
+		const m = cmdInit({ campaignDir: join(root, "results", "c"), tasksRoot, trials: 1, seed: 5, implementerModel: "impl", reviewerModel: "rev", sourceStateRoot: root, cliVersions, evaluator, tasks: ["t1"] });
+		expect(m.runs).toHaveLength(3);
+		expect(new Set(m.runs.map((r) => r.task))).toEqual(new Set(["t1"]));
+		expect(() => cmdInit({ campaignDir: join(root, "results", "d"), tasksRoot, trials: 1, seed: 5, implementerModel: "impl", reviewerModel: "rev", sourceStateRoot: root, cliVersions, evaluator, tasks: ["nope"] })).toThrow(/nope/);
+	});
+
 	it("slice executes in manifest order; a pair run never reorders past its neighbours", async () => {
 		root = mkdtempSync(join(tmpdir(), "eval-cli-"));
 		const tasksRoot = join(root, "tasks"); writeTask(tasksRoot, "t1", "feature", "quick-task"); writeTask(tasksRoot, "t2", "bugfix", "quick-task");

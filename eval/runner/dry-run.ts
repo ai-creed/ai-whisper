@@ -10,6 +10,10 @@ import { DEFAULT_TOOLCHAIN_ROOT, ensureToolchain } from "./toolchain.ts";
 
 type Verdict = "approve" | "delivered" | "execution-pass";
 
+const DRY_MODEL = "fake-model";
+const DRY_CLI_VERSIONS = { whisper: "dry", claude: "0.0.0-dry", codex: "0.0.0-dry" };
+const DRY_EVALUATOR = { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null };
+
 const STEP_VERDICT: Record<string, Verdict> = { implement: "delivered", review: "approve", fix: "delivered", execute: "execution-pass" };
 
 function injectVerdicts(ctx: { workflowId: string; stateRoot: string; collabId: string }): void {
@@ -17,18 +21,26 @@ function injectVerdicts(ctx: { workflowId: string; stateRoot: string; collabId: 
 	const ro = new Database(sqlitePath, { readonly: true });
 	const daemon = ro.prepare("SELECT host, port FROM broker_daemon WHERE collab_id = ?").get(ctx.collabId) as { host: string; port: number } | undefined;
 	ro.close();
-	if (!daemon) return;
+	if (!daemon) throw new Error(`dry-run: no broker_daemon row for collab ${ctx.collabId}`);
 	const broker = createBrokerRuntime({ sqlitePath, host: daemon.host, port: daemon.port, runWorkflowDriver: false, runDiagnosticsSweep: false, runDaemonHeartbeat: false, runBrokerDaemonSweep: false });
 	const applied = new Set<string>();
 	const timer = setInterval(() => {
-		const wf = broker.control.getWorkflow(ctx.workflowId);
-		if (!wf || wf.status !== "running") { clearInterval(timer); return; }
-		const row = broker.db.prepare("SELECT handoff_id, handoff_step FROM relay_handoff WHERE workflow_id = ? ORDER BY created_at DESC LIMIT 1").get(ctx.workflowId) as { handoff_id: string; handoff_step: string } | undefined;
-		if (!row || applied.has(row.handoff_id)) return;
-		const verdict = STEP_VERDICT[row.handoff_step];
-		if (!verdict) return;
-		applied.add(row.handoff_id);
-		broker.control.applyOrchestratorVerdict({ handoffId: row.handoff_id, verdict, confidence: 0.9, reason: "eval-dry-run-injected", workspaceHeadSha: "0000000000000000000000000000000000000000", now: new Date().toISOString() });
+		try {
+			const wf = broker.control.getWorkflow(ctx.workflowId);
+			if (!wf || wf.status !== "running") {
+				clearInterval(timer);
+				try { void broker.stop(); } catch { /* best effort */ }
+				return;
+			}
+			const row = broker.db.prepare("SELECT handoff_id, handoff_step FROM relay_handoff WHERE workflow_id = ? ORDER BY created_at DESC LIMIT 1").get(ctx.workflowId) as { handoff_id: string; handoff_step: string } | undefined;
+			if (!row || applied.has(row.handoff_id)) return;
+			const verdict = STEP_VERDICT[row.handoff_step];
+			if (!verdict) return;
+			broker.control.applyOrchestratorVerdict({ handoffId: row.handoff_id, verdict, confidence: 0.9, reason: "eval-dry-run-injected", workspaceHeadSha: "0000000000000000000000000000000000000000", now: new Date().toISOString() });
+			applied.add(row.handoff_id);
+		} catch (e) {
+			console.error(`dry-run injector: ${e instanceof Error ? e.message : String(e)}; retrying`);
+		}
 	}, 300);
 	timer.unref();
 }
@@ -49,13 +61,12 @@ async function full(repoRoot: string): Promise<boolean> {
 	mkdirSync(campaignDir, { recursive: true });
 	const tasksRoot = join(repoRoot, "eval", "tasks");
 	cmdInit({
-		campaignDir, tasksRoot, trials: 1, seed: 1, implementerModel: "fake-model", reviewerModel: "fake-model", sourceStateRoot: campaignDir,
-		cliVersions: { whisper: "dry", claude: "0.0.0-dry", codex: "0.0.0-dry" },
-		evaluator: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null },
+		campaignDir, tasksRoot, trials: 1, seed: 1, implementerModel: DRY_MODEL, reviewerModel: DRY_MODEL, sourceStateRoot: campaignDir,
+		cliVersions: DRY_CLI_VERSIONS, evaluator: DRY_EVALUATOR, tasks: ["csv-parse-quoted"],
 	});
 	const dry = await prepareSliceDryRun(repoRoot);
 	const r = await cmdSlice({ campaignDir, tasksRoot, toolchainNodeModules: ensureToolchain({ repoRoot, toolchainRoot: DEFAULT_TOOLCHAIN_ROOT }), whisperCli: join(repoRoot, "packages", "cli", "dist", "bin", "whisper.js"), workspaceRoot: join(tmpdir(), "ai-whisper-eval-dry-run"), tasks: ["csv-parse-quoted"], parallelSolo: 2, dryRun: dry }, {
-		liveReviewerModel: () => "fake-model", liveEvaluator: () => ({ provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }), liveCliVersions: () => ({ whisper: "dry", claude: "0.0.0-dry", codex: "0.0.0-dry" }),
+		liveReviewerModel: () => DRY_MODEL, liveEvaluator: () => DRY_EVALUATOR, liveCliVersions: () => DRY_CLI_VERSIONS,
 	});
 	const rows = readLedger(campaignDir);
 	const problems: string[] = [];

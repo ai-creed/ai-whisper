@@ -13,10 +13,15 @@ import { discoverTasks, loadTask } from "./tasks.ts";
 import type { Arm, CliVersions, EvaluatorSnapshot, Manifest, RunOutcome } from "./types.ts";
 import { prepareWorkspace } from "./workspace.ts";
 
-export function cmdInit(o: { campaignDir: string; tasksRoot: string; trials: number; seed: number; implementerModel: string; reviewerModel: string; sourceStateRoot: string; cliVersions?: CliVersions; evaluator?: EvaluatorSnapshot }): Manifest {
+export function cmdInit(o: { campaignDir: string; tasksRoot: string; trials: number; seed: number; implementerModel: string; reviewerModel: string; sourceStateRoot: string; cliVersions?: CliVersions; evaluator?: EvaluatorSnapshot; tasks?: string[] }): Manifest {
 	if (existsSync(manifestPath(o.campaignDir))) throw new Error(`${manifestPath(o.campaignDir)} already exists; pick another --campaign id`);
 	mkdirSync(o.campaignDir, { recursive: true });
-	const tasks = discoverTasks(o.tasksRoot);
+	let tasks = discoverTasks(o.tasksRoot);
+	if (o.tasks) {
+		const missing = o.tasks.filter((slug) => !tasks.some((t) => t.slug === slug));
+		if (missing.length > 0) throw new Error(`unknown task slug(s): ${missing.join(", ")}`);
+		tasks = tasks.filter((t) => o.tasks?.includes(t.slug));
+	}
 	const m = buildManifest({
 		campaignId: o.campaignDir.split("/").pop() ?? "campaign", taskSlugs: tasks.map((t) => t.slug), trials: o.trials, seed: o.seed,
 		pins: { implementerModel: o.implementerModel, reviewerModel: o.reviewerModel, evaluator: o.evaluator ?? resolveEvaluatorSnapshot(o.sourceStateRoot), cliVersions: o.cliVersions ?? resolveCliVersions() },
