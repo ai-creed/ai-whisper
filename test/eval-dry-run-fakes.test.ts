@@ -3,6 +3,8 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { MAX_SOCKET_PATH, turnEventSocketPathLength } from "../eval/runner/arms/pair.ts";
+import { DRY_RUN_WORKSPACE_ROOT } from "../eval/runner/dry-run.ts";
 
 const fakes = join(import.meta.dirname, "../eval/runner/fakes");
 
@@ -31,5 +33,13 @@ describe("dry-run fakes", () => {
 		child.kill("SIGTERM");
 		const code = await new Promise<number | null>((r) => child.once("exit", (c) => r(c)));
 		expect(code).toBe(0);
+	});
+});
+
+describe("dry-run roots", () => {
+	it("derives an Arm C state root whose socket path fits the macOS limit", () => {
+		// run-one puts the state root at <workspaceRoot>/../state/<12 hex>
+		const stateRoot = join(DRY_RUN_WORKSPACE_ROOT, "..", "state", "0123456789ab");
+		expect(turnEventSocketPathLength(stateRoot)).toBeLessThanOrEqual(MAX_SOCKET_PATH);
 	});
 });

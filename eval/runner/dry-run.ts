@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { chmodSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { createBrokerRuntime } from "@ai-whisper/broker";
 import { cmdInit, cmdReport, cmdSlice } from "./commands.ts";
@@ -9,6 +9,12 @@ import type { RunOneInput } from "./run-one.ts";
 import { DEFAULT_TOOLCHAIN_ROOT, ensureToolchain } from "./toolchain.ts";
 
 type Verdict = "approve" | "delivered" | "execution-pass";
+
+/**
+ * Same default root as the CLI. The macOS temp dir is ~50 chars deep, and the Arm C state root derived from the
+ * workspace root must keep the mount's Unix socket path under the 104-byte sun_path limit.
+ */
+export const DRY_RUN_WORKSPACE_ROOT = join(homedir(), ".ai-whisper-eval", "workspaces");
 
 const DRY_MODEL = "fake-model";
 const DRY_CLI_VERSIONS = { whisper: "dry", claude: "0.0.0-dry", codex: "0.0.0-dry" };
@@ -65,7 +71,7 @@ async function full(repoRoot: string): Promise<boolean> {
 		cliVersions: DRY_CLI_VERSIONS, evaluator: DRY_EVALUATOR, tasks: ["csv-parse-quoted"],
 	});
 	const dry = await prepareSliceDryRun(repoRoot);
-	const r = await cmdSlice({ campaignDir, tasksRoot, toolchainNodeModules: ensureToolchain({ repoRoot, toolchainRoot: DEFAULT_TOOLCHAIN_ROOT }), whisperCli: join(repoRoot, "packages", "cli", "dist", "bin", "whisper.js"), workspaceRoot: join(tmpdir(), "ai-whisper-eval-dry-run"), tasks: ["csv-parse-quoted"], parallelSolo: 2, dryRun: dry }, {
+	const r = await cmdSlice({ campaignDir, tasksRoot, toolchainNodeModules: ensureToolchain({ repoRoot, toolchainRoot: DEFAULT_TOOLCHAIN_ROOT }), whisperCli: join(repoRoot, "packages", "cli", "dist", "bin", "whisper.js"), workspaceRoot: DRY_RUN_WORKSPACE_ROOT, tasks: ["csv-parse-quoted"], parallelSolo: 2, dryRun: dry }, {
 		liveReviewerModel: () => DRY_MODEL, liveEvaluator: () => DRY_EVALUATOR, liveCliVersions: () => DRY_CLI_VERSIONS,
 	});
 	const rows = readLedger(campaignDir);
