@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ResolvedEvaluatorConfig } from "../packages/cli/src/runtime/evaluator-config.ts";
 import { checkPinDrift, resolveCliVersions, snapshotEvaluator } from "../eval/runner/pins.ts";
@@ -42,15 +43,21 @@ describe("checkPinDrift", () => {
 
 describe("resolveCliVersions", () => {
 	it("parses semver from the binaries and stamps whisper with the git sha", () => {
+		const repoRoot = join(import.meta.dirname, "..");
+		let gitArgs: string[] = [];
 		const exec = (cmd: string, args: string[]): string => {
+			if (cmd === "git" && args.includes("log")) {
+				gitArgs = args;
+				return "abc1234";
+			}
 			if (cmd === "claude") return "2.0.14 (Claude Code)";
 			if (cmd === "codex") return "codex-cli 0.50.0";
-			if (cmd === "git" && args[0] === "rev-parse") return "abc1234";
 			throw new Error(`unexpected ${cmd}`);
 		};
-		const v = resolveCliVersions({ exec });
+		const v = resolveCliVersions({ exec, repoRoot });
 		expect(v.claude).toBe("2.0.14");
 		expect(v.codex).toBe("0.50.0");
 		expect(v.whisper).toMatch(/^\d+\.\d+\.\d+\+abc1234$/);
+		expect(gitArgs).toEqual(expect.arrayContaining(["-C", repoRoot, "--", ".", ":!eval/results"]));
 	});
 });

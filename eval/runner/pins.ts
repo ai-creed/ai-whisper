@@ -47,7 +47,8 @@ export function resolveCliVersions(input: { exec?: (cmd: string, args: string[])
 	const exec = input.exec ?? defaultExec;
 	const repoRoot = input.repoRoot ?? join(import.meta.dirname, "..", "..");
 	const pkg = JSON.parse(readFileSync(join(repoRoot, "packages/cli/package.json"), "utf8")) as { version: string };
-	const sha = exec("git", ["rev-parse", "--short", "HEAD"]).trim();
+	// Results commits land between slices; they must not move the pin or every later drift check would fail.
+	const sha = exec("git", ["-C", repoRoot, "log", "-1", "--format=%h", "--", ".", ":!eval/results"]).trim();
 	return {
 		whisper: `${pkg.version}+${sha}`,
 		claude: semverOf(exec("claude", ["--version"]), "claude"),
