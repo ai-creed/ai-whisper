@@ -4,7 +4,7 @@ import { isInside } from "../paths.ts";
 const DROPPED_KEYS = new Set(["INIT_CWD", "PWD", "OLDPWD", "CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT"]);
 
 /**
- * CLAUDE_CODE_*/CLAUDECODE are dropped too: a mounted claude inheriting CLAUDE_CODE_CHILD_SESSION from a Claude Code
+ * CLAUDE_CODE_ variables and CLAUDECODE are dropped too: a mounted claude inheriting CLAUDE_CODE_CHILD_SESSION from a Claude Code
  * parent (e.g. a runner launched from inside Claude Code) disables its transcript saving, which un-meters Arm C.
  *
  * The child env for an agent session: the runner is launched via `pnpm eval`, so its env carries
