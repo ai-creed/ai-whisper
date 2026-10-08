@@ -124,6 +124,7 @@ Tokens come in two kinds. Arms A and B are metered from the agents' own usage re
 Nothing an agent can reach may resolve into the repository, because the repository contains the held-out tests.
 
 - `--workspace-root` and `--toolchain-root` must point outside the repository. The runner refuses otherwise. The checks compare physical (symlink-resolved) paths, so a symlinked directory that lands in the repo is rejected.
+- Before mounting, the pair driver grants folder trust for the workspace in `~/.claude.json` (`projects[<path>].hasTrustDialogAccepted`) and `~/.codex/config.toml` (`[projects."<path>"] trust_level = "trusted"`), for both the given and the symlink-resolved path, and removes exactly what it added when the run ends; without this both CLIs block on a first-run "trust this folder?" dialog and the kickoff handoff lands on it.
 - Workspaces and their `node_modules` symlink to the toolchain live under the workspace root; each Arm C state root is the short sibling `<workspace-root>/../state/<12-hex id>` (recorded in the run dir's `state-path.txt`), because the mount listens on a Unix socket under it and macOS caps socket paths at 104 bytes — a state root beside the long workspace path crashed both mounts at startup. Keep `--workspace-root` short.
 - Fixtures may not contain symlinks, and fixtures and task text may not reference `eval/tasks` or `grade/`.
 

@@ -3,6 +3,7 @@ import { chmodSync, copyFileSync, createWriteStream, existsSync, mkdirSync } fro
 import { join, resolve } from "node:path";
 import * as pty from "node-pty";
 import { assertOutsideRepo, physicalPath } from "../paths.ts";
+import { DEFAULT_TRUST_CONFIG, trustWorkspace, type TrustConfig, type TrustGrant } from "./agent-trust.ts";
 import { costFor, loadPricing, type PricingTable } from "../pricing.ts";
 import { HarnessFailure, ZERO_USAGE, addUsage, estimateTokensFromChars, type EvaluatorSnapshot, type RunOutcome, type TaskMeta, type UsageTotals } from "../types.ts";
 import { DEFAULT_REPO_ROOT } from "../workspace.ts";
@@ -61,6 +62,7 @@ export interface PairArmInput {
 	bindTimeoutMs?: number;
 	hooks?: { onWorkflowStarted?: (ctx: { workflowId: string; stateRoot: string; collabId: string }) => void };
 	homeDir?: string;
+	trustConfig?: TrustConfig;          // where the CLIs keep folder-trust state (tests point this at temp files)
 	now?: () => number;
 }
 
@@ -112,6 +114,7 @@ export async function runPairArm(input: PairArmInput): Promise<RunOutcome> {
 	const deadline = startedAt + input.task.budget.wallClockSeconds * 1000;
 	const ptys: pty.IPty[] = [];
 	const exited = new Set<string>(); // mount processes that died while the run was live
+	let trust: TrustGrant | null = null;
 	let failureMode: ProductFailureMode | null = null;
 	let stopReason: RunOutcome["stopReason"] = "agent_failure";
 	let stopSource: RunOutcome["stopSource"] = null;
@@ -135,6 +138,8 @@ export async function runPairArm(input: PairArmInput): Promise<RunOutcome> {
 	};
 
 	try {
+		// Both CLIs block on a first-run "trust this folder?" dialog for a never-seen directory; grant it up front.
+		trust = trustWorkspace([input.workspaceDir, physicalWorkspace], input.trustConfig ?? DEFAULT_TRUST_CONFIG);
 		ptys.push(spawnMount(input, "claude", input.implementerModel, env, () => exited.add("claude")));
 		const claudeBind = await waitBound("claude");
 		if (claudeBind !== "bound") failureMode = claudeBind === "exited" ? "mount_exited" : "mount_bind_timeout";
@@ -198,6 +203,7 @@ export async function runPairArm(input: PairArmInput): Promise<RunOutcome> {
 			}
 		}
 	} finally {
+		trust?.release();
 		try { execFileSync(process.execPath, [input.whisperCli, "collab", "stop"], { cwd: input.workspaceDir, env, stdio: "ignore", timeout: 20_000 }); } catch { /* best effort */ }
 		for (const p of ptys) { try { p.kill(); } catch { /* already gone */ } }
 		await sleep(1000);

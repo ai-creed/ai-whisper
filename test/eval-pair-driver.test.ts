@@ -1,6 +1,6 @@
 // test/eval-pair-driver.test.ts
 // Requires `pnpm build`: the fake whisper imports the built broker (packages/broker/dist/index.js).
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -82,20 +82,23 @@ describe("runPairArm", () => {
 	it("mounts, starts, detects done, and records an estimated-usage row when no transcripts exist", async () => {
 		root = mkdtempSync(join(tmpdir(), "eval-pair-"));
 		const ws = join(root, "ws"); mkdirSync(ws);
-		const out = await runPairArm({ task, workspaceDir: ws, runDir: join(root, "run"), stateRoot: shortStateRoot(), implementerModel: "m-impl", reviewerModel: "m-rev", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: join(root, "no-such"), whisperCli: fakeWhisper(root), pollMs: 100, homeDir: join(root, "home"), pricing: {} });
+		const out = await runPairArm({ task, workspaceDir: ws, runDir: join(root, "run"), stateRoot: shortStateRoot(), trustConfig: { claudeJson: join(root, ".claude.json"), codexToml: join(root, "codex.toml") }, implementerModel: "m-impl", reviewerModel: "m-rev", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: join(root, "no-such"), whisperCli: fakeWhisper(root), pollMs: 100, homeDir: join(root, "home"), pricing: {} });
 		expect(out.stopReason).toBe("completed");
 		expect(out.tokenSource).toBe("estimated");
 		expect(out.costUsd).toBeNull();
 		expect(out.reviewerModel).toBe("m-rev");
 		expect(out.evaluator).toEqual({ provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null, fallbackUsed: false });
-		expect(existsSync(join(stateDirs[0] as string, "state", "state.db"))).toBe(true); // the run's AI_WHISPER_STATE_ROOT is the external sibling, not under eval/results
+		expect(existsSync(join(stateDirs[0] as string, "state", "state.db"))).toBe(true);
+		// trust was granted for the mount and released afterwards (never left in the operator's configs)
+		expect(readFileSync(join(root, ".claude.json"), "utf8")).not.toContain(ws);
+		expect(readFileSync(join(root, "codex.toml"), "utf8")).not.toContain(ws); // the run's AI_WHISPER_STATE_ROOT is the external sibling, not under eval/results
 	}, 30_000);
 
 	it("finds the collab when the workspace path is a symlink alias (the real mount stores the realpath)", async () => {
 		root = mkdtempSync(join(tmpdir(), "eval-pair-"));
 		mkdirSync(join(root, "real-ws"));
 		symlinkSync(join(root, "real-ws"), join(root, "ws-alias"), "dir");
-		const out = await runPairArm({ task, workspaceDir: join(root, "ws-alias"), runDir: join(root, "run"), stateRoot: shortStateRoot(), implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: fakeWhisper(root), pollMs: 100, homeDir: root, pricing: {} });
+		const out = await runPairArm({ task, workspaceDir: join(root, "ws-alias"), runDir: join(root, "run"), stateRoot: shortStateRoot(), trustConfig: { claudeJson: join(root, ".claude.json"), codexToml: join(root, "codex.toml") }, implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: fakeWhisper(root), pollMs: 100, homeDir: root, pricing: {} });
 		expect(out.stopReason).toBe("completed");
 		expect(out.workspaceDir).toBe(join(root, "ws-alias"));
 	}, 30_000);
@@ -103,7 +106,7 @@ describe("runPairArm", () => {
 	it("refuses a state root inside the repository, including through a symlink alias", async () => {
 		root = mkdtempSync(join(tmpdir(), "eval-pair-"));
 		const ws = join(root, "ws"); mkdirSync(ws);
-		const base = { task, workspaceDir: ws, runDir: join(root, "run"), implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: fakeWhisper(root), homeDir: root, pricing: {} };
+		const base = { task, workspaceDir: ws, runDir: join(root, "run"), implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: fakeWhisper(root), homeDir: root, pricing: {}, trustConfig: { claudeJson: join(root, ".claude.json"), codexToml: join(root, "codex.toml") } };
 		await expect(runPairArm({ ...base, stateRoot: join(repoRoot, "eval", "results", "x", "state") })).rejects.toThrow(/outside the repository/);
 		symlinkSync(join(repoRoot, "eval"), join(root, "alias"), "dir");
 		await expect(runPairArm({ ...base, stateRoot: join(root, "alias", "results", "x", "state") })).rejects.toThrow(/outside the repository/);
@@ -112,7 +115,7 @@ describe("runPairArm", () => {
 	it("a mount that dies after binding is a mount_exited product failure, not a cap stop", async () => {
 		root = mkdtempSync(join(tmpdir(), "eval-pair-"));
 		const ws = join(root, "ws"); mkdirSync(ws);
-		const out = await runPairArm({ task, workspaceDir: ws, runDir: join(root, "run"), stateRoot: shortStateRoot(), implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: fakeWhisper(root), env: { FAKE_MOUNT_EXIT: "1", FAKE_WF_STATUS: "running" }, pollMs: 100, homeDir: root, pricing: {} });
+		const out = await runPairArm({ task, workspaceDir: ws, runDir: join(root, "run"), stateRoot: shortStateRoot(), trustConfig: { claudeJson: join(root, ".claude.json"), codexToml: join(root, "codex.toml") }, implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: fakeWhisper(root), env: { FAKE_MOUNT_EXIT: "1", FAKE_WF_STATUS: "running" }, pollMs: 100, homeDir: root, pricing: {} });
 		expect(out.stopReason).toBe("agent_failure");
 		expect(out.failureMode).toBe("mount_exited");
 		expect(out.seconds).toBeLessThan(20);
@@ -123,13 +126,13 @@ describe("runPairArm", () => {
 		const ws = join(root, "ws"); mkdirSync(ws);
 		const longRoot = join(root, "a".repeat(80), "b".repeat(40));
 		expect(turnEventSocketPathLength(longRoot)).toBeGreaterThan(MAX_SOCKET_PATH);
-		await expect(runPairArm({ task, workspaceDir: ws, runDir: join(root, "run"), stateRoot: longRoot, implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: fakeWhisper(root), homeDir: root, pricing: {} })).rejects.toThrow(/socket path/);
+		await expect(runPairArm({ task, workspaceDir: ws, runDir: join(root, "run"), stateRoot: longRoot, trustConfig: { claudeJson: join(root, ".claude.json"), codexToml: join(root, "codex.toml") }, implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: fakeWhisper(root), homeDir: root, pricing: {} })).rejects.toThrow(/socket path/);
 	});
 
 	it("classifies a max-rounds halt as escalated", async () => {
 		root = mkdtempSync(join(tmpdir(), "eval-pair-"));
 		const ws = join(root, "ws"); mkdirSync(ws);
-		const out = await runPairArm({ task, workspaceDir: ws, runDir: join(root, "run"), stateRoot: shortStateRoot(), implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: fakeWhisper(root), env: { FAKE_WF_STATUS: "halted", FAKE_WF_HALT: "max-rounds-reached (5/5)" }, pollMs: 100, homeDir: root, pricing: {} });
+		const out = await runPairArm({ task, workspaceDir: ws, runDir: join(root, "run"), stateRoot: shortStateRoot(), trustConfig: { claudeJson: join(root, ".claude.json"), codexToml: join(root, "codex.toml") }, implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: fakeWhisper(root), env: { FAKE_WF_STATUS: "halted", FAKE_WF_HALT: "max-rounds-reached (5/5)" }, pollMs: 100, homeDir: root, pricing: {} });
 		expect(out.stopReason).toBe("escalated");
 		expect(out.escalated).toBe(true);
 	}, 30_000);
@@ -137,7 +140,7 @@ describe("runPairArm", () => {
 	it("classifies an evaluator escalation as escalated from structured state, whatever the halt reason text", async () => {
 		root = mkdtempSync(join(tmpdir(), "eval-pair-"));
 		const ws = join(root, "ws"); mkdirSync(ws);
-		const out = await runPairArm({ task, workspaceDir: ws, runDir: join(root, "run"), stateRoot: shortStateRoot(), implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: fakeWhisper(root), env: { FAKE_WF_STATUS: "halted", FAKE_WF_HALT: "low-confidence: reviewer verdict unclear", FAKE_WF_ESCALATED_PHASE: "1" }, pollMs: 100, homeDir: root, pricing: {} });
+		const out = await runPairArm({ task, workspaceDir: ws, runDir: join(root, "run"), stateRoot: shortStateRoot(), trustConfig: { claudeJson: join(root, ".claude.json"), codexToml: join(root, "codex.toml") }, implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: fakeWhisper(root), env: { FAKE_WF_STATUS: "halted", FAKE_WF_HALT: "low-confidence: reviewer verdict unclear", FAKE_WF_ESCALATED_PHASE: "1" }, pollMs: 100, homeDir: root, pricing: {} });
 		expect(out.stopReason).toBe("escalated");
 		expect(out.escalated).toBe(true);
 		expect(out.failureMode).toBeNull();
@@ -146,7 +149,7 @@ describe("runPairArm", () => {
 	it("gives up on a workflow row that never appears as collab_missing, well before the wall clock", async () => {
 		root = mkdtempSync(join(tmpdir(), "eval-pair-"));
 		const ws = join(root, "ws"); mkdirSync(ws);
-		const out = await runPairArm({ task: { ...task, budget: { ...task.budget, wallClockSeconds: 30 } }, workspaceDir: ws, runDir: join(root, "run"), stateRoot: shortStateRoot(), implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: fakeWhisper(root), env: { FAKE_WF_NO_ROW: "1" }, pollMs: 50, homeDir: root, pricing: {} });
+		const out = await runPairArm({ task: { ...task, budget: { ...task.budget, wallClockSeconds: 30 } }, workspaceDir: ws, runDir: join(root, "run"), stateRoot: shortStateRoot(), trustConfig: { claudeJson: join(root, ".claude.json"), codexToml: join(root, "codex.toml") }, implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: fakeWhisper(root), env: { FAKE_WF_NO_ROW: "1" }, pollMs: 50, homeDir: root, pricing: {} });
 		expect(out.stopReason).toBe("agent_failure");
 		expect(out.failureMode).toBe("collab_missing");
 		expect(out.seconds).toBeLessThan(15);
@@ -157,7 +160,7 @@ describe("runPairArm", () => {
 		const ws = join(root, "ws"); mkdirSync(ws);
 		const never = join(root, "never.mjs");
 		writeFileSync(never, "#!/usr/bin/env node\nif (process.argv.includes(\"stop\")) process.exit(0);\nprocess.stdin.resume(); setInterval(() => {}, 1e9);\n"); chmodSync(never, 0o755);
-		const out = await runPairArm({ task, workspaceDir: ws, runDir: join(root, "run"), stateRoot: shortStateRoot(), implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: never, pollMs: 100, bindTimeoutMs: 1500, homeDir: root, pricing: {} });
+		const out = await runPairArm({ task, workspaceDir: ws, runDir: join(root, "run"), stateRoot: shortStateRoot(), trustConfig: { claudeJson: join(root, ".claude.json"), codexToml: join(root, "codex.toml") }, implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: never, pollMs: 100, bindTimeoutMs: 1500, homeDir: root, pricing: {} });
 		expect(out.stopReason).toBe("agent_failure");
 		expect(out.failureMode).toBe("mount_bind_timeout");
 	}, 30_000);
