@@ -6,6 +6,7 @@
 	"scripts": {
 		"build": "pnpm -r --if-present build",
 		"test": "vitest run",
+		"eval": "tsx eval/runner/cli.ts",
 		"test:watch": "vitest",
 		"e2e:ai-ezio-mount": "node scripts/ai-ezio-mount-relay-e2e.mjs",
 		"e2e:ai-ezio-workflow": "node scripts/ai-ezio-full-workflow-e2e.mjs",
@@ -24,8 +25,10 @@
 		"@ai-whisper/broker": "workspace:*",
 		"@eslint/js": "^9.23.0",
 		"@stylistic/eslint-plugin": "^2.13.0",
+		"@types/better-sqlite3": "^7.6.13",
 		"@types/node": "^22.13.10",
 		"@types/react": "^19.2.14",
+		"better-sqlite3": "^12.10.0",
 		"esbuild": "^0.28.1",
 		"eslint": "^9.23.0",
 		"globals": "^16.0.0",

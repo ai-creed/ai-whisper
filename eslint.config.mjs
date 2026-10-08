@@ -24,6 +24,12 @@ export default tseslint.config(
 			// lint's project service can't parse them. Treat the whole bundle tree
 			// as non-source, like docs/ and scripts/ above.
 			"packages/cli/skills/**",
+			// Eval-kit fixtures are standalone projects the agents work in; the
+			// toolchain dir is an npm install; results hold generated artifacts.
+			// The runner itself (eval/runner/**) IS linted.
+			"eval/tasks/**",
+			"eval/toolchain/**",
+			"eval/results/**",
 		],
 	},
 	js.configs.recommended,

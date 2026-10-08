@@ -22,3 +22,7 @@ packages/cli/src/generated/
 
 # brainstorm/visual-companion artifacts
 .superpowers/
+
+# pair-vs-solo eval kit: raw run dirs and the shared fixture toolchain install
+eval/results/*/runs/
+eval/toolchain/node_modules/
