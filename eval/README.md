@@ -111,7 +111,7 @@ Tokens come in two kinds. Arms A and B are metered from the agents' own usage re
 ## Interpreting failures
 
 - A harness failure is a fault outside the system under test: a grader crash, a missing binary, a workspace error. It is recorded with `stop_reason: harness_failure`, listed in the report's harness-failure section, and excluded from the denominator: success rate = successes / (scheduled - unrecovered harness failures).
-- Product-stack failures count against the arm. For Arm C they carry a `failure_mode` tag such as `mount_bind_timeout`, `workflow_start_error`, `collab_missing` or `workflow_halted`. Budget stops (wall clock, token cap) also count as ordinary unsuccessful runs.
+- Product-stack failures count against the arm. For Arm C they carry a `failure_mode` tag such as `mount_bind_timeout`, `workflow_start_error`, `collab_missing` or `workflow_halted`. Budget stops (wall clock, token cap) and escalations are not failures: the run is graded as delivered and scored on its grade like any other. Only `agent_failure` and `harness_failure` force `task_success` to false.
 
 ## Secondary metrics
 
