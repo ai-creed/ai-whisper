@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { gradeDirFor } from "./tasks.ts";
 import { HarnessFailure, type GateResult, type TaskMeta } from "./types.ts";
@@ -45,6 +45,10 @@ export function gradeRun(input: { task: TaskMeta; workspaceDir: string; gradeDir
 		mkdirSync(input.gradeDir, { recursive: true });
 		cpSync(input.workspaceDir, input.gradeDir, { recursive: true, filter: (src) => !/(^|[\\/])(node_modules|\.git|\.ai-whisper|__grade__)([\\/]|$)/.test(src) });
 		symlinkSync(input.toolchainNodeModules, join(input.gradeDir, "node_modules"), "dir");
+		// The grade dir lives under the repo's eval/results; vitest walks up for a config and would pick up the repo's root one.
+		if (!["ts", "mts", "js", "mjs"].some((e) => existsSync(join(input.gradeDir, `vitest.config.${e}`)))) {
+			writeFileSync(join(input.gradeDir, "vitest.config.mjs"), "export default {};\n");
+		}
 	} catch (e) {
 		throw new HarnessFailure(`grading copy failed: ${(e as Error).message}`, e);
 	}
