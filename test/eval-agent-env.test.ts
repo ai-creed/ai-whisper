@@ -23,4 +23,9 @@ describe("scrubAgentEnv", () => {
 		const PATH = [join(repo, "node_modules", ".bin"), "/usr/bin", join(root, "alias", "node_modules", ".bin"), "/bin", repo, join(root, "elsewhere")].join(delimiter);
 		expect(scrubAgentEnv({ PATH }, repo).PATH).toBe(["/usr/bin", "/bin", join(root, "elsewhere")].join(delimiter));
 	});
+	it("drops CLAUDE_CODE_* and CLAUDECODE markers that would disable a child claude's transcript saving", async () => {
+		const { scrubAgentEnv } = await import("../eval/runner/arms/agent-env.ts");
+		const out = scrubAgentEnv({ CLAUDE_CODE_CHILD_SESSION: "1", CLAUDECODE: "1", CLAUDE_PID: "5", CLAUDE_EFFORT: "high", HOME: "/h", ANTHROPIC_API_KEY: "k" }, "/repo");
+		expect(Object.keys(out).sort()).toEqual(["ANTHROPIC_API_KEY", "HOME"]);
+	});
 });
