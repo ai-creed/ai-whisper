@@ -1,0 +1,15 @@
+{
+	"_note": "USD per 1M tokens, standard tier, short context. Retrieved 2026-10-08 from https://platform.claude.com/docs/en/about-claude/pricing (Anthropic; cacheWrite = 5-minute cache write; model IDs from https://platform.claude.com/docs/en/models/overview) and https://developers.openai.com/api/docs/pricing (OpenAI; cacheRead = cached input). OpenAI lists no cache-write price, so cacheWrite equals input for gpt-* rows. claude-haiku-5-5 uses the up-to-100k-token-prompt rates (over 100k: 0.50/0.625/0.05/2.50). gpt-5.6-sol carries promotional pricing through at least 2026-11-21. Keys are exact model IDs as pinned in the manifest.",
+	"claude-opus-5-5": { "input": 4, "cacheWrite": 5, "cacheRead": 0.2, "output": 20 },
+	"claude-sonnet-5-5": { "input": 2, "cacheWrite": 2.5, "cacheRead": 0.1, "output": 10 },
+	"claude-sonnet-4-5": { "input": 3, "cacheWrite": 3.75, "cacheRead": 0.3, "output": 15 },
+	"claude-haiku-5-5": { "input": 0.1, "cacheWrite": 0.125, "cacheRead": 0.01, "output": 0.5 },
+	"claude-haiku-4-5-20251001": { "input": 1, "cacheWrite": 1.25, "cacheRead": 0.1, "output": 5 },
+	"gpt-5.6-sol": { "input": 4, "cacheWrite": 4, "cacheRead": 0.4, "output": 20 },
+	"gpt-5.6-terra": { "input": 2, "cacheWrite": 2, "cacheRead": 0.2, "output": 12 },
+	"gpt-5.5": { "input": 5, "cacheWrite": 5, "cacheRead": 0.5, "output": 30 },
+	"gpt-5.4-mini": { "input": 0.75, "cacheWrite": 0.75, "cacheRead": 0.075, "output": 4.5 },
+	"gpt-5.3-codex": { "input": 1.75, "cacheWrite": 1.75, "cacheRead": 0.175, "output": 14 },
+	"gpt-5": { "input": 1.25, "cacheWrite": 1.25, "cacheRead": 0.125, "output": 10 },
+	"gpt-5-mini": { "input": 0.25, "cacheWrite": 0.25, "cacheRead": 0.025, "output": 2 }
+}
