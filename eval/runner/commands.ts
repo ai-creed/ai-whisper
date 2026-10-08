@@ -127,7 +127,9 @@ export function cmdValidateTasks(o: { tasksRoot: string; toolchainNodeModules: s
 			const dest = join(tmpdir(), "ai-whisper-eval-validate", t.slug); // outside the repo, like real workspaces
 			rmSync(dest, { recursive: true, force: true });
 			const { workspaceDir } = prepareWorkspace({ task: t, dest, toolchainNodeModules: o.toolchainNodeModules });
-			const g = gradeRun({ task: t, workspaceDir, gradeDir: join(dest, "..", `${t.slug}-grade`), toolchainNodeModules: o.toolchainNodeModules });
+			const gradeDir = join(dest, "..", `${t.slug}-grade`);
+			rmSync(gradeDir, { recursive: true, force: true }); // a previous validation's copy would make gradeRun's copy/symlink fail
+			const g = gradeRun({ task: t, workspaceDir, gradeDir, toolchainNodeModules: o.toolchainNodeModules });
 			if (g.hygiene.typecheck !== "pass" || g.hygiene.lint !== "pass" || g.hygiene.tests !== "pass") violations.push(`${t.slug}: fixture is not green (${JSON.stringify(g.hygiene)})`);
 			if (g.gradeTestsTotal === 0) violations.push(`${t.slug}: grade/ has no tests`);
 			if (g.gradeTestsPassed === g.gradeTestsTotal) violations.push(`${t.slug}: held-out tests already pass on the untouched fixture`);
