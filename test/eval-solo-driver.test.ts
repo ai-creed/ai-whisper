@@ -57,6 +57,20 @@ process.on("SIGTERM", () => { clearInterval(t); process.exit(143); });`);
 		expect(out.costUsd).not.toBeNull();
 	});
 
+	it("counts cache tokens toward the token cap", async () => {
+		root = mkdtempSync(join(tmpdir(), "eval-solo-"));
+		const ws = join(root, "ws"); mkdirSync(ws);
+		// 10 input + 10 output per tick never reaches 1200 alone; 500 cache reads per tick must.
+		const cmd = fakeClaude(root, `
+process.stdin.resume();
+let i = 0; const t = setInterval(() => { console.log(JSON.stringify({type:"assistant",message:{id:""+(i++),usage:{input_tokens:10,output_tokens:10,cache_creation_input_tokens:0,cache_read_input_tokens:500}}})); }, 20);
+process.on("SIGTERM", () => { clearInterval(t); process.exit(143); });`);
+		const out = await runSoloArm({ task: task({ tokenCap: 1200 }), arm: "A", workspaceDir: ws, runDir: join(root, "run"), implementerModel: "m", claudeCommand: cmd, pricing: {} });
+		expect(out.stopReason).toBe("token_cap");
+		expect(out.usage.inputTokens + out.usage.outputTokens).toBeLessThan(1200);
+		expect(out.usage.cacheReadTokens).toBeGreaterThan(0);
+	});
+
 	it("stops at the wall-clock cap", async () => {
 		root = mkdtempSync(join(tmpdir(), "eval-solo-"));
 		const ws = join(root, "ws"); mkdirSync(ws);

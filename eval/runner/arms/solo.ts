@@ -70,7 +70,8 @@ export async function runSoloArm(input: SoloArmInput): Promise<RunOutcome> {
 		transcript.write(line + "\n");
 		acc.feed(line);
 		const u = acc.usage;
-		if (u.inputTokens + u.outputTokens > input.task.budget.tokenCap) terminate("token_cap");
+		// The whole-run ceiling counts every metered component, cache reads/writes included (spec: budget parity).
+		if (u.inputTokens + u.outputTokens + u.cacheWriteTokens + u.cacheReadTokens > input.task.budget.tokenCap) terminate("token_cap");
 	});
 
 	child.stdin.end(composeSoloPrompt(input.task, input.arm));
