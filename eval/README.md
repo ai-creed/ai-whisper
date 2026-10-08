@@ -12,7 +12,7 @@ pnpm eval -- toolchain
 - `pnpm eval -- toolchain` installs the pinned fixture toolchain (`eval/toolchain/`) under `--toolchain-root` (default `~/.ai-whisper-eval/toolchain`) and prints the resulting `node_modules` path. The root must be outside the repository. Every command that touches fixtures (`slice`, `run`, `grade`, `validate-tasks`, `dry-run`) installs it on demand.
 - To change a toolchain pin, edit `eval/toolchain/package.json` and regenerate the lockfile with `pnpm --dir eval/toolchain install --lockfile-only --ignore-workspace`. Without `--ignore-workspace` pnpm walks up to the repo workspace and writes nothing.
 - `claude` and `codex` must be on `PATH`; their versions are pinned in the manifest.
-- `~/.ai-whisper/auth.json` must exist; its evaluator settings are snapshotted into the manifest at `init`.
+- The evaluator must be configured (see `docs/evaluator-configuration.md`); its settings are snapshotted into the manifest at `init`. The runner copies `auth.json`, `config.json` and `.env` from the source state root (default `~/.ai-whisper`) into each Arm C state root when present.
 
 All commands are `pnpm eval -- <command> [options]`. A leading `--` is accepted and ignored. Exit codes: 0 success, 1 usage error, 2 failed runs or validation violations, 3 pin drift.
 
@@ -34,7 +34,7 @@ Rules enforced by `validate-tasks` (the source is `TASK_LAYOUT_RULES` in `eval/r
 - `task.md` has an H1 title and exactly the sections `## Task`, `## Scope` and `## Acceptance criteria`. Any other section is rejected.
 - Scope holds only bullets, and each bullet is a single bare path (backticks allowed). Put annotations in `## Task`.
 - `meta.json` declares `category` and `shape`. The suite must contain 15 tasks: 8 feature, 4 bugfix, 3 refactor; 12 quick-task, 3 spec-driven-development.
-- `budget.json` holds positive integers `wallClockSeconds` and `tokenCap`. Defaults: quick-task 1800 s / 600000 tokens, SDD 3600 s / 1500000 tokens.
+- `budget.json` holds positive integers `wallClockSeconds` and `tokenCap`. Both are required. Conventional values: quick-task 1800 s / 600000 tokens, SDD 3600 s / 1500000 tokens.
 - `approach.md` is required for quick-task tasks and forbidden for spec-driven-development tasks (the spec is the approved artifact). The generated quick-task brief must pass the broker's quick-task gate.
 - `grade/` holds at least one `*.grade.test.ts`. Grade tests import from `../src/<module>.ts`; the runner copies them to `__grade__/` beside `src/` only at grading time. Nothing named `grade/` may exist under `fixture/`.
 - Do not reveal grade code in `task.md`: no file in `fixture/`, `task.md` or `approach.md` may reference `eval/tasks` or a `grade/` path.
@@ -52,7 +52,7 @@ Validate before running anything:
 pnpm eval -- validate-tasks --green
 ```
 
-Without `--green` it checks layout and counts. With `--green` it also copies each fixture to a throwaway workspace, runs typecheck, lint and tests, and runs the held-out tests. It reports a violation if the fixture is not green at baseline, if `grade/` has no tests, or if the held-out tests already all pass on the untouched fixture. Prints `task suite OK` on success, exits 2 otherwise.
+Without `--green` it checks layout and counts, and runs the generated quick-task brief through the broker's quick-task gate. With `--green` it also copies each fixture to a throwaway workspace, runs typecheck, lint and tests, and runs the held-out tests. It reports a violation if the fixture is not green at baseline, if `grade/` has no tests, or if the held-out tests already all pass on the untouched fixture. Prints `task suite OK` on success, exits 2 otherwise.
 
 ## Running a campaign
 
@@ -64,15 +64,15 @@ pnpm eval -- run --campaign pilot --key <task>/<arm>/<trial>
 ```
 
 - `init` writes `eval/results/<campaign>/manifest.json` with the seeded run order and the pins: implementer model, reviewer model, evaluator snapshot (primary and fallback) and CLI versions. It refuses to overwrite an existing campaign; pick a new `--campaign` id. `--trials` defaults to 2; the seed is random and printed if omitted.
-- `status` prints pending, running, done and failed counts overall and per arm.
+- `status` prints pending, running, done and failed counts overall, plus done, failed and total per arm.
 - `slice` runs the pending runs matching `--arm` (repeatable), `--task` (repeatable) and `--limit`. It walks the manifest in order, so Arm C keeps its seeded position. Solo runs (A, B) overlap up to `--parallel-solo` (default 2); a pair run drains the pool and runs alone. Pair runs are always serial.
 - `run --key` runs one specific run.
 - `--workspace-root` (default `~/.ai-whisper-eval/workspaces`) is where workspaces are created.
-- A run that fails for a retryable reason is retried once automatically. `slice` exits 2 if any run ended `failed`.
+- Any error thrown during a run is retried once automatically (a fresh attempt directory); a second failure is recorded as a `harness failure` row and the run is marked `failed`. `slice` exits 2 if any run ended `failed`.
 
 Resuming after a crash: run the same `slice` command again. It selects only runs that are not `done`, so finished runs are not repeated. `slice` never re-runs a `failed` run (an unrecovered harness failure is recorded and counted). To retry one, re-init the campaign or hand-edit its status in `manifest.json`.
 
-Pin drift: before any spend, `slice` and `run` compare the manifest pins against the live reviewer model, evaluator snapshot and CLI versions. On a mismatch the runner prints each differing field and exits 3. Either restore the pinned environment (reinstall the pinned CLI versions, restore the evaluator settings) or, if the change is intended, start a new campaign. `cli_versions.whisper` is `<version>+<sha>` where the sha is the last commit touching anything outside `eval/results/`, so committing campaign results mid-campaign does not trip drift. Known limitation: a dirty working tree is not captured in the pin, so uncommitted edits to the product go unnoticed. Commit before starting a campaign.
+Pin drift: before each Arm C run (before any Arm C spend), `slice` and `run` compare the manifest pins against the live reviewer model, the four evaluator fields (provider, model, fallback provider, fallback model) and the CLI versions. Arm A and B runs are not guarded, so do not upgrade `claude` or `codex` mid-campaign: A/B runs would silently change. On a mismatch the runner prints each differing field and exits 3. Either restore the pinned environment (reinstall the pinned CLI versions, restore the evaluator settings) or, if the change is intended, start a new campaign. `cli_versions.whisper` is `<version>+<sha>` where the sha is the last commit touching anything outside `eval/results/`, so committing campaign results mid-campaign does not trip drift. Known limitation: a dirty working tree is not captured in the pin, so uncommitted edits to the product go unnoticed. Commit before starting a campaign.
 
 ## Dry run
 
@@ -80,13 +80,15 @@ Pin drift: before any spend, `slice` and `run` compare the manifest pins against
 pnpm eval:dry-run
 ```
 
-Builds a throwaway campaign from `csv-parse-quoted` only and runs one trial per arm with fake headless and mounted agents, so there is no API spend. It prints `DRY RUN OK` only if all three rows complete, the hygiene gate is green on each, metered arms show non-zero metered usage, Arm C shows estimated usage, and the held-out tests are not all passing (the fake model must not solve the task). Otherwise it prints `DRY RUN FAILED` with the problems and exits 2. `slice --dry-run` and `run --dry-run` use the same fakes against a real campaign.
+Builds a campaign from `csv-parse-quoted` only and runs one trial per arm with fake headless and mounted agents, so there is no API spend. It prints `DRY RUN OK` only if all three rows complete, the hygiene gate is green on each, metered arms show non-zero metered usage, Arm C shows estimated usage, and the held-out tests are not all passing (the fake model must not solve the task). Otherwise it prints `DRY RUN FAILED` with the problems and exits 2. The campaign is written to `eval/results/dry-run-<timestamp>/` (manifest, ledger, report) inside the repository and nothing deletes it. Delete it after reading the result; do not commit it. The dry run always uses the default toolchain root and `os.tmpdir()` for workspaces, ignoring `--toolchain-root` and `--workspace-root`.
+
+`slice --dry-run` and `run --dry-run` drive the real slice/run code with the same fakes, so they append fake ledger rows and mark those runs `done` permanently. Use them only on a scratch campaign id (for example `--campaign scratch`), never on a real campaign.
 
 A passing dry run proves the plumbing, not the transcript harvesting for the real CLIs. The next step is one real smoke task: a one-trial campaign on a single cheap task, graded and reported, before committing to the full campaign.
 
 ## Grading and re-grading
 
-Grading happens at the end of each run: the runner copies `grade/` into the workspace as `__grade__/`, runs the hygiene gate (typecheck, lint, tests) and the held-out tests, and appends a row to `ledger.jsonl`. A run succeeds iff hygiene is fully green and 100% of held-out tests pass.
+Grading happens at the end of each run: the runner copies the workspace into `<runDir>/grade` (`grade-regrade-*` for a re-grade), adds the held-out tests there as `__grade__/` (the agent's workspace never sees them), runs the hygiene gate (typecheck, lint, tests) and the held-out tests, and appends a row to `ledger.jsonl`. A run succeeds iff hygiene is fully green and 100% of held-out tests pass.
 
 To re-grade a recorded run (for example after fixing a grader bug):
 
@@ -94,7 +96,7 @@ To re-grade a recorded run (for example after fixing a grader bug):
 pnpm eval -- grade --campaign pilot --key <task>/<arm>/<trial>
 ```
 
-`grade` re-grades the run's saved workspace and appends a new ledger row. The report uses the latest row per key.
+`grade` re-grades the run's saved workspace (the grading copy is made from it) and appends a new ledger row. The report uses the latest row per key.
 
 ## Reporting
 
@@ -104,7 +106,7 @@ pnpm eval -- report --campaign pilot
 
 Writes `eval/results/<campaign>/report.md` from `ledger.jsonl` alone, never the manifest, so anyone with the committed ledger reproduces it. It contains the primary success rate, a per-task breakdown, secondary metrics, tokens and cost, harness failures and residual confounds.
 
-Tokens come in two kinds. Arms A and B are metered from the agents' own usage records. Arm C is not metered: its token figure is a character-based estimate (characters / 4), reported in its own column and not comparable across arms. Metered columns average over metered runs only.
+Tokens come in two kinds. Arms A and B are metered from the agents' own usage records. Arm C is metered, with a computed cost, only when the claude transcript, the codex transcript and the evaluator diagnostics (primary and fallback groups) were all harvested. If any component is missing, Arm C falls back to a character-based estimate (characters / 4), which is not metered: it is reported in its own column and is not comparable across arms. The dry run's stubbed pair always uses the estimate. Metered columns average over metered runs only.
 
 ## Interpreting failures
 
