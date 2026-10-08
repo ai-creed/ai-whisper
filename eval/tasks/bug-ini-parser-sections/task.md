@@ -12,6 +12,7 @@ Three inputs to `parseIni` in `src/ini.ts` produce wrong output. `parseIni("[a]\
 - A later duplicate key within a merged section overrides the earlier one.
 - A `;` or `#` inside a double-quoted value is part of the value: `k = "v;w"` gives `v;w`.
 - Keys that appear before any section header land in the `""` section.
+- The `""` section exists only when at least one key appears before the first header (`parseIni("")` stays `{}`).
 - An inline comment after an unquoted value is still stripped: `k = v ; c` gives `v`.
 - An escaped quote inside a quoted value is kept as a plain quote: `k = "a\"b"` gives `a"b`.
 - Blank and whitespace-only lines are ignored.
