@@ -20,13 +20,24 @@ export function parseVitestJson(json: string): { passed: number; total: number }
 	} catch { return null; }
 }
 
-function run(cwd: string, cmd: string, args: string[], timeoutMs: number): { ok: boolean; log: string } {
+function run(cwd: string, cmd: string, args: string[], timeoutMs: number, killSignal: NodeJS.Signals = "SIGTERM"): { ok: boolean; timedOut: boolean; log: string } {
 	try {
-		const out = execFileSync(cmd, args, { cwd, encoding: "utf8", timeout: timeoutMs, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, CI: "1", FORCE_COLOR: "0" } });
-		return { ok: true, log: out };
+		const out = execFileSync(cmd, args, { cwd, encoding: "utf8", timeout: timeoutMs, killSignal, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, CI: "1", FORCE_COLOR: "0" } });
+		return { ok: true, timedOut: false, log: out };
 	} catch (e) {
-		const err = e as { stdout?: string; stderr?: string; message?: string };
-		return { ok: false, log: `${err.stdout ?? ""}\n${err.stderr ?? ""}\n${err.message ?? ""}` };
+		const err = e as { stdout?: string; stderr?: string; message?: string; code?: string; signal?: string | null };
+		const timedOut = err.code === "ETIMEDOUT" || (err.signal === killSignal && /ETIMEDOUT/.test(err.message ?? ""));
+		return { ok: false, timedOut, log: `${err.stdout ?? ""}\n${err.stderr ?? ""}\n${err.message ?? ""}` };
+	}
+}
+
+/** A missing or non-executable grade runner is a harness fault; anything it does once it runs is the delivered workspace's doing. */
+function probeVitest(vitestBin: string): void {
+	if (!existsSync(vitestBin)) throw new HarnessFailure(`grade runner missing: ${vitestBin}`);
+	try {
+		execFileSync(vitestBin, ["--version"], { encoding: "utf8", timeout: 30_000, stdio: ["ignore", "pipe", "pipe"] });
+	} catch (e) {
+		throw new HarnessFailure(`grade runner cannot execute: ${vitestBin}: ${(e as Error).message}`, e);
 	}
 }
 
@@ -77,22 +88,32 @@ export function gradeRun(input: { task: TaskMeta; workspaceDir: string; gradeDir
 		throw new HarnessFailure(`grading copy failed: ${(e as Error).message}`, e);
 	}
 	const vitestBin = join(input.toolchainNodeModules, ".bin", "vitest");
-	if (!existsSync(vitestBin)) throw new HarnessFailure(`grade runner missing: ${vitestBin}`);
-	const out = run(input.gradeDir, vitestBin, ["run", "__grade__", "--reporter=json", "--outputFile=__grade__/result.json"], timeoutMs);
+	probeVitest(vitestBin);
+	// Threads pool + SIGKILL: a synchronous infinite loop in a forked worker would outlive a killed vitest parent.
+	const out = run(input.gradeDir, vitestBin, ["run", "__grade__", "--pool=threads", "--reporter=json", "--outputFile=__grade__/result.json"], timeoutMs, "SIGKILL");
 	const resultPath = join(gradeDst, "result.json");
-	if (!existsSync(resultPath)) throw new HarnessFailure(`grade runner produced no result: ${out.log.slice(-2000)}`);
-	const parsed = parseVitestJson(readFileSync(resultPath, "utf8"));
-	if (!parsed) throw new HarnessFailure("grade runner produced an unparsable result.json");
+	const noResult = out.timedOut ? "timeout" : !existsSync(resultPath) ? "missing" : null;
+	const parsed = noResult ? null : parseVitestJson(readFileSync(resultPath, "utf8"));
+	const hygiene = { typecheck: typecheck.result, lint: lint.result, tests: tests.result };
+	const logs = { typecheck: typecheck.log, lint: lint.log, tests: tests.log };
+	if (!parsed) {
+		return {
+			hygiene,
+			gradeTestsPassed: 0,
+			gradeTestsTotal: authored,
+			taskSuccess: false,
+			logs: { ...logs, grade: `grade runner produced no result (${noResult ?? "unparsable"}): ${out.log.slice(-2000)}` },
+		};
+	}
 	// Expansions (it.each) can raise the count above the authored one; tests the agent's config hid leave parsed.total below it.
 	const total = Math.max(authored, parsed.total);
 	const passed = Math.min(parsed.passed, total);
-	const hygiene = { typecheck: typecheck.result, lint: lint.result, tests: tests.result };
 	const hygieneGreen = hygiene.typecheck === "pass" && hygiene.lint === "pass" && hygiene.tests === "pass";
 	return {
 		hygiene,
 		gradeTestsPassed: passed,
 		gradeTestsTotal: total,
 		taskSuccess: hygieneGreen && total > 0 && parsed.total >= authored && parsed.passed === parsed.total,
-		logs: { typecheck: typecheck.log, lint: lint.log, tests: tests.log, grade: out.log },
+		logs: { ...logs, grade: out.log },
 	};
 }

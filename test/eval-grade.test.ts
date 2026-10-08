@@ -56,6 +56,15 @@ describe.skipIf(!toolchainReady)("gradeRun (needs the eval toolchain: run `pnpm 
 		expect(() => gradeRun({ task: task(root), workspaceDir: ws, gradeDir: join(root, "grade"), toolchainNodeModules: emptyToolchain })).toThrow(HarnessFailure);
 	}, 60_000);
 
+	it("a grade run that hangs (agent-caused infinite loop) is an unsuccessful run, not a harness failure", () => {
+		root = mkdtempSync(join(tmpdir(), "eval-grade-"));
+		const ws = join(root, "ws"); fixture(ws, { impl: "export function add(a: number, b: number): number { for (;;) { /* hang */ } }\n" });
+		const src = "import { it, expect } from 'vitest';\nimport { add } from '../src/add.ts';\nit('adds', () => expect(add(2, 2)).toBe(4));\nit('adds negatives', () => expect(add(-1, -1)).toBe(-2));\n";
+		const r = gradeRun({ task: task(root, src), workspaceDir: ws, gradeDir: join(root, "grade"), toolchainNodeModules: toolchain, timeoutMs: 5000 });
+		expect(r).toMatchObject({ gradeTestsPassed: 0, gradeTestsTotal: 2, taskSuccess: false });
+		expect(r.logs.grade).toMatch(/^grade runner produced no result \(timeout\): /);
+	}, 20_000);
+
 	it("tooling removed by the agent → hygiene fail, row still produced", () => {
 		root = mkdtempSync(join(tmpdir(), "eval-grade-"));
 		const ws = join(root, "ws"); fixture(ws, { impl: "export function add(a: number, b: number): number { return a + b; }\n", breakTooling: true });
