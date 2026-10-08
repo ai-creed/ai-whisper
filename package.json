@@ -7,6 +7,7 @@
 		"build": "pnpm -r --if-present build",
 		"test": "vitest run",
 		"eval": "tsx eval/runner/cli.ts",
+		"eval:dry-run": "tsx eval/runner/cli.ts dry-run",
 		"test:watch": "vitest",
 		"e2e:ai-ezio-mount": "node scripts/ai-ezio-mount-relay-e2e.mjs",
 		"e2e:ai-ezio-workflow": "node scripts/ai-ezio-full-workflow-e2e.mjs",
