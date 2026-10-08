@@ -1,11 +1,11 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
+import { parseArms, parseNonNegativeInt, parsePositiveInt, UsageError } from "./cli-args.ts";
 import { cmdGrade, cmdInit, cmdReport, cmdRun, cmdSlice, cmdStatus, cmdValidateTasks } from "./commands.ts";
 import { DriftError } from "./pins.ts";
 import { runDryRun } from "./dry-run.ts";
 import { DEFAULT_TOOLCHAIN_ROOT, ensureToolchain } from "./toolchain.ts";
-import type { Arm } from "./types.ts";
 
 const repoRoot = join(import.meta.dirname, "..", "..");
 const USAGE = `usage: pnpm eval -- <toolchain|init|status|run|slice|grade|report|validate-tasks|dry-run> [options]
@@ -24,7 +24,7 @@ const USAGE = `usage: pnpm eval -- <toolchain|init|status|run|slice|grade|report
   --workspace-root <dir>    where agent workspaces are created; MUST be outside this repo (default ~/.ai-whisper-eval/workspaces)
   --toolchain-root <dir>    where the fixture toolchain is installed; MUST be outside this repo (default ~/.ai-whisper-eval/toolchain)`;
 
-async function main(): Promise<number> {
+async function run(): Promise<number> {
 	// `pnpm eval -- <args>` forwards the literal `--`, which would turn every option into a positional.
 	const argv = process.argv.slice(2);
 	if (argv[0] === "--") argv.shift();
@@ -41,6 +41,11 @@ async function main(): Promise<number> {
 		},
 	});
 	const cmd = positionals[0];
+	const arms = parseArms(values.arm);
+	const limit = values.limit === undefined ? undefined : parsePositiveInt("--limit", values.limit);
+	const parallelSolo = parsePositiveInt("--parallel-solo", values["parallel-solo"], 2);
+	const trials = parsePositiveInt("--trials", values.trials, 2);
+	const seedFlag = values.seed === undefined ? undefined : parseNonNegativeInt("--seed", values.seed);
 	const campaignDir = join(repoRoot, "eval", "results", values.campaign ?? "default");
 	const tasksRoot = join(repoRoot, "eval", "tasks");
 	const toolchainRoot = values["toolchain-root"];
@@ -49,14 +54,14 @@ async function main(): Promise<number> {
 	const toolchainNodeModules = needsToolchain ? ensureToolchain({ repoRoot, toolchainRoot }) : "";
 	const whisperCli = join(repoRoot, "packages", "cli", "dist", "bin", "whisper.js");
 	const sourceStateRoot = process.env.AI_WHISPER_STATE_ROOT ?? join(process.env.HOME ?? "", ".ai-whisper");
-	const sliceOpts = { campaignDir, tasksRoot, toolchainNodeModules, whisperCli, workspaceRoot: values["workspace-root"], ...(values.arm ? { arms: values.arm as Arm[] } : {}), ...(values.task ? { tasks: values.task } : {}), ...(values.limit ? { limit: Number(values.limit) } : {}), parallelSolo: Number(values["parallel-solo"]) };
+	const sliceOpts = { campaignDir, tasksRoot, toolchainNodeModules, whisperCli, workspaceRoot: values["workspace-root"], ...(arms ? { arms } : {}), ...(values.task ? { tasks: values.task } : {}), ...(limit !== undefined ? { limit } : {}), parallelSolo };
 	try {
 		switch (cmd) {
 			case "toolchain": console.log(toolchainNodeModules); return 0;
 			case "init": {
 				if (!values["implementer-model"] || !values["reviewer-model"]) { console.error("init needs --implementer-model and --reviewer-model"); return 1; }
-				const seed = values.seed ? Number(values.seed) : Math.floor(Math.random() * 2 ** 31);
-				const m = cmdInit({ campaignDir, tasksRoot, trials: Number(values.trials ?? "2"), seed, implementerModel: values["implementer-model"], reviewerModel: values["reviewer-model"], sourceStateRoot });
+				const seed = seedFlag ?? Math.floor(Math.random() * 2 ** 31);
+				const m = cmdInit({ campaignDir, tasksRoot, trials, seed, implementerModel: values["implementer-model"], reviewerModel: values["reviewer-model"], sourceStateRoot });
 				console.log(`initialized ${m.campaignId}: ${m.runs.length} runs, seed ${m.seed}`);
 				return 0;
 			}
@@ -86,6 +91,15 @@ async function main(): Promise<number> {
 		}
 	} catch (e) {
 		if (e instanceof DriftError) { console.error(e.message); return 3; }
+		throw e;
+	}
+}
+
+async function main(): Promise<number> {
+	try {
+		return await run();
+	} catch (e) {
+		if (e instanceof UsageError) { console.error(e.message); return 1; }
 		throw e;
 	}
 }

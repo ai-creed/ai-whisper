@@ -55,7 +55,7 @@ export async function cmdSlice(o: SliceOpts, deps: Partial<RunOneDeps> = {}): Pr
 	// solo runs may overlap (bounded pool); a pair run drains the pool first,
 	// runs alone, and only then do later runs start — so Arm C keeps its seeded
 	// position and never clusters at the end.
-	const limit = Math.max(1, o.parallelSolo);
+	const limit = Number.isFinite(o.parallelSolo) && o.parallelSolo >= 1 ? Math.floor(o.parallelSolo) : 1;
 	let pool: Promise<void>[] = [];
 	const drain = async (): Promise<void> => { await Promise.all(pool); pool = []; };
 	for (const r of selected) {

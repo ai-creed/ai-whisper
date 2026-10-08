@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { parseArms, parseNonNegativeInt, parsePositiveInt, UsageError } from "../eval/runner/cli-args.ts";
 import { cmdInit, cmdReport, cmdSlice, cmdStatus, cmdValidateTasks } from "../eval/runner/commands.ts";
 import { loadManifest, runKey } from "../eval/runner/manifest.ts";
 import type { RunOutcome } from "../eval/runner/types.ts";
@@ -65,6 +66,35 @@ describe("commands", () => {
 		expect(pairPositions(started)).toEqual(pairPositions(expected));
 		expect(pairSawSolo).toBe(false);
 		expect(maxInFlight).toBeLessThanOrEqual(2);
+	});
+
+	it("a NaN parallelSolo still caps in-flight solo runs at 1", async () => {
+		root = mkdtempSync(join(tmpdir(), "eval-cli-"));
+		const tasksRoot = join(root, "tasks"); writeTask(tasksRoot, "t1", "feature", "quick-task"); writeTask(tasksRoot, "t2", "bugfix", "quick-task");
+		const campaignDir = join(root, "results", "c");
+		cmdInit({ campaignDir, tasksRoot, trials: 2, seed: 9, implementerModel: "impl", reviewerModel: "rev", sourceStateRoot: root, cliVersions, evaluator });
+		let inFlight = 0, maxInFlight = 0;
+		const track = async () => { inFlight++; maxInFlight = Math.max(maxInFlight, inFlight); await new Promise((r) => setTimeout(r, 5)); inFlight--; };
+		const res = await cmdSlice({ campaignDir, tasksRoot, toolchainNodeModules: root, whisperCli: "x", workspaceRoot: join(root, "ws"), arms: ["A", "B"], parallelSolo: Number.NaN }, {
+			runSolo: async () => { await track(); return ok; },
+			grade: () => green, prepare: (i) => ({ workspaceDir: i.dest, baselineSha: "0".repeat(40) }),
+			liveReviewerModel: () => "rev", liveEvaluator: () => evaluator, liveCliVersions: () => cliVersions, now: () => "x",
+		});
+		expect(res.done).toBe(8);
+		expect(maxInFlight).toBe(1);
+	});
+
+	it("parses numeric and arm flags strictly", () => {
+		expect(parsePositiveInt("--trials", "3")).toBe(3);
+		expect(parsePositiveInt("--trials", undefined, 2)).toBe(2);
+		expect(() => parsePositiveInt("--trials", "abc")).toThrow(UsageError);
+		expect(() => parsePositiveInt("--trials", "0")).toThrow(/--trials must be a positive integer, got 0/);
+		expect(() => parsePositiveInt("--trials", "-1")).toThrow(UsageError);
+		expect(parseNonNegativeInt("--seed", "0")).toBe(0);
+		expect(() => parseNonNegativeInt("--seed", "x")).toThrow(UsageError);
+		expect(parseArms(undefined)).toBeUndefined();
+		expect(parseArms(["A", "C"])).toEqual(["A", "C"]);
+		expect(() => parseArms(["D"])).toThrow("--arm must be one of A, B, C");
 	});
 
 	it("validate-tasks reports suite-count violations", () => {
