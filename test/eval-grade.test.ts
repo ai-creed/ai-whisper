@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -67,29 +67,31 @@ describe.skipIf(!toolchainReady)("gradeRun (needs the eval toolchain: run `pnpm 
 
 	it("tooling removed by the agent → hygiene fail, row still produced", () => {
 		root = mkdtempSync(join(tmpdir(), "eval-grade-"));
-		const ws = join(root, "ws"); fixture(ws, { impl: "export function add(a: number, b: number): number { return a + b; }\n", breakTooling: true });
-		const r = gradeRun({ task: task(root), workspaceDir: ws, gradeDir: join(root, "grade"), toolchainNodeModules: toolchain });
+		const t = task(root);
+		fixture(join(t.dir, "fixture"), { impl: "export function add(a: number, b: number): number { return a + b; }\n" });
+		const ws = join(root, "ws"); fixture(ws, { impl: "export function add(a: number, b: number): number { return a + b; }\n" });
+		rmSync(join(ws, "package.json")); // the agent deleted the delivered package.json
+		const r = gradeRun({ task: t, workspaceDir: ws, gradeDir: join(root, "grade"), toolchainNodeModules: toolchain });
 		expect(r.hygiene).toEqual({ typecheck: "fail", lint: "fail", tests: "fail" });
+		expect(r.logs.lint).toMatch(/delivered tooling missing or modified: package\.json missing/);
 		expect(r.taskSuccess).toBe(false);
 		expect(r.gradeTestsTotal).toBe(2);
 	}, 60_000);
 
-	it("agent-weakened tooling is restored from the fixture", () => {
+	it("agent-modified tooling fails hygiene even though the fixture's tooling is what runs", () => {
 		root = mkdtempSync(join(tmpdir(), "eval-grade-"));
 		const t = task(root);
 		fixture(join(t.dir, "fixture"), { impl: "export function add(a: number, b: number): number { return a + b; }\n" });
 		const ws = join(root, "ws"); fixture(ws, { impl: "export function add(a: number, b: number): number { return a + b; }\n" });
-		// Deliberate type, lint and test failures, hidden behind no-op scripts, a narrowed tsconfig and an empty eslint config.
-		writeFileSync(join(ws, "src", "bad.ts"), "export const n: number = \"not a number\";\n");
-		writeFileSync(join(ws, "src", "bad.mjs"), "export const x = undefinedThing;\n");
-		mkdirSync(join(ws, "test")); writeFileSync(join(ws, "test", "bad.test.ts"), "import { it, expect } from 'vitest';\nit('fails', () => expect(1).toBe(2));\n");
-		writeFileSync(join(ws, "package.json"), JSON.stringify({ name: "fx", private: true, type: "module", scripts: { typecheck: "true", lint: "true", test: "true" } }));
-		writeFileSync(join(ws, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true, noEmit: true }, files: ["src/add.ts"] }));
-		writeFileSync(join(ws, "eslint.config.mjs"), "export default [{ ignores: ['**/*'] }];\n");
+		const pkg = JSON.parse(readFileSync(join(ws, "package.json"), "utf8")) as { scripts: Record<string, string> };
+		pkg.scripts.lint = "true"; pkg.scripts.test = "true"; // weakened gates
+		writeFileSync(join(ws, "package.json"), JSON.stringify(pkg));
 		const r = gradeRun({ task: t, workspaceDir: ws, gradeDir: join(root, "grade"), toolchainNodeModules: toolchain });
 		expect(r.hygiene).toEqual({ typecheck: "fail", lint: "fail", tests: "fail" });
+		expect(r.logs.tests).toMatch(/package\.json modified/);
+		// the fixture's real package.json is what landed in the grading copy
+		expect(readFileSync(join(root, "grade", "package.json"), "utf8")).toBe(readFileSync(join(t.dir, "fixture", "package.json"), "utf8"));
 		expect(r.taskSuccess).toBe(false);
-		expect(r.gradeTestsPassed).toBe(2); // src/ is graded as delivered; only the tooling files are restored
 	}, 60_000);
 
 	it("agent-planted __grade__ content is discarded", () => {

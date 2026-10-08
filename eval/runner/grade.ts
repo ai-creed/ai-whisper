@@ -50,16 +50,25 @@ function countTests(gradeSrcDir: string): number {
 	return n;
 }
 
+const TOOLING_FILES = ["package.json", "tsconfig.json", "eslint.config.mjs"] as const;
+
 export function gradeRun(input: { task: TaskMeta; workspaceDir: string; gradeDir: string; toolchainNodeModules: string; timeoutMs?: number }): GradeResult {
 	const timeoutMs = input.timeoutMs ?? 300_000;
+	const toolingViolations: string[] = [];
 	try {
 		mkdirSync(input.gradeDir, { recursive: true });
 		cpSync(input.workspaceDir, input.gradeDir, { recursive: true, filter: (src) => !/(^|[\\/])(node_modules|\.git|\.ai-whisper|__grade__)([\\/]|$)/.test(src) });
 		symlinkSync(input.toolchainNodeModules, join(input.gradeDir, "node_modules"), "dir");
-		// The gates must measure the task's tooling, not the agent's: restore the fixture's copies (src/ and test/ stay as delivered).
-		for (const f of ["package.json", "tsconfig.json", "eslint.config.mjs"]) {
+		// The gates must measure the task's tooling, not the agent's: the fixture's copies run (src/ and test/ stay
+		// as delivered), and a delivered tooling file that is missing or differs from the fixture fails hygiene
+		// outright — "keep the tooling intact" is part of every task.
+		for (const f of TOOLING_FILES) {
 			const src = join(input.task.dir, "fixture", f);
-			if (existsSync(src)) cpSync(src, join(input.gradeDir, f));
+			if (!existsSync(src)) continue;
+			const delivered = join(input.workspaceDir, f);
+			if (!existsSync(delivered)) toolingViolations.push(`${f} missing`);
+			else if (readFileSync(delivered, "utf8") !== readFileSync(src, "utf8")) toolingViolations.push(`${f} modified`);
+			cpSync(src, join(input.gradeDir, f));
 		}
 		// Vitest walks up for a config; if a grade dir ever sits under a repo it would pick up that repo's root one.
 		if (!["ts", "mts", "js", "mjs"].some((e) => existsSync(join(input.gradeDir, `vitest.config.${e}`)))) {
@@ -71,6 +80,7 @@ export function gradeRun(input: { task: TaskMeta; workspaceDir: string; gradeDir
 
 	const hasPkg = existsSync(join(input.gradeDir, "package.json"));
 	const gate = (script: string): { result: GateResult; log: string } => {
+		if (toolingViolations.length > 0) return { result: "fail", log: `delivered tooling missing or modified: ${toolingViolations.join(", ")}` };
 		if (!hasPkg) return { result: "fail", log: "package.json missing from delivered workspace" };
 		const r = run(input.gradeDir, "npm", ["run", "--silent", script], timeoutMs);
 		return { result: r.ok ? "pass" : "fail", log: r.log };
