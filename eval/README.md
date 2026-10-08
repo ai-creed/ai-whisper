@@ -88,7 +88,7 @@ A passing dry run proves the plumbing, not the transcript harvesting for the rea
 
 ## Grading and re-grading
 
-Grading happens at the end of each run: the runner copies the workspace into `<runDir>/grade` (`grade-regrade-*` for a re-grade), adds the held-out tests there as `__grade__/` (the agent's workspace never sees them), runs the hygiene gate (typecheck, lint, tests) and the held-out tests, and appends a row to `ledger.jsonl`. A run succeeds iff hygiene is fully green and 100% of held-out tests pass.
+Grading happens at the end of each run: the runner copies the workspace into `<workspace>.grade`, a sibling of the run's workspace outside the repo (`<workspace>.grade-regrade-*` for a re-grade; the path is recorded in `<runDir>/grade-path.txt`), restores the fixture's `package.json`, `tsconfig.json` and `eslint.config.mjs` over the agent's copies so the gate measures the task's tooling, adds the held-out tests there as `__grade__/` (the agent's workspace never sees them), runs the hygiene gate (typecheck, lint, tests) and the held-out tests, and appends a row to `ledger.jsonl`. A run succeeds iff hygiene is fully green and 100% of held-out tests pass.
 
 To re-grade a recorded run (for example after fixing a grader bug):
 

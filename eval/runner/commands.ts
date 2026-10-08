@@ -89,7 +89,7 @@ export function cmdGrade(o: { campaignDir: string; tasksRoot: string; toolchainN
 	const task = loadTask(join(o.tasksRoot, run.task));
 	const outcome = JSON.parse(readFileSync(join(run.runDir, "outcome.json"), "utf8")) as RunOutcome;
 	const workspaceDir = readFileSync(join(run.runDir, "workspace-path.txt"), "utf8").trim();
-	const grade = gradeRun({ task, workspaceDir, gradeDir: join(run.runDir, `grade-regrade-${Date.now()}`), toolchainNodeModules: o.toolchainNodeModules });
+	const grade = gradeRun({ task, workspaceDir, gradeDir: `${workspaceDir}.grade-regrade-${Date.now()}`, toolchainNodeModules: o.toolchainNodeModules });
 	writeFileSync(join(run.runDir, "grade.json"), JSON.stringify({ ...grade, regraded: true }, null, "\t"));
 	appendLedgerRow(o.campaignDir, buildLedgerRow({ campaignId: m.campaignId, seed: m.seed, scheduledPerArm: scheduledPerArm(m), task: run.task, arm: run.arm, trial: run.trial, outcome, grade, pins: m.pins, gradedAt: new Date().toISOString() }));
 }

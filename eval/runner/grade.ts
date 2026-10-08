@@ -56,7 +56,12 @@ export function gradeRun(input: { task: TaskMeta; workspaceDir: string; gradeDir
 		mkdirSync(input.gradeDir, { recursive: true });
 		cpSync(input.workspaceDir, input.gradeDir, { recursive: true, filter: (src) => !/(^|[\\/])(node_modules|\.git|\.ai-whisper|__grade__)([\\/]|$)/.test(src) });
 		symlinkSync(input.toolchainNodeModules, join(input.gradeDir, "node_modules"), "dir");
-		// The grade dir lives under the repo's eval/results; vitest walks up for a config and would pick up the repo's root one.
+		// The gates must measure the task's tooling, not the agent's: restore the fixture's copies (src/ and test/ stay as delivered).
+		for (const f of ["package.json", "tsconfig.json", "eslint.config.mjs"]) {
+			const src = join(input.task.dir, "fixture", f);
+			if (existsSync(src)) cpSync(src, join(input.gradeDir, f));
+		}
+		// Vitest walks up for a config; if a grade dir ever sits under a repo it would pick up that repo's root one.
 		if (!["ts", "mts", "js", "mjs"].some((e) => existsSync(join(input.gradeDir, `vitest.config.${e}`)))) {
 			writeFileSync(join(input.gradeDir, "vitest.config.mjs"), "export default {};\n");
 		}

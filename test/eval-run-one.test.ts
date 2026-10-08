@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -36,10 +36,12 @@ describe("runOne", () => {
 	it("drives, grades, appends a row and marks the run done", async () => {
 		root = mkdtempSync(join(tmpdir(), "eval-runone-")); const { campaignDir, tasksRoot } = campaign(root);
 		const key = runKey({ task: "t1", arm: "A", trial: 1 });
-		let dest = "";
-		const r = await runOne({ campaignDir, tasksRoot, toolchainNodeModules: root, whisperCli: "x", workspaceRoot: join(root, "ws-outside"), key }, deps({ prepare: (i) => { dest = i.dest; return { workspaceDir: i.dest, baselineSha: "0".repeat(40) }; } }));
+		let dest = "", gradeDir = "";
+		const r = await runOne({ campaignDir, tasksRoot, toolchainNodeModules: root, whisperCli: "x", workspaceRoot: join(root, "ws-outside"), key }, deps({ prepare: (i) => { dest = i.dest; return { workspaceDir: i.dest, baselineSha: "0".repeat(40) }; }, grade: (i) => { gradeDir = i.gradeDir; return green; } }));
 		expect(r.status).toBe("done");
 		expect(dest).toBe(join(root, "ws-outside", "c", "t1", "A", "1", "attempt-1"));
+		expect(gradeDir).toBe(join(root, "ws-outside", "c", "t1", "A", "1", "attempt-1.grade")); // outside the repo, beside the workspace
+		expect(readFileSync(join(campaignDir, "runs", "t1", "A", "1", "attempt-1", "grade-path.txt"), "utf8").trim()).toBe(gradeDir);
 		expect(readLedger(campaignDir)[0]).toMatchObject({ campaign_id: "c", seed: 1, scheduled_per_arm: 1 });
 		expect(readLedger(campaignDir)).toHaveLength(1);
 		expect(loadManifest(campaignDir).runs.find((x) => runKey(x) === key)?.status).toBe("done");

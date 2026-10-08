@@ -81,7 +81,9 @@ export async function runOne(input: RunOneInput, over: Partial<RunOneDeps> = {})
 			});
 		}
 		writeFileSync(join(runDir, "outcome.json"), JSON.stringify(outcome, null, "\t"));
-		grade = deps.grade({ task, workspaceDir: outcome.workspaceDir, gradeDir: join(runDir, "grade"), toolchainNodeModules: input.toolchainNodeModules });
+		const gradeDir = `${dest}.grade`; // sibling of the workspace, outside the repo
+		writeFileSync(join(runDir, "grade-path.txt"), gradeDir + "\n");
+		grade = deps.grade({ task, workspaceDir: outcome.workspaceDir, gradeDir, toolchainNodeModules: input.toolchainNodeModules });
 		writeFileSync(join(runDir, "grade.json"), JSON.stringify(grade, null, "\t"));
 	} catch (e) {
 		const kind = classifyError(e);
