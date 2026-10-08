@@ -201,8 +201,10 @@ export async function runPairArm(input: PairArmInput): Promise<RunOutcome> {
 		} catch { /* leave nulls */ }
 	}
 	const home = input.homeDir ? { home: input.homeDir } : {};
-	const claudeUsage = harvestClaudeUsage({ ...home, cwd: input.workspaceDir, since: startedAt, until: endedAt });
-	const codexUsage = harvestCodexUsage({ ...home, cwd: input.workspaceDir, since: startedAt, until: endedAt });
+	// Sessions record whichever spelling of the workspace they were started with: match both.
+	const cwds = [...new Set([input.workspaceDir, physicalWorkspace])];
+	const claudeUsage = harvestClaudeUsage({ ...home, cwds, since: startedAt, until: endedAt });
+	const codexUsage = harvestCodexUsage({ ...home, cwds, since: startedAt, until: endedAt });
 	let usage: UsageTotals;
 	let costUsd: number | null;
 	let metered = false;

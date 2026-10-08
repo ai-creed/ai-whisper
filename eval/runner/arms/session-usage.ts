@@ -13,12 +13,13 @@ function parseJson<T>(line: string): T | null {
 	try { return JSON.parse(t) as T; } catch { return null; }
 }
 
-export function parseClaudeTranscriptLines(lines: Iterable<string>, cwd: string): UsageTotals | null {
+export function parseClaudeTranscriptLines(lines: Iterable<string>, cwds: readonly string[]): UsageTotals | null {
+	const match = new Set(cwds);
 	const byId = new Map<string, UsageTotals>();
 	let anon: UsageTotals | null = null;
 	for (const line of lines) {
 		const ev = parseJson<ClaudeLine>(line);
-		if (!ev || ev.type !== "assistant" || ev.cwd !== cwd || !ev.message?.usage) continue;
+		if (!ev || ev.type !== "assistant" || ev.cwd === undefined || !match.has(ev.cwd) || !ev.message?.usage) continue;
 		const u = ev.message.usage;
 		const usage: UsageTotals = { inputTokens: num(u.input_tokens), outputTokens: num(u.output_tokens), cacheWriteTokens: num(u.cache_creation_input_tokens), cacheReadTokens: num(u.cache_read_input_tokens) };
 		if (typeof ev.message.id === "string") byId.set(ev.message.id, usage);
@@ -30,13 +31,14 @@ export function parseClaudeTranscriptLines(lines: Iterable<string>, cwd: string)
 	return total;
 }
 
-export function parseCodexRolloutLines(lines: Iterable<string>, cwd: string): UsageTotals | null {
+export function parseCodexRolloutLines(lines: Iterable<string>, cwds: readonly string[]): UsageTotals | null {
+	const match = new Set(cwds);
 	let matchesCwd = false;
 	let last: UsageTotals | null = null;
 	for (const line of lines) {
 		const ev = parseJson<CodexLine>(line);
 		if (!ev) continue;
-		if (ev.type === "session_meta" && ev.payload?.cwd === cwd) matchesCwd = true;
+		if (ev.type === "session_meta" && ev.payload?.cwd !== undefined && match.has(ev.payload.cwd)) matchesCwd = true;
 		const t = ev.payload?.info?.total_token_usage;
 		if (ev.type === "event_msg" && ev.payload?.type === "token_count" && t) {
 			const cached = num(t.cached_input_tokens);
@@ -74,10 +76,11 @@ function harvest(root: string, window: { since: number; until: number }, parse: 
 	return total;
 }
 
-export function harvestClaudeUsage(input: { home?: string; cwd: string; since: number; until: number }): UsageTotals | null {
-	return harvest(join(input.home ?? homedir(), ".claude", "projects"), input, (lines) => parseClaudeTranscriptLines(lines, input.cwd));
+/** `cwds`: every spelling of the workspace a session may have recorded (e.g. the path as given and its realpath). */
+export function harvestClaudeUsage(input: { home?: string; cwds: readonly string[]; since: number; until: number }): UsageTotals | null {
+	return harvest(join(input.home ?? homedir(), ".claude", "projects"), input, (lines) => parseClaudeTranscriptLines(lines, input.cwds));
 }
 
-export function harvestCodexUsage(input: { home?: string; cwd: string; since: number; until: number }): UsageTotals | null {
-	return harvest(join(input.home ?? homedir(), ".codex", "sessions"), input, (lines) => parseCodexRolloutLines(lines, input.cwd));
+export function harvestCodexUsage(input: { home?: string; cwds: readonly string[]; since: number; until: number }): UsageTotals | null {
+	return harvest(join(input.home ?? homedir(), ".codex", "sessions"), input, (lines) => parseCodexRolloutLines(lines, input.cwds));
 }
