@@ -69,6 +69,10 @@ jobs:
         working-directory: ai-whisper
         run: pnpm typecheck
 
+      - name: Eval toolchain (fixture devDependencies, installed outside the repo)
+        working-directory: ai-whisper
+        run: pnpm eval -- toolchain
+
       - name: Test
         working-directory: ai-whisper
         run: pnpm -s test
