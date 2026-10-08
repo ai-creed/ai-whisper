@@ -141,6 +141,7 @@ The primary success rate always uses the fixed `scheduled_per_arm` denominator. 
 - Transcript harvesting depends on the claude and codex session file locations. The dry run cannot validate it; the real smoke task does.
 - A dirty working tree is not part of the `cli_versions.whisper` pin.
 - Two trials per task per arm is directional evidence, not statistical proof.
+- Agents inherit the operator's claude/codex user configuration (global instructions, plugins, MCP servers, memory); sessions are not clean-room isolated. The runner only scrubs the agent environment it controls: npm/pnpm script variables (`npm_*`), `INIT_CWD`, `PWD`, `OLDPWD` and any `PATH` entries inside this repository are removed before an agent session starts.
 
 ## What is committed
 

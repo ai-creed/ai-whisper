@@ -60,6 +60,7 @@ export const RESIDUAL_CONFOUNDS: readonly string[] = [
 	"Arm C runs mounted interactive sessions; Arms A/B run headless `claude -p`.",
 	"Arms are matched on token-budget parity only nominally: enforced from metered usage in A/B but from a character-based estimate in C.",
 	"Fixture-authorship bias: the task author also tuned the system under test.",
+	"Agents inherit the operator's claude/codex user configuration (global instructions, plugins, MCP servers, memory); sessions are not clean-room isolated.",
 ];
 
 function distinct(values: Array<string | number | null>): string {

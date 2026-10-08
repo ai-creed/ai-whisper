@@ -30,6 +30,7 @@ describe("renderReport", () => {
 		expect(md).toContain("| run-order seed | 1 |");
 		expect(md).toContain("| implementer model | impl |");
 		for (const h of ["## Primary metric", "## Per-task breakdown", "## Secondary metrics", "## Tokens & cost", "## Harness failures", "## Residual confounds", "## Caveat"]) expect(md).toContain(h);
+		expect(md).toContain("sessions are not clean-room isolated");
 		expect(md).toContain("character-based estimate — not comparable across arms");
 		expect(md).toMatch(/graded 2\/4 scheduled/);
 		expect(md).toContain("**INTERIM REPORT**");

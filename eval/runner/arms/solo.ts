@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { costFor, loadPricing, type PricingTable } from "../pricing.ts";
 import { HarnessFailure, type RunOutcome, type TaskMeta } from "../types.ts";
+import { DEFAULT_REPO_ROOT } from "../workspace.ts";
+import { scrubAgentEnv } from "./agent-env.ts";
 import { parseSelfReviewFindings } from "./self-review.ts";
 import { composeSoloPrompt } from "./solo-prompt.ts";
 import { StreamUsageAccumulator } from "./stream-usage.ts";
@@ -38,7 +40,7 @@ export async function runSoloArm(input: SoloArmInput): Promise<RunOutcome> {
 	const child = spawn(input.claudeCommand ?? "claude", soloClaudeArgs(input.implementerModel, input.maxTurns ?? 400), {
 		cwd: input.workspaceDir,
 		stdio: ["pipe", "pipe", "pipe"],
-		env: { ...process.env },
+		env: scrubAgentEnv(process.env, DEFAULT_REPO_ROOT),
 	});
 
 	const terminate = (reason: "token_cap" | "wall_clock_cap"): void => {
