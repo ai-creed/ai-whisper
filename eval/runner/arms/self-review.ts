@@ -1,5 +1,5 @@
-const FINDING_RE = /^\s*FINDING:\s*\S/gm;
-const CYCLE_RE = /^\s*SELF-REVIEW CYCLE \d+ COMPLETE/gm;
+const FINDING_RE = /^\s*(?:[-*>]\s*)*(?:`|\*\*)?\s*FINDING(?:\*\*)?:\s*\S/gm;
+const CYCLE_RE = /^\s*(?:[-*>]\s*)*(?:`|\*\*)?\s*SELF-REVIEW CYCLE \d+ COMPLETE/gm;
 
 /** Arm B secondary metric: findings the agent reported under the self-review protocol. */
 export function parseSelfReviewFindings(texts: readonly string[]): { cycles: number; findings: number } | null {

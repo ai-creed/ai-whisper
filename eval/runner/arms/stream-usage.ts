@@ -30,7 +30,7 @@ export class StreamUsageAccumulator {
 				else this.anonymous = addUsage(this.anonymous, u);
 			}
 		} else if (ev.type === "result") {
-			if (typeof ev.result === "string") this.texts.push(ev.result);
+			if (typeof ev.result === "string" && ev.result.trim() !== (this.texts[this.texts.length - 1] ?? "").trim()) this.texts.push(ev.result);
 			this.sawResult = true;
 			this.resultSubtype = typeof ev.subtype === "string" ? ev.subtype : null;
 			this.resultUsage = ev.usage ? toUsage(ev.usage) : null;

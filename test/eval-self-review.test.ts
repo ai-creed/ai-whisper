@@ -11,4 +11,7 @@ describe("parseSelfReviewFindings", () => {
 	it("ignores the marker's own count and blank FINDING lines", () => {
 		expect(parseSelfReviewFindings(["FINDING:   \nFINDING: real\nSELF-REVIEW CYCLE 1 COMPLETE: 7 findings"])).toEqual({ cycles: 1, findings: 1 });
 	});
+	it("counts markdown-wrapped markers", () => {
+		expect(parseSelfReviewFindings(["- FINDING: x\n**FINDING:** y\n`FINDING: z`\n> SELF-REVIEW CYCLE 1 COMPLETE: 3 findings"])).toEqual({ cycles: 1, findings: 3 });
+	});
 });

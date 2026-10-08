@@ -39,4 +39,17 @@ describe("StreamUsageAccumulator", () => {
 		a.feed(JSON.stringify({ type: "result", subtype: "success", result: "SELF-REVIEW CYCLE 1 COMPLETE: 1 findings" }));
 		expect(a.texts).toEqual(["FINDING: a", "SELF-REVIEW CYCLE 1 COMPLETE: 1 findings"]);
 	});
+	it("does not duplicate the result text when it repeats the last assistant text", () => {
+		const a = new StreamUsageAccumulator();
+		const text = "FINDING: a\nSELF-REVIEW CYCLE 1 COMPLETE: 1 findings";
+		a.feed(JSON.stringify({ type: "assistant", message: { id: "m1", content: [{ type: "text", text }] } }));
+		a.feed(JSON.stringify({ type: "result", subtype: "success", result: `${text}\n` }));
+		expect(a.texts).toEqual([text]);
+	});
+	it("keeps the result text when it differs from the last assistant text", () => {
+		const a = new StreamUsageAccumulator();
+		a.feed(JSON.stringify({ type: "assistant", message: { id: "m1", content: [{ type: "text", text: "FINDING: a" }] } }));
+		a.feed(JSON.stringify({ type: "result", subtype: "success", result: "done" }));
+		expect(a.texts).toHaveLength(2);
+	});
 });
