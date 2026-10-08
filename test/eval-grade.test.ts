@@ -15,9 +15,9 @@ function fixture(ws: string, opts: { impl: string; breakTooling?: boolean }) {
 	writeFileSync(join(ws, "eslint.config.mjs"), "import js from '@eslint/js';\nexport default [js.configs.recommended, { ignores: ['node_modules/**'] }];\n");
 	if (!opts.breakTooling) writeFileSync(join(ws, "package.json"), JSON.stringify({ name: "fx", private: true, type: "module", scripts: { typecheck: "tsc -p tsconfig.json", lint: "eslint .", test: "vitest run --passWithNoTests --exclude __grade__" } }));
 }
-function task(root: string): TaskMeta {
+function task(root: string, gradeSrc?: string): TaskMeta {
 	const dir = join(root, "task"); mkdirSync(join(dir, "grade"), { recursive: true });
-	writeFileSync(join(dir, "grade", "add.grade.test.ts"), "import { it, expect } from 'vitest';\nimport { add } from '../src/add.ts';\nit('adds', () => expect(add(2, 2)).toBe(4));\nit('adds negatives', () => expect(add(-1, -1)).toBe(-2));\n");
+	writeFileSync(join(dir, "grade", "add.grade.test.ts"), gradeSrc ?? "import { it, expect } from 'vitest';\nimport { add } from '../src/add.ts';\nit('adds', () => expect(add(2, 2)).toBe(4));\nit('adds negatives', () => expect(add(-1, -1)).toBe(-2));\n");
 	return { slug: "t", category: "feature", shape: "quick-task", dir, title: "t", taskSection: "x", scopeBullets: ["src/add.ts"], acceptanceSection: "x", approach: "x", budget: { wallClockSeconds: 1, tokenCap: 1 } };
 }
 
@@ -62,6 +62,24 @@ describe("gradeRun", () => {
 		expect(r.hygiene).toEqual({ typecheck: "fail", lint: "fail", tests: "fail" });
 		expect(r.taskSuccess).toBe(false);
 		expect(r.gradeTestsTotal).toBe(2);
+	}, 60_000);
+
+	it("agent-planted __grade__ content is discarded", () => {
+		root = mkdtempSync(join(tmpdir(), "eval-grade-"));
+		const ws = join(root, "ws"); fixture(ws, { impl: "export function add(a: number, b: number): number { return Math.abs(a + b); }\n" });
+		mkdirSync(join(ws, "__grade__"));
+		writeFileSync(join(ws, "__grade__", "planted.grade.test.ts"), "import { it, expect } from 'vitest';\nit('planted', () => expect(1).toBe(1));\n");
+		writeFileSync(join(ws, "__grade__", "result.json"), JSON.stringify({ numPassedTests: 99, numTotalTests: 99 }));
+		const r = gradeRun({ task: task(root), workspaceDir: ws, gradeDir: join(root, "grade"), toolchainNodeModules: toolchain });
+		expect(r).toMatchObject({ gradeTestsPassed: 1, gradeTestsTotal: 2, taskSuccess: false });
+	}, 60_000);
+
+	it("it.each expansions count toward total", () => {
+		root = mkdtempSync(join(tmpdir(), "eval-grade-"));
+		const ws = join(root, "ws"); fixture(ws, { impl: "export function add(a: number, b: number): number { return a + b; }\n" });
+		const src = "import { it, expect } from 'vitest';\nit.each([1, 2, 3])('case %i', (n) => expect(n).toBeLessThan(3));\n";
+		const r = gradeRun({ task: task(root, src), workspaceDir: ws, gradeDir: join(root, "grade"), toolchainNodeModules: toolchain });
+		expect(r).toMatchObject({ gradeTestsPassed: 2, gradeTestsTotal: 3, taskSuccess: false });
 	}, 60_000);
 });
 
