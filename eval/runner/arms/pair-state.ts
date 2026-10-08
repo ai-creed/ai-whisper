@@ -65,7 +65,8 @@ export function readEvaluatorUsage(stateRoot: string, workflowId: string): { pri
 		return {
 			primary: group("primary"),
 			fallback: group("fallback"),
-			fallbackUsed: rows.some((r) => r.attempt_kind === "fallback" && r.outcome === "ok"),
+			// "Exercised" means attempted: a failed fallback call still counts (spec: evaluator_fallback_used).
+			fallbackUsed: rows.some((r) => r.attempt_kind === "fallback"),
 			calls: rows.length,
 		};
 	});

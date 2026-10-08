@@ -40,6 +40,20 @@ describe("pair-state read-only queries", () => {
 		expect(ev.fallback).toEqual({ inputTokens: 500, outputTokens: 50, cacheWriteTokens: 0, cacheReadTokens: 0 }); // fallback group metered separately
 	});
 
+	it("records fallbackUsed when a fallback was attempted and failed", () => {
+		root = mkdtempSync(join(tmpdir(), "eval-state-"));
+		const db = openDatabase(join(root, "state.db")); applyMigrations(db);
+		const t = "2026-08-19T00:00:00.000Z";
+		const evIns = db.prepare("INSERT INTO relay_evaluator_diagnostics (evaluator_id, handoff_id, collab_id, workflow_id, evaluator_branch, attempt_kind, call_group_id, provider, outcome, latency_ms, input_tokens, output_tokens, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)");
+		evIns.run("e1", "h1", "c1", "wf2", "workflow", "primary", "g1", "anthropic", "error", 10, 100, 10, t);
+		evIns.run("e2", "h1", "c1", "wf2", "workflow", "fallback", "g1", "openai", "error", 10, 200, 0, t);
+		db.close();
+		const ev = readEvaluatorUsage(root, "wf2");
+		expect(ev.fallbackUsed).toBe(true);
+		expect(ev.calls).toBe(2);
+		expect(ev.fallback).toEqual({ inputTokens: 200, outputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0 });
+	});
+
 	it("returns null for an unknown workflow and never writes", () => {
 		root = mkdtempSync(join(tmpdir(), "eval-state-"));
 		const db = openDatabase(join(root, "state.db")); applyMigrations(db); db.close();
