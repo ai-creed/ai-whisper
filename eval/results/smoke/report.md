@@ -5,7 +5,7 @@
 | implementer model | claude-sonnet-5-5 |
 | reviewer model (Arm C) | gpt-5.6-sol |
 | evaluator | anthropic / — (fallback: — / —) |
-| CLI versions | whisper 0.16.0+29f53c4, claude 2.1.293, codex 0.161.0 |
+| CLI versions | whisper 0.16.0+e7b1d1e, claude 2.1.293, codex 0.161.0 |
 | run-order seed | 20260819 |
 
 ## Primary metric
@@ -38,9 +38,9 @@ Interim graded-only rate (not the primary metric):
 
 | Arm | Micro pass fraction | Escalations | Mean rounds | Mean review findings | Mean seconds |
 |---|---|---|---|---|---|
-| A | 100.0% | 0 | — | — | 22 |
+| A | 100.0% | 0 | — | — | 21 |
 | B | 100.0% | 0 | 1.00 | 0.00 | 24 |
-| C | 100.0% | 0 | 2.00 | 0.00 | 248 |
+| C | 100.0% | 0 | 2.00 | 0.00 | 218 |
 
 ## Tokens & cost
 
@@ -48,9 +48,9 @@ Metered columns are computed over metered runs only.
 
 | Arm | Metered runs | Mean tokens (metered) | Mean cost USD (metered) | Estimated runs | character-based estimate — not comparable across arms |
 |---|---|---|---|---|---|
-| A | 1 | 155509 | 0.1028 | 0 | — |
-| B | 1 | 124526 | 0.0965 | 0 | — |
-| C | 0 | — | — | 1 | 2911 |
+| A | 1 | 123191 | 0.0941 | 0 | — |
+| B | 1 | 124593 | 0.0984 | 0 | — |
+| C | 1 | 1315725 | 1.1097 | 0 | — |
 
 ## Harness failures
 

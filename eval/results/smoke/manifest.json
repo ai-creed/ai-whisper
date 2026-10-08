@@ -1,6 +1,6 @@
 {
 	"campaignId": "smoke",
-	"createdAt": "2026-10-08T15:04:15.144Z",
+	"createdAt": "2026-10-08T17:03:12.063Z",
 	"seed": 20260819,
 	"sourceStateRoot": "/Users/vuphan/.ai-whisper",
 	"pins": {
@@ -13,7 +13,7 @@
 			"fallbackModel": null
 		},
 		"cliVersions": {
-			"whisper": "0.16.0+29f53c4",
+			"whisper": "0.16.0+e7b1d1e",
 			"claude": "2.1.293",
 			"codex": "0.161.0"
 		}
@@ -106,8 +106,8 @@
 			"status": "done",
 			"attempts": 1,
 			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/smoke/runs/csv-parse-quoted/B/1/attempt-1",
-			"startedAt": "2026-10-08T15:04:15.554Z",
-			"endedAt": "2026-10-08T15:04:41.661Z"
+			"startedAt": "2026-10-08T17:03:12.489Z",
+			"endedAt": "2026-10-08T17:03:38.731Z"
 		},
 		{
 			"task": "task-scheduler-deps",
@@ -156,8 +156,8 @@
 			"status": "done",
 			"attempts": 1,
 			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/smoke/runs/csv-parse-quoted/A/1/attempt-1",
-			"startedAt": "2026-10-08T15:04:15.604Z",
-			"endedAt": "2026-10-08T15:04:39.760Z"
+			"startedAt": "2026-10-08T17:03:12.539Z",
+			"endedAt": "2026-10-08T17:03:35.716Z"
 		},
 		{
 			"task": "event-bus-wildcards",
@@ -456,8 +456,8 @@
 			"status": "done",
 			"attempts": 1,
 			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/smoke/runs/csv-parse-quoted/C/1/attempt-1",
-			"startedAt": "2026-10-08T15:04:41.685Z",
-			"endedAt": "2026-10-08T15:08:51.360Z"
+			"startedAt": "2026-10-08T17:03:38.756Z",
+			"endedAt": "2026-10-08T17:07:18.469Z"
 		},
 		{
 			"task": "cli-args-subcommands",
