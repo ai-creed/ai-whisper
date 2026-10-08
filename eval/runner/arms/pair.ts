@@ -70,6 +70,7 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 
 function spawnMount(input: PairArmInput, agent: "claude" | "codex", model: string, env: NodeJS.ProcessEnv, onExit: () => void): pty.IPty {
 	const log = createWriteStream(join(input.runDir, `mount-${agent}.log`));
+	log.on("error", (err) => process.stderr.write(`eval pair: mount log stream error ignored: ${err.message}\n`));
 	const p = pty.spawn(process.execPath, [input.whisperCli, "collab", "mount", agent, "--workspace", input.workspaceDir, "--", "--model", model], {
 		name: "xterm-color", cols: 120, rows: 40, cwd: input.workspaceDir, env: env as Record<string, string>,
 	});

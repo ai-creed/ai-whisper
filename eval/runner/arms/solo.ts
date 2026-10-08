@@ -31,8 +31,10 @@ export async function runSoloArm(input: SoloArmInput): Promise<RunOutcome> {
 	const now = input.now ?? (() => Date.now());
 	const pricing = input.pricing ?? loadPricing();
 	mkdirSync(input.runDir, { recursive: true });
+	// Log streams open asynchronously; a write/open failure (disk error, run dir removed) must not crash the runner.
 	const transcript = createWriteStream(join(input.runDir, "transcript.jsonl"));
 	const stderrLog = createWriteStream(join(input.runDir, "stderr.log"));
+	for (const stream of [transcript, stderrLog]) stream.on("error", (err) => process.stderr.write(`eval solo: log stream error ignored: ${err.message}\n`));
 	const acc = new StreamUsageAccumulator();
 	const startedAt = now();
 	let capHit: "token_cap" | "wall_clock_cap" | null = null;
