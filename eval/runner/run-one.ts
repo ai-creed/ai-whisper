@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { runPairArm, type PairArmInput } from "./arms/pair.ts";
@@ -65,7 +66,10 @@ export async function runOne(input: RunOneInput, over: Partial<RunOneDeps> = {})
 	try {
 		mkdirSync(runDir, { recursive: true });
 		const dest = join(input.workspaceRoot, manifest.campaignId, run.task, run.arm, String(run.trial), `attempt-${attempt}`);
-		const stateRoot = `${dest}.state`; // sibling of the workspace: outside the repo, like everything the agents can see
+		// Short state root beside the workspace root (outside the repo): the mount listens on a Unix socket under it and
+		// macOS caps socket paths at 104 bytes, so the long workspace path cannot be part of it.
+		const stateRoot = join(input.workspaceRoot, "..", "state", createHash("sha1").update(dest).digest("hex").slice(0, 12));
+		writeFileSync(join(runDir, "state-path.txt"), stateRoot + "\n");
 		const { workspaceDir } = deps.prepare({ task, dest, toolchainNodeModules: input.toolchainNodeModules });
 		writeFileSync(join(runDir, "workspace-path.txt"), workspaceDir + "\n");
 		if (run.arm === "C") {

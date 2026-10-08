@@ -124,7 +124,7 @@ Tokens come in two kinds. Arms A and B are metered from the agents' own usage re
 Nothing an agent can reach may resolve into the repository, because the repository contains the held-out tests.
 
 - `--workspace-root` and `--toolchain-root` must point outside the repository. The runner refuses otherwise. The checks compare physical (symlink-resolved) paths, so a symlinked directory that lands in the repo is rejected.
-- Workspaces, their `node_modules` symlink to the toolchain, and each Arm C state root (`<workspace>.state`) all live under the workspace root.
+- Workspaces and their `node_modules` symlink to the toolchain live under the workspace root; each Arm C state root is the short sibling `<workspace-root>/../state/<12-hex id>` (recorded in the run dir's `state-path.txt`), because the mount listens on a Unix socket under it and macOS caps socket paths at 104 bytes — a state root beside the long workspace path crashed both mounts at startup. Keep `--workspace-root` short.
 - Fixtures may not contain symlinks, and fixtures and task text may not reference `eval/tasks` or `grade/`.
 
 ## Cost accounting

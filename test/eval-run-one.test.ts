@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -65,6 +65,15 @@ describe("runOne", () => {
 		expect(r.status).toBe("failed");
 		expect(r.row?.stop_reason).toBe("harness_failure");
 		expect(loadManifest(campaignDir).runs.find((x) => runKey(x) === key)).toMatchObject({ status: "failed", attempts: 2 });
+	});
+
+	it("Arm C gets a short state root under <workspaceRoot>/../state so the mount's socket path stays under the macOS limit", async () => {
+		root = mkdtempSync(join(tmpdir(), "eval-runone-")); const { campaignDir, tasksRoot } = campaign(root);
+		const key = runKey({ task: "t1", arm: "C", trial: 1 });
+		let stateRoot = "";
+		await runOne({ campaignDir, tasksRoot, toolchainNodeModules: root, whisperCli: "x", workspaceRoot: join(root, "ws-outside"), key }, deps({ runPair: async (i) => { stateRoot = i.stateRoot; return outcome("C"); } }));
+		expect(stateRoot).toMatch(new RegExp(`^${join(root, "state")}/[0-9a-f]{12}$`));
+		expect(existsSync(join(campaignDir, "runs", "t1", "C", "1", "attempt-1", "state-path.txt"))).toBe(true);
 	});
 
 	it("an Arm C product-stack failure is an unsuccessful run even when the workspace grades green, and not a harness failure", async () => {
