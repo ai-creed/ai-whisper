@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { chmodSync, copyFileSync, createWriteStream, existsSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import * as pty from "node-pty";
-import { assertOutsideRepo } from "../paths.ts";
+import { assertOutsideRepo, physicalPath } from "../paths.ts";
 import { costFor, loadPricing, type PricingTable } from "../pricing.ts";
 import { HarnessFailure, ZERO_USAGE, addUsage, estimateTokensFromChars, type EvaluatorSnapshot, type RunOutcome, type TaskMeta, type UsageTotals } from "../types.ts";
 import { DEFAULT_REPO_ROOT } from "../workspace.ts";
@@ -108,11 +108,13 @@ export async function runPairArm(input: PairArmInput): Promise<RunOutcome> {
 	let workflowId: string | null = null;
 	let collabId: string | null = null;
 
+	// The real mount stores the realpath as collab.workspace_root; everything else keeps the path as given.
+	const physicalWorkspace = physicalPath(input.workspaceDir);
 	const waitBound = async (agent: string): Promise<boolean> => {
 		const until = Math.min(now() + bindTimeoutMs, deadline);
 		while (now() < until) {
 			try {
-				const collab = readCollabForWorkspace(stateRoot, input.workspaceDir);
+				const collab = readCollabForWorkspace(stateRoot, physicalWorkspace);
 				if (collab) { collabId = collab.collabId; if (readBoundAgents(stateRoot, collab.collabId).includes(agent)) return true; }
 			} catch { /* DB not created yet */ }
 			await sleep(Math.min(pollMs, 500));
@@ -142,7 +144,11 @@ export async function runPairArm(input: PairArmInput): Promise<RunOutcome> {
 		}
 		if (!failureMode && workflowId && !collabId) failureMode = "collab_missing";
 		if (!failureMode && workflowId && collabId) {
-			input.hooks?.onWorkflowStarted?.({ workflowId, stateRoot, collabId });
+			try {
+				input.hooks?.onWorkflowStarted?.({ workflowId, stateRoot, collabId });
+			} catch (e) {
+				throw new HarnessFailure(`onWorkflowStarted hook failed: ${(e as Error).message}`, e);
+			}
 			for (;;) {
 				if (now() >= deadline) { stopReason = "wall_clock_cap"; stopSource = "estimated"; break; }
 				try {

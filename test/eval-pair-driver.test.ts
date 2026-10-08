@@ -12,16 +12,19 @@ const repoRoot = join(import.meta.dirname, "..");
 
 /**
  * Fake `whisper`: `collab mount <agent>` seeds the collab + binding rows into
- * AI_WHISPER_STATE_ROOT/state.db using the real broker migrations, refreshes the
+ * AI_WHISPER_STATE_ROOT/state.db using the real broker migrations (storing the
+ * realpath of --workspace as the real mount does), refreshes the
  * daemon heartbeat every 5 s, and stays alive; `workflow start` inserts a workflow
  * row with the status given by FAKE_WF_STATUS and prints the real "Workflow started:"
- * line; `collab stop` exits 0.
+ * line; anything with `stop` in argv exits 0 immediately.
  */
 function fakeWhisper(dir: string): string {
 	const p = join(dir, "fake-whisper.mjs");
 	writeFileSync(p, `#!/usr/bin/env node
 import { openDatabase, applyMigrations } from ${JSON.stringify(join(repoRoot, "packages/broker/dist/index.js"))};
+import { realpathSync } from "node:fs";
 import { join } from "node:path";
+if (process.argv.includes("stop")) process.exit(0);
 const [cmd, sub, agent] = process.argv.slice(2);
 const root = process.env.AI_WHISPER_STATE_ROOT;
 const dbPath = join(root, "state.db");
@@ -29,7 +32,7 @@ const db = openDatabase(dbPath); applyMigrations(db);
 const t = new Date().toISOString();
 const ws = process.argv[process.argv.indexOf("--workspace") + 1] ?? process.cwd();
 if (cmd === "collab" && sub === "mount") {
-  db.prepare("INSERT OR IGNORE INTO collab (collab_id, workspace_root, display_name, status, created_at, updated_at) VALUES ('c1', ?, 'ws', 'active', ?, ?)").run(ws, t, t);
+  db.prepare("INSERT OR IGNORE INTO collab (collab_id, workspace_root, display_name, status, created_at, updated_at) VALUES ('c1', ?, 'ws', 'active', ?, ?)").run(realpathSync(ws), t, t);
   db.prepare("INSERT OR REPLACE INTO broker_daemon (collab_id, host, port, pid, started_at, last_heartbeat_at) VALUES ('c1','127.0.0.1',1,1,?,?)").run(t, t);
   db.prepare("INSERT OR REPLACE INTO session_binding (collab_id, agent_type, binding_state, updated_at) VALUES ('c1', ?, 'bound', ?)").run(agent, t);
   db.close(); process.stdin.resume();
@@ -76,6 +79,15 @@ describe("runPairArm", () => {
 		expect(existsSync(join(root, "state", "state.db"))).toBe(true); // the run's AI_WHISPER_STATE_ROOT is the external sibling, not under eval/results
 	}, 30_000);
 
+	it("finds the collab when the workspace path is a symlink alias (the real mount stores the realpath)", async () => {
+		root = mkdtempSync(join(tmpdir(), "eval-pair-"));
+		mkdirSync(join(root, "real-ws"));
+		symlinkSync(join(root, "real-ws"), join(root, "ws-alias"), "dir");
+		const out = await runPairArm({ task, workspaceDir: join(root, "ws-alias"), runDir: join(root, "run"), stateRoot: join(root, "state"), implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: fakeWhisper(root), pollMs: 100, homeDir: root, pricing: {} });
+		expect(out.stopReason).toBe("completed");
+		expect(out.workspaceDir).toBe(join(root, "ws-alias"));
+	}, 30_000);
+
 	it("refuses a state root inside the repository, including through a symlink alias", async () => {
 		root = mkdtempSync(join(tmpdir(), "eval-pair-"));
 		const ws = join(root, "ws"); mkdirSync(ws);
@@ -97,7 +109,7 @@ describe("runPairArm", () => {
 		root = mkdtempSync(join(tmpdir(), "eval-pair-"));
 		const ws = join(root, "ws"); mkdirSync(ws);
 		const never = join(root, "never.mjs");
-		writeFileSync(never, "#!/usr/bin/env node\nprocess.stdin.resume(); setInterval(() => {}, 1e9);\n"); chmodSync(never, 0o755);
+		writeFileSync(never, "#!/usr/bin/env node\nif (process.argv.includes(\"stop\")) process.exit(0);\nprocess.stdin.resume(); setInterval(() => {}, 1e9);\n"); chmodSync(never, 0o755);
 		const out = await runPairArm({ task, workspaceDir: ws, runDir: join(root, "run"), stateRoot: join(root, "state"), implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: never, pollMs: 100, bindTimeoutMs: 1500, homeDir: root, pricing: {} });
 		expect(out.stopReason).toBe("agent_failure");
 		expect(out.failureMode).toBe("mount_bind_timeout");
