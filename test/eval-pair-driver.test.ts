@@ -17,7 +17,7 @@ const repoRoot = join(import.meta.dirname, "..");
  * daemon heartbeat every 5 s, and stays alive; `workflow start` inserts a workflow
  * row with the status given by FAKE_WF_STATUS (plus, with FAKE_WF_ESCALATED_PHASE=1, an
  * escalated phase and chain as the broker's escalate path writes them) and prints the
- * real "Workflow started:" line; anything with `stop` in argv exits 0 immediately.
+ * real "Workflow started:" line (FAKE_WF_NO_ROW=1 prints the line but writes no row); anything with `stop` in argv exits 0 immediately.
  */
 function fakeWhisper(dir: string): string {
 	const p = join(dir, "fake-whisper.mjs");
@@ -39,6 +39,8 @@ if (cmd === "collab" && sub === "mount") {
   db.close(); process.stdin.resume();
   setInterval(() => { const d = openDatabase(dbPath); d.prepare("UPDATE broker_daemon SET last_heartbeat_at = ?").run(new Date().toISOString()); d.close(); }, 5000);
   process.on("SIGTERM", () => process.exit(0));
+} else if (cmd === "workflow" && sub === "start" && process.env.FAKE_WF_NO_ROW === "1") {
+  db.close(); console.log("Workflow started: wf_1");
 } else if (cmd === "workflow" && sub === "start") {
   db.prepare("INSERT INTO workflows (workflow_id, collab_id, workflow_type, spec_path, role_bindings, status, current_phase_index, halt_reason, workflow_context, created_at, updated_at) VALUES ('wf_1','c1','quick-task','x','{}',?,0,?, '{}', ?, ?)")
     .run(process.env.FAKE_WF_STATUS ?? "done", process.env.FAKE_WF_HALT ?? null, t, t);
@@ -118,6 +120,15 @@ describe("runPairArm", () => {
 		expect(out.escalated).toBe(true);
 		expect(out.failureMode).toBeNull();
 	}, 30_000);
+
+	it("gives up on a workflow row that never appears as collab_missing, well before the wall clock", async () => {
+		root = mkdtempSync(join(tmpdir(), "eval-pair-"));
+		const ws = join(root, "ws"); mkdirSync(ws);
+		const out = await runPairArm({ task: { ...task, budget: { ...task.budget, wallClockSeconds: 30 } }, workspaceDir: ws, runDir: join(root, "run"), stateRoot: join(root, "state"), implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: fakeWhisper(root), env: { FAKE_WF_NO_ROW: "1" }, pollMs: 50, homeDir: root, pricing: {} });
+		expect(out.stopReason).toBe("agent_failure");
+		expect(out.failureMode).toBe("collab_missing");
+		expect(out.seconds).toBeLessThan(15);
+	}, 40_000);
 
 	it("reports mount_bind_timeout as an unsuccessful run, not a harness failure", async () => {
 		root = mkdtempSync(join(tmpdir(), "eval-pair-"));

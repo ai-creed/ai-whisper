@@ -150,10 +150,14 @@ export async function runPairArm(input: PairArmInput): Promise<RunOutcome> {
 			} catch (e) {
 				throw new HarnessFailure(`onWorkflowStarted hook failed: ${(e as Error).message}`, e);
 			}
+			// Consecutive polls with no workflow row, no heartbeat row, or an unreadable DB: an ambiguous state, not a wait.
+			let anomalies = 0;
 			for (;;) {
 				if (now() >= deadline) { stopReason = "wall_clock_cap"; stopSource = "estimated"; break; }
+				let anomalous = false;
 				try {
 					const wf = readWorkflow(stateRoot, workflowId);
+					if (wf === null) anomalous = true;
 					if (wf?.status === "done") { stopReason = "completed"; break; }
 					if (wf?.status === "halted") {
 						if (readWorkflowProgress(stateRoot, workflowId).escalated || /max-rounds|escalat/i.test(wf.haltReason ?? "")) { stopReason = "escalated"; escalated = true; }
@@ -162,10 +166,20 @@ export async function runPairArm(input: PairArmInput): Promise<RunOutcome> {
 					}
 					if (wf?.status === "canceled") { failureMode = "workflow_halted"; break; }
 					const hb = readDaemonHeartbeat(stateRoot, collabId);
+					if (hb === null) anomalous = true;
 					if (hb && now() - Date.parse(hb) > 30_000) { failureMode = "daemon_dead"; break; }
 					const progress = readWorkflowProgress(stateRoot, workflowId);
 					if (estimateTokensFromChars(progress.estimatedChars) > input.task.budget.tokenCap) { stopReason = "token_cap"; stopSource = "estimated"; break; }
-				} catch { /* transient read failure (e.g. busy DB); retry next poll */ }
+				} catch { anomalous = true; /* e.g. busy DB; tolerated unless it persists */ }
+				anomalies = anomalous ? anomalies + 1 : 0;
+				if (anomalies >= 10) {
+					let collabGone: boolean;
+					try {
+						collabGone = readCollabForWorkspace(stateRoot, physicalWorkspace) === null || readWorkflow(stateRoot, workflowId) === null;
+					} catch { collabGone = false; /* state unreadable: the daemon side is what is broken */ }
+					failureMode = collabGone ? "collab_missing" : "daemon_dead";
+					break;
+				}
 				await sleep(pollMs);
 			}
 		}
