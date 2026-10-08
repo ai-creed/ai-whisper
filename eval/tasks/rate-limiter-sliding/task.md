@@ -13,6 +13,7 @@
 - With `limit` 3 and `windowMs` 1000, three acquires at t=0 succeed, a fourth fails, and `retryAfterMs()` is 1000.
 - At t=1000 the fourth acquire succeeds: the boundary is inclusive, so a timestamp exactly `windowMs` old has left the window.
 - Old timestamps are pruned, so the memory used is bounded by `limit`.
+- `SlidingWindowLimiter` keeps its recorded timestamps in a private array property named `timestamps` (pruned on every call, so its length never exceeds `limit`).
 - `TokenBucket.tryAcquire()` behaves exactly like `tryRemove(1)`.
 - When a `TokenBucket` is empty, its `retryAfterMs()` is `ceil((1 - tokens) / refillPerSecond * 1000)`, and it is 0 when a token is available.
 - Both classes satisfy the exported `Limiter` interface.
