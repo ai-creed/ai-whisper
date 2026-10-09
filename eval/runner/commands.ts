@@ -47,7 +47,7 @@ type CommandDeps = Partial<RunOneDeps> & { preflight?: typeof checkBillingPrefli
 /** Pre-spend gate: the shell must be able to honour the campaign's billing pin. Dry runs use a fake claude and skip it. */
 function billingPreflight(o: SliceOpts, m: Manifest, deps: CommandDeps): void {
 	if (o.dryRun) return;
-	(deps.preflight ?? checkBillingPreflight)(m.pins.billing, process.env, DEFAULT_REPO_ROOT);
+	(deps.preflight ?? checkBillingPreflight)({ billing: m.pins.billing, env: process.env, repoRoot: DEFAULT_REPO_ROOT, evaluator: m.pins.evaluator, sourceStateRoot: m.sourceStateRoot });
 }
 
 async function runWithRetry(o: SliceOpts, key: string, deps: Partial<RunOneDeps>): Promise<"done" | "failed"> {

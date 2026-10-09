@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { parseArms, parseBilling, parseNonNegativeInt, parsePositiveInt, UsageError } from "../eval/runner/cli-args.ts";
+import { assertBillingFlagScope, parseArms, parseBilling, parseNonNegativeInt, parsePositiveInt, UsageError } from "../eval/runner/cli-args.ts";
 import { cmdInit, cmdReport, cmdRun, cmdSlice, cmdStatus, cmdValidateTasks } from "../eval/runner/commands.ts";
 import { loadManifest, runKey } from "../eval/runner/manifest.ts";
 import type { RunOutcome } from "../eval/runner/types.ts";
@@ -83,7 +83,7 @@ describe("commands", () => {
 		const campaignDir = join(root, "results", "c");
 		const m = cmdInit({ campaignDir, tasksRoot, trials: 1, seed: 9, implementerModel: "impl", reviewerModel: "rev", billing: "subscription", sourceStateRoot: root, cliVersions, evaluator });
 		const seen: string[] = []; let runs = 0;
-		const deps = (preflight: (b: string) => void) => ({
+		const deps = (preflight: (i: { billing: string }) => void) => ({
 			runSolo: async () => { runs++; return ok; }, runPair: async () => { runs++; return { ...ok, rounds: 1, reviewFindings: 0, reviewerModel: "rev", evaluator: { ...evaluator, fallbackUsed: false } }; },
 			grade: () => green, prepare: (i: { dest: string }) => ({ workspaceDir: i.dest, baselineSha: "0".repeat(40) }),
 			liveReviewerModel: () => "rev", liveEvaluator: () => evaluator, liveCliVersions: () => cliVersions, now: () => "x", preflight,
@@ -91,9 +91,9 @@ describe("commands", () => {
 		const opts = { campaignDir, tasksRoot, toolchainNodeModules: root, whisperCli: "x", workspaceRoot: join(root, "ws"), parallelSolo: 1 };
 		await expect(cmdSlice(opts, deps(() => { throw new Error("no login"); }))).rejects.toThrow(/no login/);
 		expect(runs).toBe(0);
-		await cmdSlice({ ...opts, arms: ["A"] }, deps((b) => seen.push(b)));
+		await cmdSlice({ ...opts, arms: ["A"] }, deps((i) => seen.push(i.billing)));
 		expect(seen).toEqual(["subscription"]);
-		await cmdRun({ ...opts, key: runKey(m.runs.find((r) => r.arm === "B")!) }, deps((b) => seen.push(b)));
+		await cmdRun({ ...opts, key: runKey(m.runs.find((r) => r.arm === "B")!) }, deps((i) => seen.push(i.billing)));
 		expect(seen).toEqual(["subscription", "subscription"]);
 		const dry = { env: {}, claudeCommand: "fake" };
 		await cmdRun({ ...opts, key: runKey(m.runs.find((r) => r.arm === "C")!), dryRun: dry }, deps(() => { throw new Error("must not run"); }));
@@ -128,6 +128,10 @@ describe("commands", () => {
 		expect(parseBilling(undefined)).toBe("subscription");
 		expect(parseBilling("api")).toBe("api");
 		expect(() => parseBilling("free")).toThrow(/--billing must be one of subscription, api, got free/);
+		// --billing is a pin: accepted on init only, so a slice cannot silently run on the manifest's mode
+		expect(() => assertBillingFlagScope("init", "api")).not.toThrow();
+		expect(() => assertBillingFlagScope("slice", undefined)).not.toThrow();
+		expect(() => assertBillingFlagScope("slice", "api")).toThrow(/--billing is pinned at init/);
 		expect(parseArms(["A", "C"])).toEqual(["A", "C"]);
 		expect(() => parseArms(["D"])).toThrow("--arm must be one of A, B, C");
 	});

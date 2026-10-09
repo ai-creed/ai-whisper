@@ -26,7 +26,7 @@ export interface ResolvedEvaluatorConfig {
 // documented limitation; for anything fancier, export a real env var (highest
 // precedence). Returns a flat record; callers apply it only where process.env
 // does not already define the key.
-function parseDotEnv(text: string): Record<string, string> {
+export function parseDotEnv(text: string): Record<string, string> {
 	const out: Record<string, string> = {};
 	for (const rawLine of text.split(/\r?\n/)) {
 		const line = rawLine.trim();

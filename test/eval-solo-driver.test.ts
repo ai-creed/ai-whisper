@@ -94,4 +94,24 @@ process.on("SIGTERM", () => { clearInterval(t); process.exit(143); });`);
 		const ws = join(root, "ws"); mkdirSync(ws);
 		await expect(runSoloArm({ task: task(), arm: "A", billing: "api", workspaceDir: ws, runDir: join(root, "run"), implementerModel: "m", claudeCommand: join(root, "missing"), pricing: {} })).rejects.toBeInstanceOf(HarnessFailure);
 	});
+
+	it("hands the child the scrubbed env: no Anthropic key under subscription, the key under api", async () => {
+		root = mkdtempSync(join(tmpdir(), "eval-solo-"));
+		const cmd = fakeClaude(root, `
+process.stdin.resume(); process.stdin.on("end", () => {
+  require("node:fs").writeFileSync("env.txt", process.env.ANTHROPIC_API_KEY === undefined ? "absent" : "present:" + process.env.ANTHROPIC_API_KEY);
+  console.log(JSON.stringify({type:"result",subtype:"success",num_turns:1,result:"done",usage:{input_tokens:1,output_tokens:1}}));
+});`);
+		const prev = process.env.ANTHROPIC_API_KEY;
+		process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+		try {
+			for (const [billing, expected] of [["subscription", "absent"], ["api", "present:sk-ant-test"]] as const) {
+				const ws = join(root, `ws-${billing}`); mkdirSync(ws);
+				await runSoloArm({ task: task(), arm: "A", billing, workspaceDir: ws, runDir: join(root, `run-${billing}`), implementerModel: "m", claudeCommand: cmd, pricing: {} });
+				expect(readFileSync(join(ws, "env.txt"), "utf8")).toBe(expected);
+			}
+		} finally {
+			if (prev === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = prev;
+		}
+	});
 });

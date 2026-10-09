@@ -107,7 +107,7 @@ export function renderReport(input: { rows: LedgerRow[] }): string {
 	for (const a of ARMS) L.push(`| ${a} | ${pct(s[a].microPassFraction)} | ${s[a].escalations} | ${fmt(s[a].meanRounds)} | ${fmt(s[a].meanReviewFindings)} | ${fmt(s[a].meanSeconds, 0)} |`);
 	L.push("", "## Tokens & cost", "", "Metered columns are computed over metered runs only.", "");
 	if (rows.some((r) => r.billing === "subscription")) {
-		L.push("Cost USD is **notional** for subscription-billed rows: metered tokens priced at the API rates in `pricing.json`, nothing was billed per token. The evaluator (Arm C) always bills the API.", "");
+		L.push("Cost USD is **notional** for subscription-billed rows: metered tokens priced at the API rates in `pricing.json`, nothing was billed per token for the claude seats. The Arm C evaluator bills its own configured provider (the Anthropic API key in the state root's auth.json for `anthropic`), so that share of an Arm C row is real spend.", "");
 	}
 	L.push("| Arm | Metered runs | Mean tokens (metered) | Mean cost USD (metered) | Estimated runs | character-based estimate — not comparable across arms |", "|---|---|---|---|---|---|");
 	for (const a of ARMS) L.push(`| ${a} | ${s[a].metered.n} | ${fmt(s[a].metered.meanTokens, 0)} | ${fmt(s[a].metered.meanCostUsd, 4)} | ${s[a].estimated.n} | ${fmt(s[a].estimated.meanEstimatedTokens, 0)} |`);

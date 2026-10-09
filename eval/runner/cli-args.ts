@@ -30,3 +30,8 @@ export function parseBilling(raw: string | undefined): BillingMode {
 	if (!(BILLING_MODES as readonly string[]).includes(raw)) throw new UsageError(`--billing must be one of ${BILLING_MODES.join(", ")}, got ${raw}`);
 	return raw as BillingMode;
 }
+
+/** --billing is a campaign pin: only init may set it. Accepting it elsewhere would let a slice look api-billed while running on the manifest's mode. */
+export function assertBillingFlagScope(cmd: string | undefined, raw: string | undefined): void {
+	if (raw !== undefined && cmd !== "init") throw new UsageError(`--billing is pinned at init and cannot be changed per ${cmd ?? "command"}; init a new campaign to switch billing modes`);
+}

@@ -1,8 +1,9 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { parseArms, parseNonNegativeInt, parsePositiveInt, UsageError, parseBilling } from "./cli-args.ts";
+import { parseArms, parseNonNegativeInt, parsePositiveInt, UsageError, parseBilling, assertBillingFlagScope } from "./cli-args.ts";
 import { cmdGrade, cmdInit, cmdReport, cmdRun, cmdSlice, cmdStatus, cmdValidateTasks } from "./commands.ts";
+import { BillingPreflightError } from "./billing.ts";
 import { DriftError } from "./pins.ts";
 import { runDryRun } from "./dry-run.ts";
 import { DEFAULT_TOOLCHAIN_ROOT, ensureToolchain } from "./toolchain.ts";
@@ -43,6 +44,7 @@ async function run(): Promise<number> {
 	});
 	const cmd = positionals[0];
 	const arms = parseArms(values.arm);
+	assertBillingFlagScope(cmd, values.billing);
 	const billing = parseBilling(values.billing);
 	const limit = values.limit === undefined ? undefined : parsePositiveInt("--limit", values.limit);
 	const parallelSolo = parsePositiveInt("--parallel-solo", values["parallel-solo"], 2);
@@ -92,7 +94,7 @@ async function run(): Promise<number> {
 			default: console.error(USAGE); return 1;
 		}
 	} catch (e) {
-		if (e instanceof DriftError) { console.error(e.message); return 3; }
+		if (e instanceof DriftError || e instanceof BillingPreflightError) { console.error(e.message); return 3; }
 		throw e;
 	}
 }
