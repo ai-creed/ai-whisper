@@ -58,6 +58,7 @@ export async function runOne(input: RunOneInput, over: Partial<RunOneDeps> = {})
 	}
 
 	const attempt = run.attempts + 1;
+	const harnessAttempt = attempt - run.quotaAborts; // quota-aborted attempts do not use up the retry
 	const runDir = join(input.campaignDir, "runs", run.task, run.arm, String(run.trial), `attempt-${attempt}`);
 	manifest = claimRun(manifest, input.key, deps.now(), runDir);
 	saveManifest(input.campaignDir, manifest);
@@ -97,7 +98,7 @@ export async function runOne(input: RunOneInput, over: Partial<RunOneDeps> = {})
 		}
 		const kind = classifyError(e);
 		const message = `${kind}: ${(e as Error).message}`;
-		if (attempt < 2) throw new RetryableRunError(message, e);
+		if (harnessAttempt < 2) throw new RetryableRunError(message, e);
 		const row = buildLedgerRow({ campaignId: manifest.campaignId, seed: manifest.seed, scheduledPerArm: scheduledPerArm(manifest), task: run.task, arm: run.arm, trial: run.trial, outcome: null, grade: null, pins: manifest.pins, gradedAt: deps.now(), harnessFailure: message });
 		appendLedgerRow(input.campaignDir, row);
 		saveManifest(input.campaignDir, completeRun(loadManifest(input.campaignDir), input.key, "failed", deps.now()));

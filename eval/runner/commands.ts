@@ -91,7 +91,7 @@ export async function cmdSlice(o: SliceOpts, deps: CommandDeps = {}): Promise<{ 
 		const task: Promise<void> = runWithRetry(o, key, deps).then(tally, noteQuota).finally(() => { pool = pool.filter((p) => p !== task); });
 		pool.push(task);
 	}
-	await drain();
+	try { await drain(); } catch (e) { if (stop.quota) throw stop.quota; throw e; }
 	if (stop.quota) throw stop.quota;
 	return { done, failed };
 }

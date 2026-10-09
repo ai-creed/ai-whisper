@@ -96,7 +96,7 @@ async function run(): Promise<number> {
 		}
 	} catch (e) {
 		if (e instanceof DriftError || e instanceof BillingPreflightError) { console.error(e.message); return 3; }
-		if (e instanceof QuotaExhaustedError) { console.error(`${e.message}\nslice stopped; the aborted run and every run not yet started stay pending. Re-run the same command after the limit resets.`); return 4; }
+		if (e instanceof QuotaExhaustedError) { console.error(`${e.message}\nstopped; the aborted run and every run not yet started stay pending. Re-run the same command after the limit resets.`); return 4; }
 		throw e;
 	}
 }

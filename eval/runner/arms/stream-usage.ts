@@ -14,6 +14,7 @@ export class StreamUsageAccumulator {
 	resultCostUsd: number | null = null;
 	/** The final result event's text, kept apart from assistant texts: only the CLI itself writes it. */
 	resultText: string | null = null;
+	resultIsError = false;
 	resultSubtype: string | null = null;
 	numTurns: number | null = null;
 	sawResult = false;
@@ -22,7 +23,7 @@ export class StreamUsageAccumulator {
 	feed(line: string): void {
 		const trimmed = line.trim();
 		if (!trimmed.startsWith("{")) return;
-		let ev: { type?: string; subtype?: string; result?: string; message?: { id?: string; usage?: RawUsage; content?: Array<{ type?: string; text?: string }> }; usage?: RawUsage; total_cost_usd?: number; num_turns?: number };
+		let ev: { type?: string; subtype?: string; is_error?: boolean; result?: string; message?: { id?: string; usage?: RawUsage; content?: Array<{ type?: string; text?: string }> }; usage?: RawUsage; total_cost_usd?: number; num_turns?: number };
 		try { ev = JSON.parse(trimmed) as typeof ev; } catch { return; }
 		if (ev.type === "assistant") {
 			for (const block of ev.message?.content ?? []) if (block.type === "text" && typeof block.text === "string") this.texts.push(block.text);
@@ -35,6 +36,7 @@ export class StreamUsageAccumulator {
 			if (typeof ev.result === "string" && ev.result.trim() !== (this.texts[this.texts.length - 1] ?? "").trim()) this.texts.push(ev.result);
 			this.sawResult = true;
 			this.resultText = typeof ev.result === "string" ? ev.result : null;
+			this.resultIsError = ev.is_error === true;
 			this.resultSubtype = typeof ev.subtype === "string" ? ev.subtype : null;
 			this.resultUsage = ev.usage ? toUsage(ev.usage) : null;
 			this.resultCostUsd = typeof ev.total_cost_usd === "number" ? ev.total_cost_usd : null;

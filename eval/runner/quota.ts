@@ -16,9 +16,13 @@ export class QuotaExhaustedError extends Error {
 const SGR = /\x1b\[[0-9;]*m/g;
 // eslint-disable-next-line no-control-regex -- matching terminal escape sequences is the point
 const OTHER_ESCAPES = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|\x1b[()][0-9A-Za-z]/g;
-// Narrow on purpose: agents write about rate limits in task code, so only the CLIs' own account-limit phrasing counts.
-const LIMIT = /hit your (?:usage )?limit|usage limit reached|reached your usage limit|limit will reset at/i;
-const RESET_HINT = /(?:try again at|resets?(?: at)?)\s+[^.\n·]{1,40}/i;
+// Anchored to the CLIs' own wording (claude 2.1.x builds `You've hit your ${kind} limit` / `You've reached your ${model}
+// limit`; codex prints `You've hit your usage limit`). Agents write about rate limits in task code, so bare phrases
+// such as "usage limit reached" or "limit will reset at" do not count, and the qualifier list excludes "rate".
+const LIMIT = /you['’]ve (?:hit|reached) your (?:session |weekly |daily |monthly |opus |sonnet |fable |haiku |usage credit |usage )?limit\b|claude(?: ai)? usage limit reached|\b\d+-hour limit reached/i;
+const RESET_HINT = /(?:try again at|resets?(?: at)?)\s+[^.\n·∙⠀-⣿[]{1,40}/i;
+// Where the CLI's message ends and unrelated terminal output (spinner frames, ai-whisper status lines) begins.
+const CLUTTER = /\[ai-whisper\]|[⠀-⣿]/;
 
 function clean(text: string): string {
 	return text.replace(SGR, "").replace(OTHER_ESCAPES, " ").replace(/[ \t]+/g, " ");
@@ -29,19 +33,32 @@ export function detectUsageLimit(text: string): string | null {
 	const t = clean(text);
 	const m = LIMIT.exec(t);
 	if (!m) return null;
-	const around = t.slice(Math.max(0, m.index - 20), m.index + 240);
-	const hint = RESET_HINT.exec(t.slice(m.index));
-	const head = around.split("\n").find((l) => LIMIT.test(l))?.trim() ?? m[0];
-	return hint && !head.includes(hint[0].trim()) ? `${head} (${hint[0].trim()})` : head;
+	let rest = t.slice(m.index, m.index + 300);
+	const cut = CLUTTER.exec(rest);
+	if (cut) rest = rest.slice(0, cut.index);
+	const head = (rest.split("\n")[0] ?? m[0]).trim();
+	const hint = RESET_HINT.exec(rest);
+	const detail = hint && !head.includes(hint[0].trim()) ? `${head} (${hint[0].trim()})` : head;
+	return detail.slice(0, 200);
 }
 
 /** Streams terminal output; remembers the first limit message seen, including one split across chunks. */
 export class UsageLimitWatcher {
-	hit: string | null = null;
 	private tail = "";
+	private matched = false;
+	private after = 0;
+	/** Keeps reading a little past the first match, so a reset hint printed a moment later is part of the detail. */
 	feed(chunk: string): void {
-		if (this.hit !== null) return;
+		if (this.matched) {
+			if (this.after >= 400) return;
+			this.after += chunk.length;
+			this.tail += chunk;
+			return;
+		}
 		this.tail = (this.tail + chunk).slice(-4000);
-		this.hit = detectUsageLimit(this.tail);
+		if (detectUsageLimit(this.tail) !== null) this.matched = true;
+	}
+	get hit(): string | null {
+		return this.matched ? detectUsageLimit(this.tail) : null;
 	}
 }

@@ -15,7 +15,7 @@ export function buildManifest(input: {
 	for (const task of input.taskSlugs) {
 		for (const arm of ARMS) {
 			for (let trial = 1; trial <= input.trials; trial++) {
-				runs.push({ task, arm, trial, status: "pending", attempts: 0, runDir: null, startedAt: null, endedAt: null });
+				runs.push({ task, arm, trial, status: "pending", attempts: 0, quotaAborts: 0, runDir: null, startedAt: null, endedAt: null });
 			}
 		}
 	}
@@ -59,9 +59,13 @@ export function claimRun(m: Manifest, key: string, now: string, runDir: string):
 	});
 }
 
-/** Back to pending as if never claimed (attempt refunded): the run was aborted for an operator-side reason, not run. */
+/**
+ * Back to pending after an operator-side abort (seat usage limit). `attempts` keeps counting, because it names the
+ * attempt directory, workspace and state root and those must be fresh on the rerun; `quotaAborts` records that this
+ * attempt does not use up the harness retry.
+ */
 export function releaseRun(m: Manifest, key: string): Manifest {
-	return updateRun(m, key, (r) => ({ ...r, status: "pending", attempts: Math.max(0, r.attempts - 1), runDir: null, startedAt: null, endedAt: null }));
+	return updateRun(m, key, (r) => ({ ...r, status: "pending", quotaAborts: r.quotaAborts + 1, runDir: null, startedAt: null, endedAt: null }));
 }
 
 export function completeRun(m: Manifest, key: string, status: "done" | "failed", now: string): Manifest {

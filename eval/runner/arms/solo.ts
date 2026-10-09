@@ -86,7 +86,8 @@ export async function runSoloArm(input: SoloArmInput): Promise<RunOutcome> {
 	await linesDrained;
 	transcript.end(); stderrLog.end();
 
-	const limit = acc.resultText === null ? null : detectUsageLimit(acc.resultText);
+	// On success `result` is the agent's own final message; only an error result is written by the CLI itself.
+	const limit = acc.resultIsError && acc.resultText !== null ? detectUsageLimit(acc.resultText) : null;
 	if (limit !== null) throw new QuotaExhaustedError("claude", limit);
 
 	const seconds = (now() - startedAt) / 1000;

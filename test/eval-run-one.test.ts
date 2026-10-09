@@ -6,6 +6,8 @@ import { readLedger } from "../eval/runner/ledger.ts";
 import { buildManifest, loadManifest, runKey, saveManifest } from "../eval/runner/manifest.ts";
 import { DriftError } from "../eval/runner/pins.ts";
 import { QuotaExhaustedError } from "../eval/runner/quota.ts";
+import { RetryableRunError } from "../eval/runner/run-one.ts";
+import { prepareWorkspace } from "../eval/runner/workspace.ts";
 import { runOne, type RunOneDeps } from "../eval/runner/run-one.ts";
 import { HarnessFailure, type Pins, type RunOutcome } from "../eval/runner/types.ts";
 import type { GradeResult } from "../eval/runner/grade.ts";
@@ -104,7 +106,23 @@ describe("quota exhaustion", () => {
 		await expect(runOne({ campaignDir, tasksRoot, toolchainNodeModules: root, whisperCli: "x", workspaceRoot: join(root, "ws-outside"), key }, d)).rejects.toBeInstanceOf(QuotaExhaustedError);
 		expect(readLedger(campaignDir)).toEqual([]);
 		const run = loadManifest(campaignDir).runs.find((r) => runKey(r) === key);
-		expect(run).toMatchObject({ status: "pending", attempts: 0, runDir: null, startedAt: null });
+		expect(run).toMatchObject({ status: "pending", quotaAborts: 1, runDir: null, startedAt: null });
+		rmSync(root, { recursive: true, force: true });
+	});
+	it("the rerun gets a fresh attempt directory and workspace (real prepare) and still has its harness retry", async () => {
+		const root = mkdtempSync(join(tmpdir(), "eval-runone-")); const { campaignDir, tasksRoot } = campaign(root);
+		writeFileSync(join(tasksRoot, "t1", "fixture", "package.json"), "{}");
+		const key = runKey({ task: "t1", arm: "C", trial: 1 });
+		const common = { campaignDir, tasksRoot, toolchainNodeModules: root, whisperCli: "x", workspaceRoot: join(root, "ws-outside"), key };
+		const dirs: string[] = [];
+		const prepare: typeof prepareWorkspace = (i) => { dirs.push(i.dest); return prepareWorkspace(i); };
+		await expect(runOne(common, deps({ prepare, runPair: async () => { throw new QuotaExhaustedError("codex", "x"); } }))).rejects.toBeInstanceOf(QuotaExhaustedError);
+		// a harness failure on the rerun is still the retryable first harness attempt, not a failed row
+		await expect(runOne(common, deps({ prepare, runPair: async () => { throw new HarnessFailure("flaky"); } }))).rejects.toBeInstanceOf(RetryableRunError);
+		const r = await runOne(common, deps({ prepare }));
+		expect(r.status).toBe("done");
+		expect(new Set(dirs).size).toBe(3);
+		expect(dirs.map((d) => d.split("/").pop())).toEqual(["attempt-1", "attempt-2", "attempt-3"]);
 		rmSync(root, { recursive: true, force: true });
 	});
 });

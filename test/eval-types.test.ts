@@ -58,7 +58,7 @@ describe("budget + manifest schemas", () => {
 			campaignId: "c1", createdAt: "2026-08-19T00:00:00.000Z", seed: 42,
 			sourceStateRoot: "/Users/me/.ai-whisper",
 			pins: { implementerModel: "claude-sonnet-4-5", reviewerModel: "gpt-5", evaluator: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, cliVersions: { whisper: "0.16.0+abc", claude: "2.0.0", codex: "0.50.0" } },
-			runs: [{ task: "t", arm: "A", trial: 1, status: "pending", attempts: 0, runDir: null, startedAt: null, endedAt: null }],
+			runs: [{ task: "t", arm: "A", trial: 1, status: "pending", attempts: 0, quotaAborts: 0, runDir: null, startedAt: null, endedAt: null }],
 		});
 		expect(m.runs[0]?.status).toBe("pending");
 		expect(() => manifestSchema.parse({ ...m, runs: [{ ...m.runs[0], status: "skipped" }] })).toThrow();

@@ -133,9 +133,10 @@ export async function runPairArm(input: PairArmInput): Promise<RunOutcome> {
 
 	// The real mount stores the realpath as collab.workspace_root; everything else keeps the path as given.
 	const physicalWorkspace = physicalPath(input.workspaceDir);
-	const waitBound = async (agent: string): Promise<"bound" | "exited" | "timeout"> => {
+	const waitBound = async (agent: string): Promise<"bound" | "exited" | "timeout" | "quota"> => {
 		const until = Math.min(now() + bindTimeoutMs, deadline);
 		while (now() < until) {
+			if (quotaHit()) return "quota";
 			if (exited.has(agent)) return "exited";
 			try {
 				const collab = readCollabForWorkspace(stateRoot, physicalWorkspace);
@@ -212,6 +213,10 @@ export async function runPairArm(input: PairArmInput): Promise<RunOutcome> {
 				await sleep(pollMs);
 			}
 		}
+	} catch (e) {
+		// A harness error raised after a seat already reported its limit would retry the run against the exhausted seat.
+		const q = quotaHit();
+		throw q ? new QuotaExhaustedError(q.agent, q.detail) : e;
 	} finally {
 		try { execFileSync(process.execPath, [input.whisperCli, "collab", "stop"], { cwd: input.workspaceDir, env, stdio: "ignore", timeout: 20_000 }); } catch { /* best effort */ }
 		for (const p of ptys) { try { p.kill(); } catch { /* already gone */ } }

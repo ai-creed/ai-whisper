@@ -93,6 +93,8 @@ export const manifestRunSchema = z.object({
 	trial: z.number().int().positive(),
 	status: manifestRunStatusSchema,
 	attempts: z.number().int().nonnegative(),
+	/** Attempts aborted on a seat usage limit: they name directories like any attempt but do not use up the harness retry. */
+	quotaAborts: z.number().int().nonnegative().default(0),
 	runDir: z.string().nullable(),
 	startedAt: z.string().nullable(),
 	endedAt: z.string().nullable(),

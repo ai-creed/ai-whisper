@@ -127,6 +127,16 @@ process.stdin.resume(); process.stdin.on("end", () => {
 		await expect(run).rejects.toBeInstanceOf(QuotaExhaustedError);
 		await expect(run).rejects.toMatchObject({ agent: "claude" });
 	});
+	it("a successful run whose final message quotes a limit message is not a quota hit (only is_error results count)", async () => {
+		root = mkdtempSync(join(tmpdir(), "eval-solo-"));
+		const ws = join(root, "ws"); mkdirSync(ws);
+		const cmd = fakeClaude(root, `
+process.stdin.resume(); process.stdin.on("end", () => {
+  console.log(JSON.stringify({type:"result",subtype:"success",is_error:false,num_turns:1,result:"Added the 429 body: You've hit your usage limit",usage:{input_tokens:1,output_tokens:1}}));
+});`);
+		const out = await runSoloArm({ task: task(), arm: "A", billing: "subscription", workspaceDir: ws, runDir: join(root, "run"), implementerModel: "m", claudeCommand: cmd, pricing: {} });
+		expect(out.stopReason).toBe("completed");
+	});
 	it("an assistant message that merely mentions a limit does not abort the run", async () => {
 		root = mkdtempSync(join(tmpdir(), "eval-solo-"));
 		const ws = join(root, "ws"); mkdirSync(ws);
