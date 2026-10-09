@@ -4,6 +4,7 @@ import { parseArgs } from "node:util";
 import { parseArms, parseNonNegativeInt, parsePositiveInt, UsageError, parseBilling, assertBillingFlagScope } from "./cli-args.ts";
 import { cmdGrade, cmdInit, cmdReport, cmdRun, cmdSlice, cmdStatus, cmdValidateTasks } from "./commands.ts";
 import { BillingPreflightError } from "./billing.ts";
+import { QuotaExhaustedError } from "./quota.ts";
 import { DriftError } from "./pins.ts";
 import { runDryRun } from "./dry-run.ts";
 import { DEFAULT_TOOLCHAIN_ROOT, ensureToolchain } from "./toolchain.ts";
@@ -95,6 +96,7 @@ async function run(): Promise<number> {
 		}
 	} catch (e) {
 		if (e instanceof DriftError || e instanceof BillingPreflightError) { console.error(e.message); return 3; }
+		if (e instanceof QuotaExhaustedError) { console.error(`${e.message}\nslice stopped; the aborted run and every run not yet started stay pending. Re-run the same command after the limit resets.`); return 4; }
 		throw e;
 	}
 }

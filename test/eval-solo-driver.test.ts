@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { runSoloArm } from "../eval/runner/arms/solo.ts";
 import { HarnessFailure, type TaskMeta } from "../eval/runner/types.ts";
+import { QuotaExhaustedError } from "../eval/runner/quota.ts";
 
 const task = (over: Partial<TaskMeta["budget"]> = {}): TaskMeta => ({
 	slug: "t", category: "feature", shape: "quick-task", dir: "/t", title: "T", taskSection: "do", scopeBullets: ["src/a.ts"],
@@ -113,5 +114,28 @@ process.stdin.resume(); process.stdin.on("end", () => {
 		} finally {
 			if (prev === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = prev;
 		}
+	});
+
+	it("a usage-limit result is a QuotaExhaustedError, not an agent failure of the arm", async () => {
+		root = mkdtempSync(join(tmpdir(), "eval-solo-"));
+		const ws = join(root, "ws"); mkdirSync(ws);
+		const cmd = fakeClaude(root, `
+process.stdin.resume(); process.stdin.on("end", () => {
+  console.log(JSON.stringify({type:"result",subtype:"success",is_error:true,num_turns:1,result:"You've hit your limit · resets 4pm",usage:{input_tokens:0,output_tokens:0}}));
+});`);
+		const run = runSoloArm({ task: task(), arm: "A", billing: "subscription", workspaceDir: ws, runDir: join(root, "run"), implementerModel: "m", claudeCommand: cmd, pricing: {} });
+		await expect(run).rejects.toBeInstanceOf(QuotaExhaustedError);
+		await expect(run).rejects.toMatchObject({ agent: "claude" });
+	});
+	it("an assistant message that merely mentions a limit does not abort the run", async () => {
+		root = mkdtempSync(join(tmpdir(), "eval-solo-"));
+		const ws = join(root, "ws"); mkdirSync(ws);
+		const cmd = fakeClaude(root, `
+process.stdin.resume(); process.stdin.on("end", () => {
+  console.log(JSON.stringify({type:"assistant",message:{id:"m1",usage:{input_tokens:1,output_tokens:1},content:[{type:"text",text:"I quoted: You've hit your usage limit"}]}}));
+  console.log(JSON.stringify({type:"result",subtype:"success",num_turns:1,result:"done",usage:{input_tokens:1,output_tokens:1}}));
+});`);
+		const out = await runSoloArm({ task: task(), arm: "A", billing: "subscription", workspaceDir: ws, runDir: join(root, "run"), implementerModel: "m", claudeCommand: cmd, pricing: {} });
+		expect(out.stopReason).toBe("completed");
 	});
 });

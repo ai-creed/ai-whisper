@@ -12,6 +12,8 @@ export class StreamUsageAccumulator {
 	private anonymous: UsageTotals = ZERO_USAGE;
 	resultUsage: UsageTotals | null = null;
 	resultCostUsd: number | null = null;
+	/** The final result event's text, kept apart from assistant texts: only the CLI itself writes it. */
+	resultText: string | null = null;
 	resultSubtype: string | null = null;
 	numTurns: number | null = null;
 	sawResult = false;
@@ -32,6 +34,7 @@ export class StreamUsageAccumulator {
 		} else if (ev.type === "result") {
 			if (typeof ev.result === "string" && ev.result.trim() !== (this.texts[this.texts.length - 1] ?? "").trim()) this.texts.push(ev.result);
 			this.sawResult = true;
+			this.resultText = typeof ev.result === "string" ? ev.result : null;
 			this.resultSubtype = typeof ev.subtype === "string" ? ev.subtype : null;
 			this.resultUsage = ev.usage ? toUsage(ev.usage) : null;
 			this.resultCostUsd = typeof ev.total_cost_usd === "number" ? ev.total_cost_usd : null;

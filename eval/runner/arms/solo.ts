@@ -4,6 +4,7 @@ import { createWriteStream, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { costFor, loadPricing, type PricingTable } from "../pricing.ts";
+import { QuotaExhaustedError, detectUsageLimit } from "../quota.ts";
 import { HarnessFailure, type RunOutcome, type TaskMeta, type BillingMode } from "../types.ts";
 import { DEFAULT_REPO_ROOT } from "../workspace.ts";
 import { scrubAgentEnv } from "./agent-env.ts";
@@ -84,6 +85,9 @@ export async function runSoloArm(input: SoloArmInput): Promise<RunOutcome> {
 	clearTimeout(wallTimer);
 	await linesDrained;
 	transcript.end(); stderrLog.end();
+
+	const limit = acc.resultText === null ? null : detectUsageLimit(acc.resultText);
+	if (limit !== null) throw new QuotaExhaustedError("claude", limit);
 
 	const seconds = (now() - startedAt) / 1000;
 	const usage = acc.finalUsage();

@@ -59,6 +59,11 @@ export function claimRun(m: Manifest, key: string, now: string, runDir: string):
 	});
 }
 
+/** Back to pending as if never claimed (attempt refunded): the run was aborted for an operator-side reason, not run. */
+export function releaseRun(m: Manifest, key: string): Manifest {
+	return updateRun(m, key, (r) => ({ ...r, status: "pending", attempts: Math.max(0, r.attempts - 1), runDir: null, startedAt: null, endedAt: null }));
+}
+
 export function completeRun(m: Manifest, key: string, status: "done" | "failed", now: string): Manifest {
 	return updateRun(m, key, (r) => ({ ...r, status, endedAt: now }));
 }

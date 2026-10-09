@@ -8,6 +8,7 @@ import { gradeRun } from "./grade.ts";
 import { appendLedgerRow, buildLedgerRow, readLedger } from "./ledger.ts";
 import { buildManifest, loadManifest, manifestPath, runKey, saveManifest, scheduledPerArm, selectSlice, summarize } from "./manifest.ts";
 import { resolveCliVersions, resolveEvaluatorSnapshot } from "./pins.ts";
+import { QuotaExhaustedError } from "./quota.ts";
 import { renderReport } from "./report.ts";
 import { RetryableRunError, runOne, type RunOneDeps, type RunOneInput } from "./run-one.ts";
 import { discoverTasks, loadTask } from "./tasks.ts";
@@ -72,19 +73,26 @@ export async function cmdSlice(o: SliceOpts, deps: CommandDeps = {}): Promise<{ 
 	// position and never clusters at the end.
 	const limit = Number.isFinite(o.parallelSolo) && o.parallelSolo >= 1 ? Math.floor(o.parallelSolo) : 1;
 	let pool: Promise<void>[] = [];
+	// A seat usage limit stops the slice: in-flight solo runs finish (or abort the same way), nothing new starts.
+	const stop: { quota: QuotaExhaustedError | null } = { quota: null };
+	const noteQuota = (e: unknown): void => { if (e instanceof QuotaExhaustedError) { stop.quota ??= e; return; } throw e; };
 	const drain = async (): Promise<void> => { await Promise.all(pool); pool = []; };
 	for (const r of selected) {
+		if (stop.quota) break;
 		const key = runKey(r);
 		if (r.arm === "C") {
 			await drain();
-			tally(await runWithRetry(o, key, deps));
+			if (stop.quota) break;
+			try { tally(await runWithRetry(o, key, deps)); } catch (e) { noteQuota(e); }
 			continue;
 		}
 		if (pool.length >= limit) await Promise.race(pool);
-		const task = runWithRetry(o, key, deps).then((s) => { tally(s); pool = pool.filter((p) => p !== task); });
+		if (stop.quota) break;
+		const task: Promise<void> = runWithRetry(o, key, deps).then(tally, noteQuota).finally(() => { pool = pool.filter((p) => p !== task); });
 		pool.push(task);
 	}
 	await drain();
+	if (stop.quota) throw stop.quota;
 	return { done, failed };
 }
 

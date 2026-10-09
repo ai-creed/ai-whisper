@@ -5,6 +5,7 @@ import * as pty from "node-pty";
 import { assertOutsideRepo, physicalPath } from "../paths.ts";
 import { DEFAULT_TRUST_CONFIG, trustWorkspace, type TrustConfig, type TrustGrant } from "./agent-trust.ts";
 import { costFor, loadPricing, type PricingTable } from "../pricing.ts";
+import { QuotaExhaustedError, UsageLimitWatcher } from "../quota.ts";
 import { HarnessFailure, ZERO_USAGE, addUsage, estimateTokensFromChars, type EvaluatorSnapshot, type RunOutcome, type TaskMeta, type UsageTotals, type BillingMode } from "../types.ts";
 import { DEFAULT_REPO_ROOT } from "../workspace.ts";
 import { scrubAgentEnv } from "./agent-env.ts";
@@ -70,13 +71,13 @@ export interface PairArmInput {
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-function spawnMount(input: PairArmInput, agent: "claude" | "codex", model: string, env: NodeJS.ProcessEnv, onExit: () => void): pty.IPty {
+function spawnMount(input: PairArmInput, agent: "claude" | "codex", model: string, env: NodeJS.ProcessEnv, onExit: () => void, limit: UsageLimitWatcher): pty.IPty {
 	const log = createWriteStream(join(input.runDir, `mount-${agent}.log`));
 	log.on("error", (err) => process.stderr.write(`eval pair: mount log stream error ignored: ${err.message}\n`));
 	const p = pty.spawn(process.execPath, [input.whisperCli, "collab", "mount", agent, "--workspace", input.workspaceDir, "--", "--model", model], {
 		name: "xterm-color", cols: 120, rows: 40, cwd: input.workspaceDir, env: env as Record<string, string>,
 	});
-	p.onData((d) => log.write(d));
+	p.onData((d) => { log.write(d); limit.feed(d); });
 	p.onExit(() => { log.end(); onExit(); });
 	return p;
 }
@@ -124,6 +125,11 @@ export async function runPairArm(input: PairArmInput): Promise<RunOutcome> {
 	let escalated = false;
 	let workflowId: string | null = null;
 	let collabId: string | null = null;
+	const limits = { claude: new UsageLimitWatcher(), codex: new UsageLimitWatcher() };
+	const quotaHit = (): { agent: "claude" | "codex"; detail: string } | null => {
+		for (const agent of ["claude", "codex"] as const) { const detail = limits[agent].hit; if (detail !== null) return { agent, detail }; }
+		return null;
+	};
 
 	// The real mount stores the realpath as collab.workspace_root; everything else keeps the path as given.
 	const physicalWorkspace = physicalPath(input.workspaceDir);
@@ -143,11 +149,11 @@ export async function runPairArm(input: PairArmInput): Promise<RunOutcome> {
 	try {
 		// Both CLIs block on a first-run "trust this folder?" dialog for a never-seen directory; grant it up front.
 		trust = trustWorkspace([input.workspaceDir, physicalWorkspace], input.trustConfig ?? DEFAULT_TRUST_CONFIG);
-		ptys.push(spawnMount(input, "claude", input.implementerModel, env, () => exited.add("claude")));
+		ptys.push(spawnMount(input, "claude", input.implementerModel, env, () => exited.add("claude"), limits.claude));
 		const claudeBind = await waitBound("claude");
 		if (claudeBind !== "bound") failureMode = claudeBind === "exited" ? "mount_exited" : "mount_bind_timeout";
 		if (!failureMode) {
-			ptys.push(spawnMount(input, "codex", input.reviewerModel, env, () => exited.add("codex")));
+			ptys.push(spawnMount(input, "codex", input.reviewerModel, env, () => exited.add("codex"), limits.codex));
 			const codexBind = await waitBound("codex");
 			if (codexBind !== "bound") failureMode = codexBind === "exited" ? "mount_exited" : "mount_bind_timeout";
 		}
@@ -174,6 +180,7 @@ export async function runPairArm(input: PairArmInput): Promise<RunOutcome> {
 			// Consecutive polls with no workflow row, no heartbeat row, or an unreadable DB: an ambiguous state, not a wait.
 			let anomalies = 0;
 			for (;;) {
+				if (quotaHit()) break; // torn down below, then thrown: not an outcome of the system under test
 				if (exited.size > 0) { failureMode = "mount_exited"; break; }
 				if (now() >= deadline) { stopReason = "wall_clock_cap"; stopSource = "estimated"; break; }
 				let anomalous = false;
@@ -221,6 +228,8 @@ export async function runPairArm(input: PairArmInput): Promise<RunOutcome> {
 		await sleep(1000);
 		trust?.release();
 	}
+	const quota = quotaHit();
+	if (quota) throw new QuotaExhaustedError(quota.agent, quota.detail);
 	const endedAt = now();
 
 	let rounds: number | null = null, reviewFindings: number | null = null, estimatedChars = 0;

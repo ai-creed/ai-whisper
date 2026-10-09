@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { readLedger } from "../eval/runner/ledger.ts";
 import { buildManifest, loadManifest, runKey, saveManifest } from "../eval/runner/manifest.ts";
 import { DriftError } from "../eval/runner/pins.ts";
+import { QuotaExhaustedError } from "../eval/runner/quota.ts";
 import { runOne, type RunOneDeps } from "../eval/runner/run-one.ts";
 import { HarnessFailure, type Pins, type RunOutcome } from "../eval/runner/types.ts";
 import type { GradeResult } from "../eval/runner/grade.ts";
@@ -91,6 +92,19 @@ describe("billing pin", () => {
 		const d = deps({ runSolo: async (i) => { seen.push(`${i.arm}:${i.billing}`); return outcome(i.arm); }, runPair: async (i) => { seen.push(`C:${i.billing}`); return outcome("C"); } });
 		for (const arm of ["A", "C"] as const) await runOne({ campaignDir, tasksRoot, toolchainNodeModules: root, whisperCli: "x", workspaceRoot: join(root, "ws-outside"), key: `t1/${arm}/1` }, d);
 		expect(seen).toEqual(["A:subscription", "C:subscription"]);
+		rmSync(root, { recursive: true, force: true });
+	});
+});
+
+describe("quota exhaustion", () => {
+	it("writes no ledger row, puts the run back to pending with its attempt refunded, and propagates", async () => {
+		const root = mkdtempSync(join(tmpdir(), "eval-runone-")); const { campaignDir, tasksRoot } = campaign(root);
+		const key = runKey({ task: "t1", arm: "C", trial: 1 });
+		const d = deps({ runPair: async () => { throw new QuotaExhaustedError("codex", "You've hit your usage limit"); } });
+		await expect(runOne({ campaignDir, tasksRoot, toolchainNodeModules: root, whisperCli: "x", workspaceRoot: join(root, "ws-outside"), key }, d)).rejects.toBeInstanceOf(QuotaExhaustedError);
+		expect(readLedger(campaignDir)).toEqual([]);
+		const run = loadManifest(campaignDir).runs.find((r) => runKey(r) === key);
+		expect(run).toMatchObject({ status: "pending", attempts: 0, runDir: null, startedAt: null });
 		rmSync(root, { recursive: true, force: true });
 	});
 });

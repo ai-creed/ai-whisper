@@ -3,9 +3,10 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { runPairArm, type PairArmInput } from "./arms/pair.ts";
 import { runSoloArm } from "./arms/solo.ts";
+import { QuotaExhaustedError } from "./quota.ts";
 import { gradeRun, type GradeResult } from "./grade.ts";
 import { appendLedgerRow, buildLedgerRow } from "./ledger.ts";
-import { claimRun, completeRun, loadManifest, runKey, saveManifest, scheduledPerArm } from "./manifest.ts";
+import { claimRun, completeRun, loadManifest, runKey, saveManifest, scheduledPerArm, releaseRun } from "./manifest.ts";
 import { DriftError, checkPinDrift, resolveCliVersions, resolveEvaluatorSnapshot } from "./pins.ts";
 import { loadTask } from "./tasks.ts";
 import { HarnessFailure, type CliVersions, type EvaluatorSnapshot, type LedgerRow, type RunOutcome } from "./types.ts";
@@ -90,6 +91,10 @@ export async function runOne(input: RunOneInput, over: Partial<RunOneDeps> = {})
 		grade = deps.grade({ task, workspaceDir: outcome.workspaceDir, gradeDir, toolchainNodeModules: input.toolchainNodeModules });
 		writeFileSync(join(runDir, "grade.json"), JSON.stringify(grade, null, "\t"));
 	} catch (e) {
+		if (e instanceof QuotaExhaustedError) {
+			saveManifest(input.campaignDir, releaseRun(loadManifest(input.campaignDir), input.key));
+			throw e;
+		}
 		const kind = classifyError(e);
 		const message = `${kind}: ${(e as Error).message}`;
 		if (attempt < 2) throw new RetryableRunError(message, e);

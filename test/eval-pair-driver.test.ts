@@ -40,6 +40,7 @@ if (cmd === "collab" && sub === "mount") {
   setInterval(() => { const d = openDatabase(dbPath); d.prepare("UPDATE broker_daemon SET last_heartbeat_at = ?").run(new Date().toISOString()); d.close(); }, 5000);
   process.on("SIGTERM", () => process.exit(0));
   if (process.env.FAKE_MOUNT_EXIT === "1") setTimeout(() => process.exit(1), 300); // the mount crashes after binding
+  if (process.env.FAKE_MOUNT_LIMIT === agent) setTimeout(() => process.stdout.write("\x1b[31mYou've hit your usage limit.\x1b[0m try again at 4:00 PM.\\n"), 300);
 } else if (cmd === "workflow" && sub === "start" && process.env.FAKE_WF_NO_ROW === "1") {
   db.close(); console.log("Workflow started: wf_1");
 } else if (cmd === "workflow" && sub === "start") {
@@ -120,6 +121,15 @@ describe("runPairArm", () => {
 		expect(out.failureMode).toBe("mount_exited");
 		expect(out.seconds).toBeLessThan(20);
 	}, 30_000);
+
+	it("a seat that hits its usage limit aborts the run with QuotaExhaustedError after teardown, instead of returning an outcome", async () => {
+		root = mkdtempSync(join(tmpdir(), "eval-pair-"));
+		const ws = join(root, "ws"); mkdirSync(ws);
+		const claudeJson = join(root, ".claude.json");
+		const run = runPairArm({ task, billing: "api", workspaceDir: ws, runDir: join(root, "run"), stateRoot: shortStateRoot(), trustConfig: { claudeJson, codexToml: join(root, "codex.toml") }, implementerModel: "m", reviewerModel: "r", evaluatorSnapshot: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, sourceStateRoot: root, whisperCli: fakeWhisper(root), env: { FAKE_WF_STATUS: "running", FAKE_MOUNT_LIMIT: "codex" }, pollMs: 100, homeDir: root, pricing: {} });
+		await expect(run).rejects.toMatchObject({ name: "QuotaExhaustedError", agent: "codex" });
+		expect(existsSync(claudeJson) ? readFileSync(claudeJson, "utf8") : "").not.toContain(ws); // trust released before the throw
+	});
 
 	it("refuses a state root whose turn-event socket path would exceed the macOS limit", async () => {
 		root = mkdtempSync(join(tmpdir(), "eval-pair-"));

@@ -15,7 +15,7 @@ pnpm eval -- toolchain
 - Billing for the claude seats (solo arms and the Arm C claude mount) is pinned at `init` with `--billing`. The default, `subscription`, strips `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` from the agent environment so `claude` falls back to its claude.ai login; run `claude` once and log in first. `api` keeps the key in the agent environment and bills the Anthropic API. Before any spend, `slice` and `run` probe `claude auth status --json` with the agent environment (subscription must report `claude.ai`) or check the key is set (api) and refuse otherwise. The codex seat and the evaluator are outside this switch: codex runs on its own chatgpt login or `OPENAI_API_KEY`, and the evaluator bills its own configured provider. With an `anthropic` evaluator under `subscription`, the key must be in `~/.ai-whisper/auth.json` (or `.env` there): the mount's environment is scrubbed, so a key that lives only in the shell never reaches the broker, and the preflight refuses the slice until the file carries it.
 - The evaluator must be configured (see `docs/evaluator-configuration.md`); its settings are snapshotted into the manifest at `init`. The runner copies `auth.json`, `config.json` and `.env` from the source state root (default `~/.ai-whisper`) into each Arm C state root when present.
 
-All commands are `pnpm eval -- <command> [options]`. A leading `--` is accepted and ignored. Exit codes: 0 success, 1 usage error, 2 failed runs or validation violations, 3 pin drift or billing preflight refusal.
+All commands are `pnpm eval -- <command> [options]`. A leading `--` is accepted and ignored. Exit codes: 0 success, 1 usage error, 2 failed runs or validation violations, 3 pin drift or billing preflight refusal, 4 a seat hit its usage limit.
 
 ## Authoring a task
 
@@ -70,6 +70,8 @@ pnpm eval -- run --campaign pilot --key <task>/<arm>/<trial>
 - `run --key` runs one specific run.
 - `--workspace-root` (default `~/.ai-whisper-eval/workspaces`) is where workspaces are created.
 - Any error thrown during a run is retried once automatically (a fresh attempt directory); a second failure is recorded as a `harness failure` row and the run is marked `failed`. `slice` exits 2 if any run ended `failed`.
+
+Usage limits: a seat that hits its account limit (claude.ai's 5-hour window, the ChatGPT plan quota behind codex) is not a result of the system under test. The runner watches both mounts' output and the solo result for the CLIs' own limit messages; on a hit it tears the run down, writes no ledger row, puts the run back to `pending` with its attempt refunded, lets in-flight solo runs finish, starts nothing new, prints the reset time the CLI reported and exits 4. Re-run the same `slice` after the limit resets.
 
 Resuming after a crash: run the same `slice` command again. It selects only runs that are not `done`, so finished runs are not repeated. `slice` never re-runs a `failed` run (an unrecovered harness failure is recorded and counted). To retry one, re-init the campaign or hand-edit its status in `manifest.json`.
 

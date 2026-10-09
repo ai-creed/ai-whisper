@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { assertBillingFlagScope, parseArms, parseBilling, parseNonNegativeInt, parsePositiveInt, UsageError } from "../eval/runner/cli-args.ts";
 import { cmdInit, cmdReport, cmdRun, cmdSlice, cmdStatus, cmdValidateTasks } from "../eval/runner/commands.ts";
+import { QuotaExhaustedError } from "../eval/runner/quota.ts";
 import { loadManifest, runKey } from "../eval/runner/manifest.ts";
 import type { RunOutcome } from "../eval/runner/types.ts";
 import type { GradeResult } from "../eval/runner/grade.ts";
@@ -98,6 +99,24 @@ describe("commands", () => {
 		const dry = { env: {}, claudeCommand: "fake" };
 		await cmdRun({ ...opts, key: runKey(m.runs.find((r) => r.arm === "C")!), dryRun: dry }, deps(() => { throw new Error("must not run"); }));
 		expect(runs).toBe(3);
+	});
+
+	it("a quota hit stops the slice: no new runs start, in-flight runs finish, the rest stay pending", async () => {
+		root = mkdtempSync(join(tmpdir(), "eval-cli-"));
+		const tasksRoot = join(root, "tasks"); writeTask(tasksRoot, "t1", "feature", "quick-task"); writeTask(tasksRoot, "t2", "bugfix", "quick-task");
+		const campaignDir = join(root, "results", "c");
+		cmdInit({ campaignDir, tasksRoot, trials: 2, seed: 9, implementerModel: "impl", reviewerModel: "rev", billing: "api", sourceStateRoot: root, cliVersions, evaluator });
+		let started = 0;
+		const run = cmdSlice({ campaignDir, tasksRoot, toolchainNodeModules: root, whisperCli: "x", workspaceRoot: join(root, "ws"), arms: ["A", "B"], parallelSolo: 2 }, {
+			runSolo: async () => { started++; const n = started; await new Promise((r) => setTimeout(r, 10)); if (n === 2) throw new QuotaExhaustedError("claude", "You've hit your limit"); return ok; },
+			grade: () => green, prepare: (i) => ({ workspaceDir: i.dest, baselineSha: "0".repeat(40) }),
+			liveReviewerModel: () => "rev", liveEvaluator: () => evaluator, liveCliVersions: () => cliVersions, now: () => "x", preflight: () => {},
+		});
+		await expect(run).rejects.toBeInstanceOf(QuotaExhaustedError);
+		expect(started).toBeLessThanOrEqual(3);
+		const runs = loadManifest(campaignDir).runs.filter((r) => r.arm !== "C");
+		expect(runs.filter((r) => r.status === "running")).toEqual([]);
+		expect(runs.filter((r) => r.status === "pending").length).toBeGreaterThanOrEqual(5);
 	});
 
 	it("a NaN parallelSolo still caps in-flight solo runs at 1", async () => {
