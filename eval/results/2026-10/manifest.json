@@ -1,0 +1,923 @@
+{
+	"campaignId": "2026-10",
+	"createdAt": "2026-10-08T17:32:10.037Z",
+	"seed": 20261009,
+	"sourceStateRoot": "/Users/vuphan/.ai-whisper",
+	"pins": {
+		"implementerModel": "claude-sonnet-5-5",
+		"reviewerModel": "gpt-5.6-sol",
+		"evaluator": {
+			"provider": "anthropic",
+			"model": null,
+			"fallbackProvider": null,
+			"fallbackModel": null
+		},
+		"cliVersions": {
+			"whisper": "0.16.0+cbc0401",
+			"claude": "2.1.293",
+			"codex": "0.161.0"
+		}
+	},
+	"runs": [
+		{
+			"task": "event-bus-wildcards",
+			"arm": "B",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/event-bus-wildcards/B/2/attempt-1",
+			"startedAt": "2026-10-08T17:32:20.861Z",
+			"endedAt": "2026-10-08T17:32:53.423Z"
+		},
+		{
+			"task": "cli-args-subcommands",
+			"arm": "B",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/cli-args-subcommands/B/1/attempt-1",
+			"startedAt": "2026-10-08T17:32:20.912Z",
+			"endedAt": "2026-10-08T17:33:04.065Z"
+		},
+		{
+			"task": "task-scheduler-deps",
+			"arm": "C",
+			"trial": 2,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "csv-parse-quoted",
+			"arm": "C",
+			"trial": 2,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "bug-money-rounding",
+			"arm": "B",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/bug-money-rounding/B/1/attempt-1",
+			"startedAt": "2026-10-08T17:32:53.425Z",
+			"endedAt": "2026-10-08T17:33:29.890Z"
+		},
+		{
+			"task": "markdown-table-render",
+			"arm": "B",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/markdown-table-render/B/1/attempt-1",
+			"startedAt": "2026-10-08T17:33:04.066Z",
+			"endedAt": "2026-10-08T17:33:31.886Z"
+		},
+		{
+			"task": "markdown-table-render",
+			"arm": "C",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "bug-path-normalize-dotdot",
+			"arm": "A",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/bug-path-normalize-dotdot/A/1/attempt-1",
+			"startedAt": "2026-10-08T17:33:29.891Z",
+			"endedAt": "2026-10-08T17:33:50.603Z"
+		},
+		{
+			"task": "refactor-config-loader-layers",
+			"arm": "B",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/refactor-config-loader-layers/B/2/attempt-1",
+			"startedAt": "2026-10-08T17:33:31.887Z",
+			"endedAt": "2026-10-08T17:34:16.250Z"
+		},
+		{
+			"task": "refactor-config-loader-layers",
+			"arm": "B",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/refactor-config-loader-layers/B/1/attempt-1",
+			"startedAt": "2026-10-08T17:33:50.604Z",
+			"endedAt": "2026-10-08T17:34:54.464Z"
+		},
+		{
+			"task": "refactor-config-loader-layers",
+			"arm": "A",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/refactor-config-loader-layers/A/1/attempt-1",
+			"startedAt": "2026-10-08T17:34:16.251Z",
+			"endedAt": "2026-10-08T17:34:56.483Z"
+		},
+		{
+			"task": "markdown-table-render",
+			"arm": "B",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/markdown-table-render/B/2/attempt-1",
+			"startedAt": "2026-10-08T17:34:54.465Z",
+			"endedAt": "2026-10-08T17:38:02.117Z"
+		},
+		{
+			"task": "bug-money-rounding",
+			"arm": "C",
+			"trial": 2,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "event-bus-wildcards",
+			"arm": "C",
+			"trial": 2,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "refactor-report-formatter-strategy",
+			"arm": "A",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/refactor-report-formatter-strategy/A/2/attempt-1",
+			"startedAt": "2026-10-08T17:34:56.484Z",
+			"endedAt": "2026-10-08T17:35:17.230Z"
+		},
+		{
+			"task": "refactor-http-router-extract",
+			"arm": "B",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/refactor-http-router-extract/B/2/attempt-1",
+			"startedAt": "2026-10-08T17:35:17.232Z",
+			"endedAt": "2026-10-08T17:35:53.467Z"
+		},
+		{
+			"task": "bug-ini-parser-sections",
+			"arm": "A",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/bug-ini-parser-sections/A/1/attempt-1",
+			"startedAt": "2026-10-08T17:35:53.469Z",
+			"endedAt": "2026-10-08T17:36:22.497Z"
+		},
+		{
+			"task": "lru-cache-ttl",
+			"arm": "C",
+			"trial": 2,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "json-schema-validator-refs",
+			"arm": "A",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/json-schema-validator-refs/A/1/attempt-1",
+			"startedAt": "2026-10-08T17:36:22.498Z",
+			"endedAt": "2026-10-08T17:37:12.574Z"
+		},
+		{
+			"task": "bug-debounce-trailing-call",
+			"arm": "A",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/bug-debounce-trailing-call/A/1/attempt-1",
+			"startedAt": "2026-10-08T17:37:12.575Z",
+			"endedAt": "2026-10-08T17:37:47.071Z"
+		},
+		{
+			"task": "bug-ini-parser-sections",
+			"arm": "B",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/bug-ini-parser-sections/B/1/attempt-1",
+			"startedAt": "2026-10-08T17:37:47.072Z",
+			"endedAt": "2026-10-08T17:38:22.242Z"
+		},
+		{
+			"task": "event-bus-wildcards",
+			"arm": "B",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/event-bus-wildcards/B/1/attempt-1",
+			"startedAt": "2026-10-08T17:38:02.118Z",
+			"endedAt": "2026-10-08T17:38:36.406Z"
+		},
+		{
+			"task": "bug-money-rounding",
+			"arm": "A",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/bug-money-rounding/A/1/attempt-1",
+			"startedAt": "2026-10-08T17:38:22.244Z",
+			"endedAt": "2026-10-08T17:38:58.163Z"
+		},
+		{
+			"task": "task-scheduler-deps",
+			"arm": "B",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/task-scheduler-deps/B/2/attempt-1",
+			"startedAt": "2026-10-08T17:38:36.407Z",
+			"endedAt": "2026-10-08T17:39:39.861Z"
+		},
+		{
+			"task": "bug-money-rounding",
+			"arm": "B",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/bug-money-rounding/B/2/attempt-1",
+			"startedAt": "2026-10-08T17:38:58.165Z",
+			"endedAt": "2026-10-08T17:39:24.425Z"
+		},
+		{
+			"task": "markdown-table-render",
+			"arm": "A",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/markdown-table-render/A/2/attempt-1",
+			"startedAt": "2026-10-08T17:39:24.426Z",
+			"endedAt": "2026-10-08T17:39:53.586Z"
+		},
+		{
+			"task": "rate-limiter-sliding",
+			"arm": "A",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/rate-limiter-sliding/A/1/attempt-1",
+			"startedAt": "2026-10-08T17:39:39.862Z",
+			"endedAt": "2026-10-08T17:40:03.006Z"
+		},
+		{
+			"task": "rate-limiter-sliding",
+			"arm": "B",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/rate-limiter-sliding/B/1/attempt-1",
+			"startedAt": "2026-10-08T17:39:53.587Z",
+			"endedAt": "2026-10-08T17:40:19.489Z"
+		},
+		{
+			"task": "csv-parse-quoted",
+			"arm": "B",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/csv-parse-quoted/B/1/attempt-1",
+			"startedAt": "2026-10-08T17:40:03.008Z",
+			"endedAt": "2026-10-08T17:40:43.506Z"
+		},
+		{
+			"task": "rate-limiter-sliding",
+			"arm": "A",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/rate-limiter-sliding/A/2/attempt-1",
+			"startedAt": "2026-10-08T17:40:19.491Z",
+			"endedAt": "2026-10-08T17:40:54.263Z"
+		},
+		{
+			"task": "markdown-table-render",
+			"arm": "C",
+			"trial": 2,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "task-scheduler-deps",
+			"arm": "C",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "refactor-http-router-extract",
+			"arm": "B",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/refactor-http-router-extract/B/1/attempt-1",
+			"startedAt": "2026-10-08T17:40:43.507Z",
+			"endedAt": "2026-10-08T17:41:23.610Z"
+		},
+		{
+			"task": "json-schema-validator-refs",
+			"arm": "A",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/json-schema-validator-refs/A/2/attempt-1",
+			"startedAt": "2026-10-08T17:40:54.264Z",
+			"endedAt": "2026-10-08T17:41:40.300Z"
+		},
+		{
+			"task": "csv-parse-quoted",
+			"arm": "B",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/csv-parse-quoted/B/2/attempt-1",
+			"startedAt": "2026-10-08T17:41:23.611Z",
+			"endedAt": "2026-10-08T17:41:59.389Z"
+		},
+		{
+			"task": "refactor-config-loader-layers",
+			"arm": "C",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "bug-path-normalize-dotdot",
+			"arm": "B",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/bug-path-normalize-dotdot/B/1/attempt-1",
+			"startedAt": "2026-10-08T17:41:40.301Z",
+			"endedAt": "2026-10-08T17:42:01.395Z"
+		},
+		{
+			"task": "bug-debounce-trailing-call",
+			"arm": "C",
+			"trial": 2,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "refactor-http-router-extract",
+			"arm": "C",
+			"trial": 2,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "bug-debounce-trailing-call",
+			"arm": "B",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/bug-debounce-trailing-call/B/1/attempt-1",
+			"startedAt": "2026-10-08T17:41:59.390Z",
+			"endedAt": "2026-10-08T17:42:34.983Z"
+		},
+		{
+			"task": "json-schema-validator-refs",
+			"arm": "B",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/json-schema-validator-refs/B/1/attempt-1",
+			"startedAt": "2026-10-08T17:42:01.396Z",
+			"endedAt": "2026-10-08T17:42:53.335Z"
+		},
+		{
+			"task": "refactor-report-formatter-strategy",
+			"arm": "C",
+			"trial": 2,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "refactor-report-formatter-strategy",
+			"arm": "A",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/refactor-report-formatter-strategy/A/1/attempt-1",
+			"startedAt": "2026-10-08T17:42:34.984Z",
+			"endedAt": "2026-10-08T17:43:14.221Z"
+		},
+		{
+			"task": "bug-debounce-trailing-call",
+			"arm": "C",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "lru-cache-ttl",
+			"arm": "A",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/lru-cache-ttl/A/1/attempt-1",
+			"startedAt": "2026-10-08T17:42:53.336Z",
+			"endedAt": "2026-10-08T17:43:18.489Z"
+		},
+		{
+			"task": "task-scheduler-deps",
+			"arm": "B",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/task-scheduler-deps/B/1/attempt-1",
+			"startedAt": "2026-10-08T17:43:14.222Z",
+			"endedAt": "2026-10-08T17:44:07.706Z"
+		},
+		{
+			"task": "cli-args-subcommands",
+			"arm": "C",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "refactor-config-loader-layers",
+			"arm": "A",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/refactor-config-loader-layers/A/2/attempt-1",
+			"startedAt": "2026-10-08T17:43:18.490Z",
+			"endedAt": "2026-10-08T17:44:03.975Z"
+		},
+		{
+			"task": "bug-ini-parser-sections",
+			"arm": "C",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "lru-cache-ttl",
+			"arm": "B",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/lru-cache-ttl/B/2/attempt-1",
+			"startedAt": "2026-10-08T17:44:03.976Z",
+			"endedAt": "2026-10-08T17:44:28.992Z"
+		},
+		{
+			"task": "refactor-report-formatter-strategy",
+			"arm": "B",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/refactor-report-formatter-strategy/B/2/attempt-1",
+			"startedAt": "2026-10-08T17:44:07.707Z",
+			"endedAt": "2026-10-08T17:44:48.265Z"
+		},
+		{
+			"task": "event-bus-wildcards",
+			"arm": "A",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/event-bus-wildcards/A/1/attempt-1",
+			"startedAt": "2026-10-08T17:44:28.993Z",
+			"endedAt": "2026-10-08T17:44:53.893Z"
+		},
+		{
+			"task": "bug-path-normalize-dotdot",
+			"arm": "C",
+			"trial": 2,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "refactor-http-router-extract",
+			"arm": "A",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/refactor-http-router-extract/A/2/attempt-1",
+			"startedAt": "2026-10-08T17:44:48.266Z",
+			"endedAt": "2026-10-08T17:45:24.292Z"
+		},
+		{
+			"task": "markdown-table-render",
+			"arm": "A",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/markdown-table-render/A/1/attempt-1",
+			"startedAt": "2026-10-08T17:44:53.894Z",
+			"endedAt": "2026-10-08T17:45:20.484Z"
+		},
+		{
+			"task": "rate-limiter-sliding",
+			"arm": "C",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "bug-ini-parser-sections",
+			"arm": "B",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/bug-ini-parser-sections/B/2/attempt-1",
+			"startedAt": "2026-10-08T17:45:20.485Z",
+			"endedAt": "2026-10-08T17:45:46.894Z"
+		},
+		{
+			"task": "lru-cache-ttl",
+			"arm": "C",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "bug-money-rounding",
+			"arm": "C",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "cli-args-subcommands",
+			"arm": "A",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/cli-args-subcommands/A/2/attempt-1",
+			"startedAt": "2026-10-08T17:45:24.293Z",
+			"endedAt": "2026-10-08T17:45:51.587Z"
+		},
+		{
+			"task": "task-scheduler-deps",
+			"arm": "A",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/task-scheduler-deps/A/2/attempt-1",
+			"startedAt": "2026-10-08T17:45:46.895Z",
+			"endedAt": "2026-10-08T17:46:32.307Z"
+		},
+		{
+			"task": "json-schema-validator-refs",
+			"arm": "C",
+			"trial": 2,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "csv-parse-quoted",
+			"arm": "A",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/csv-parse-quoted/A/1/attempt-1",
+			"startedAt": "2026-10-08T17:45:51.588Z",
+			"endedAt": "2026-10-08T17:46:57.836Z"
+		},
+		{
+			"task": "task-scheduler-deps",
+			"arm": "A",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/task-scheduler-deps/A/1/attempt-1",
+			"startedAt": "2026-10-08T17:46:32.308Z",
+			"endedAt": "2026-10-08T17:47:26.047Z"
+		},
+		{
+			"task": "event-bus-wildcards",
+			"arm": "C",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "cli-args-subcommands",
+			"arm": "C",
+			"trial": 2,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "json-schema-validator-refs",
+			"arm": "C",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "refactor-report-formatter-strategy",
+			"arm": "C",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "refactor-report-formatter-strategy",
+			"arm": "B",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/refactor-report-formatter-strategy/B/1/attempt-1",
+			"startedAt": "2026-10-08T17:46:57.837Z",
+			"endedAt": "2026-10-08T17:47:20.168Z"
+		},
+		{
+			"task": "bug-ini-parser-sections",
+			"arm": "C",
+			"trial": 2,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "lru-cache-ttl",
+			"arm": "A",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/lru-cache-ttl/A/2/attempt-1",
+			"startedAt": "2026-10-08T17:47:20.169Z",
+			"endedAt": "2026-10-08T17:47:47.893Z"
+		},
+		{
+			"task": "json-schema-validator-refs",
+			"arm": "B",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/json-schema-validator-refs/B/2/attempt-1",
+			"startedAt": "2026-10-08T17:47:26.048Z",
+			"endedAt": "2026-10-08T17:48:33.183Z"
+		},
+		{
+			"task": "refactor-http-router-extract",
+			"arm": "C",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "refactor-config-loader-layers",
+			"arm": "C",
+			"trial": 2,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "refactor-http-router-extract",
+			"arm": "A",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/refactor-http-router-extract/A/1/attempt-1",
+			"startedAt": "2026-10-08T17:47:47.894Z",
+			"endedAt": "2026-10-08T17:48:22.730Z"
+		},
+		{
+			"task": "bug-money-rounding",
+			"arm": "A",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/bug-money-rounding/A/2/attempt-1",
+			"startedAt": "2026-10-08T17:48:22.731Z",
+			"endedAt": "2026-10-08T17:49:00.409Z"
+		},
+		{
+			"task": "bug-path-normalize-dotdot",
+			"arm": "A",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/bug-path-normalize-dotdot/A/2/attempt-1",
+			"startedAt": "2026-10-08T17:48:33.184Z",
+			"endedAt": "2026-10-08T17:48:49.368Z"
+		},
+		{
+			"task": "rate-limiter-sliding",
+			"arm": "B",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/rate-limiter-sliding/B/2/attempt-1",
+			"startedAt": "2026-10-08T17:48:49.369Z",
+			"endedAt": "2026-10-08T17:49:20.579Z"
+		},
+		{
+			"task": "csv-parse-quoted",
+			"arm": "A",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/csv-parse-quoted/A/2/attempt-1",
+			"startedAt": "2026-10-08T17:49:00.410Z",
+			"endedAt": "2026-10-08T17:49:24.025Z"
+		},
+		{
+			"task": "csv-parse-quoted",
+			"arm": "C",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "bug-debounce-trailing-call",
+			"arm": "A",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/bug-debounce-trailing-call/A/2/attempt-1",
+			"startedAt": "2026-10-08T17:49:20.580Z",
+			"endedAt": "2026-10-08T17:49:49.684Z"
+		},
+		{
+			"task": "cli-args-subcommands",
+			"arm": "B",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/cli-args-subcommands/B/2/attempt-1",
+			"startedAt": "2026-10-08T17:49:24.026Z",
+			"endedAt": "2026-10-08T17:49:52.755Z"
+		},
+		{
+			"task": "cli-args-subcommands",
+			"arm": "A",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/cli-args-subcommands/A/1/attempt-1",
+			"startedAt": "2026-10-08T17:49:49.685Z",
+			"endedAt": "2026-10-08T17:50:14.250Z"
+		},
+		{
+			"task": "rate-limiter-sliding",
+			"arm": "C",
+			"trial": 2,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "bug-ini-parser-sections",
+			"arm": "A",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/bug-ini-parser-sections/A/2/attempt-1",
+			"startedAt": "2026-10-08T17:49:52.756Z",
+			"endedAt": "2026-10-08T17:50:17.495Z"
+		},
+		{
+			"task": "lru-cache-ttl",
+			"arm": "B",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/lru-cache-ttl/B/1/attempt-1",
+			"startedAt": "2026-10-08T17:50:14.251Z",
+			"endedAt": "2026-10-08T17:50:36.884Z"
+		},
+		{
+			"task": "bug-path-normalize-dotdot",
+			"arm": "B",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/bug-path-normalize-dotdot/B/2/attempt-1",
+			"startedAt": "2026-10-08T17:50:17.496Z",
+			"endedAt": "2026-10-08T17:50:34.680Z"
+		},
+		{
+			"task": "bug-debounce-trailing-call",
+			"arm": "B",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/bug-debounce-trailing-call/B/2/attempt-1",
+			"startedAt": "2026-10-08T17:50:34.680Z",
+			"endedAt": "2026-10-08T17:51:08.003Z"
+		},
+		{
+			"task": "event-bus-wildcards",
+			"arm": "A",
+			"trial": 2,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10/runs/event-bus-wildcards/A/2/attempt-1",
+			"startedAt": "2026-10-08T17:50:36.885Z",
+			"endedAt": "2026-10-08T17:51:01.229Z"
+		},
+		{
+			"task": "bug-path-normalize-dotdot",
+			"arm": "C",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		}
+	]
+}
