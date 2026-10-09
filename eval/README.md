@@ -12,6 +12,7 @@ pnpm eval -- toolchain
 - `pnpm eval -- toolchain` installs the pinned fixture toolchain (`eval/toolchain/`) under `--toolchain-root` (default `~/.ai-whisper-eval/toolchain`) and prints the resulting `node_modules` path. The root must be outside the repository. Every command that touches fixtures (`slice`, `run`, `grade`, `validate-tasks`, `dry-run`) installs it on demand.
 - To change a toolchain pin, edit `eval/toolchain/package.json` and regenerate the lockfile with `pnpm --dir eval/toolchain install --lockfile-only --ignore-workspace`. Without `--ignore-workspace` pnpm walks up to the repo workspace and writes nothing.
 - `claude` and `codex` must be on `PATH`; their versions are pinned in the manifest.
+- Billing for the claude seats (solo arms and the Arm C claude mount) is pinned at `init` with `--billing`. The default, `subscription`, strips `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` from the agent environment so `claude` falls back to its claude.ai login; run `claude` once and log in first. `api` keeps the key in the agent environment and bills the Anthropic API. Before any spend, `slice` and `run` probe `claude auth status --json` with the agent environment (subscription must report `claude.ai`) or check the key is set (api) and refuse otherwise. The codex seat and the evaluator are outside this switch: codex runs on its own chatgpt login or `OPENAI_API_KEY`, and the evaluator always bills the API through the `auth.json` copied into each Arm C state root.
 - The evaluator must be configured (see `docs/evaluator-configuration.md`); its settings are snapshotted into the manifest at `init`. The runner copies `auth.json`, `config.json` and `.env` from the source state root (default `~/.ai-whisper`) into each Arm C state root when present.
 
 All commands are `pnpm eval -- <command> [options]`. A leading `--` is accepted and ignored. Exit codes: 0 success, 1 usage error, 2 failed runs or validation violations, 3 pin drift.
@@ -57,13 +58,13 @@ Without `--green` it checks layout and counts, and runs the generated quick-task
 ## Running a campaign
 
 ```bash
-pnpm eval -- init --campaign pilot --implementer-model <model> --reviewer-model <model> --trials 2 --seed 7
+pnpm eval -- init --campaign pilot --implementer-model <model> --reviewer-model <model> --trials 2 --seed 7 --billing subscription
 pnpm eval -- status --campaign pilot
 pnpm eval -- slice --campaign pilot --arm A --task csv-parse-quoted --limit 2
 pnpm eval -- run --campaign pilot --key <task>/<arm>/<trial>
 ```
 
-- `init` writes `eval/results/<campaign>/manifest.json` with the seeded run order and the pins: implementer model, reviewer model, evaluator snapshot (primary and fallback) and CLI versions. It refuses to overwrite an existing campaign; pick a new `--campaign` id. `--trials` defaults to 2; the seed is random and printed if omitted.
+- `init` writes `eval/results/<campaign>/manifest.json` with the seeded run order and the pins: implementer model, reviewer model, billing mode (`--billing subscription|api`, default `subscription`), evaluator snapshot (primary and fallback) and CLI versions. It refuses to overwrite an existing campaign; pick a new `--campaign` id. `--trials` defaults to 2; the seed is random and printed if omitted.
 - `status` prints pending, running, done and failed counts overall, plus done, failed and total per arm.
 - `slice` runs the pending runs matching `--arm` (repeatable), `--task` (repeatable) and `--limit`. It walks the manifest in order, so Arm C keeps its seeded position. Solo runs (A, B) overlap up to `--parallel-solo` (default 2); a pair run drains the pool and runs alone. Pair runs are always serial.
 - `run --key` runs one specific run.
@@ -130,7 +131,7 @@ Nothing an agent can reach may resolve into the repository, because the reposito
 
 ## Cost accounting
 
-Metered cost prices each component at the model that actually served it, from `eval/runner/pricing.json`. Evaluator fallback attempts are priced at the fallback model. Cost is `null` whenever any model involved is missing from `pricing.json`; pinned model IDs must match its keys exactly. The `_note` in that file records the source and caveats (for example OpenAI cache-write pricing where none is listed, and Haiku prompt-size tiering). Update it, with the retrieval date, before a campaign.
+Metered cost prices each component at the model that actually served it, from `eval/runner/pricing.json`. Under `--billing subscription` nothing is billed per token for the claude seats, so `cost_usd` is notional: metered tokens priced at API rates, useful for comparing arms, not a bill. `report.md` says so and the ledger row carries `billing`. Subscription usage counts against the claude.ai 5-hour window, so a large solo slice can stall on rate limits; lower `--parallel-solo` or run smaller slices. Evaluator fallback attempts are priced at the fallback model. Cost is `null` whenever any model involved is missing from `pricing.json`; pinned model IDs must match its keys exactly. The `_note` in that file records the source and caveats (for example OpenAI cache-write pricing where none is listed, and Haiku prompt-size tiering). Update it, with the retrieval date, before a campaign.
 
 ## Interim reports
 

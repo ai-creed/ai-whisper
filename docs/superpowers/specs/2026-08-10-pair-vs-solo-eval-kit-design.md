@@ -66,6 +66,7 @@ The broker run ledger's usage totals are character-based estimates, not metered 
 - **Arms A/B (metered):** token usage and cost come from the `claude -p --output-format json` result per run — authoritative.
 - **Arm C:** the runner harvests metered usage from each seat's own CLI session records where the CLI exposes them (claude session transcripts carry per-turn usage; codex session logs carry token counts), summed per run across the components it can meter (implementer, reviewer, evaluator). Any component without a metered source falls back to the broker's character-based estimate for that component.
 - Every ledger row records `token_source: "metered" | "estimated"`; a run is `metered` only if all of its components are. Cross-arm token/cost tables in `report.md` are computed over metered runs only; estimated-only rows appear in a separate column explicitly labeled "character-based estimate — not comparable across arms".
+- **Billing mode.** The campaign pins who pays for the claude seats (solo arms, Arm C claude mount): `subscription` (default) strips the Anthropic API credentials from the agent environment so `claude` bills the operator's claude.ai login; `api` keeps them. Token metering is identical in both modes; under `subscription` the `cost_usd` column is notional (metered tokens at API list prices, nothing billed per token) and `report.md` says so. The codex seat and the evaluator are outside the switch — codex runs on its own login or `OPENAI_API_KEY`, the evaluator always bills the API via the state root's `auth.json`. Subscription runs share the operator's claude.ai rate window, which the runner does not model; stalls surface as ordinary run failures.
 - The wall-clock cap is enforced by the runner's clock identically in every arm. Mid-run token-cap enforcement uses metered usage in Arms A/B and the character-based estimate in Arm C (nominal, per Parity controls); when a run is stopped at a ceiling, the ledger records which cap and which source triggered the stop.
 
 ## Grading & metrics
@@ -80,8 +81,9 @@ Mechanical, no human judgment in the primary metric:
 
 ## Campaign operations
 
-- A manifest tracks every task×arm×trial as `pending / running / done / failed`; any slice of the 90 runs can be executed in one sitting and the campaign resumed later. The manifest also carries the campaign pins — implementer model, reviewer model, the evaluator snapshot (primary provider/model, fallback provider/model), CLI versions, and the run-order seed — so a resumed slice runs under the same configuration as the first; the pin check in Parity controls is what enforces it.
+- A manifest tracks every task×arm×trial as `pending / running / done / failed`; any slice of the 90 runs can be executed in one sitting and the campaign resumed later. The manifest also carries the campaign pins — implementer model, reviewer model, billing mode, the evaluator snapshot (primary provider/model, fallback provider/model), CLI versions, and the run-order seed — so a resumed slice runs under the same configuration as the first; the pin check in Parity controls is what enforces it.
 - Pair runs execute serially (one collab at a time); solo arms may run in parallel.
+- **Billing preflight:** before any real spend, `slice` and `run` verify the shell can honour the billing pin — `subscription` requires `claude auth status` to report a claude.ai login once the API credentials are scrubbed; `api` requires the credential to be set — and refuse otherwise, naming the other mode as the remedy. Dry runs skip it.
 - **Dry-run gate:** before any real spend, the harness must pass an end-to-end dry run driving the existing fake-model pattern (`scripts/e2e/fake-claude-model.mjs`), then one real smoke task, then slices.
 
 ## Non-goals

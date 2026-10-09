@@ -5,6 +5,7 @@
 | implementer model | claude-sonnet-5-5 |
 | reviewer model (Arm C) | gpt-5.6-sol |
 | evaluator | anthropic / — (fallback: — / —) |
+| billing (claude seats) | api |
 | CLI versions | whisper 0.16.0+e7b1d1e, claude 2.1.293, codex 0.161.0 |
 | run-order seed | 20260819 |
 

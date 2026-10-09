@@ -5,6 +5,7 @@
 | implementer model | claude-sonnet-5-5 |
 | reviewer model (Arm C) | — |
 | evaluator | — / — (fallback: — / —) |
+| billing (claude seats) | api |
 | CLI versions | whisper 0.16.0+cbc0401, claude 2.1.293, codex 0.161.0 |
 | run-order seed | 20261009 |
 

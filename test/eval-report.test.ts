@@ -30,6 +30,13 @@ describe("renderReport", () => {
 		expect(md).toContain("| run-order seed | 1 |");
 		expect(md).toContain("| implementer model | impl |");
 		for (const h of ["## Primary metric", "## Per-task breakdown", "## Secondary metrics", "## Tokens & cost", "## Harness failures", "## Residual confounds", "## Caveat"]) expect(md).toContain(h);
+		expect(md).toContain("| billing (claude seats) | api |");
+		expect(md).not.toContain("notional");
+	});
+	it("labels cost as notional when the claude seats ran on the subscription", () => {
+		const md = renderReport({ rows: rows.map((r) => ({ ...r, billing: "subscription" as const })) });
+		expect(md).toContain("| billing (claude seats) | subscription |");
+		expect(md).toMatch(/notional.*pricing\.json.*nothing was billed per token/s);
 		expect(md).toContain("sessions are not clean-room isolated");
 		expect(md).toContain("character-based estimate — not comparable across arms");
 		expect(md).toMatch(/graded 2\/4 scheduled/);
