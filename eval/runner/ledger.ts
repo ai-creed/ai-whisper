@@ -38,6 +38,7 @@ export function buildLedgerRow(input: { campaignId: string; seed: number; schedu
 		escalated: outcome?.escalated ?? false,
 		review_findings: outcome?.reviewFindings ?? null,
 		implementer_model: pins.implementerModel,
+		billing: pins.billing,
 		reviewer_model: outcome?.reviewerModel ?? (input.arm === "C" ? pins.reviewerModel : null),
 		evaluator_provider: outcome?.evaluator?.provider ?? (input.arm === "C" ? pins.evaluator.provider : null),
 		evaluator_model: outcome?.evaluator?.model ?? (input.arm === "C" ? pins.evaluator.model : null),

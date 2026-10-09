@@ -61,7 +61,7 @@ async function run(): Promise<number> {
 			case "init": {
 				if (!values["implementer-model"] || !values["reviewer-model"]) { console.error("init needs --implementer-model and --reviewer-model"); return 1; }
 				const seed = seedFlag ?? Math.floor(Math.random() * 2 ** 31);
-				const m = cmdInit({ campaignDir, tasksRoot, trials, seed, implementerModel: values["implementer-model"], reviewerModel: values["reviewer-model"], sourceStateRoot });
+				const m = cmdInit({ campaignDir, tasksRoot, trials, seed, implementerModel: values["implementer-model"], reviewerModel: values["reviewer-model"], billing: "api", sourceStateRoot });
 				console.log(`initialized ${m.campaignId}: ${m.runs.length} runs, seed ${m.seed}`);
 				return 0;
 			}

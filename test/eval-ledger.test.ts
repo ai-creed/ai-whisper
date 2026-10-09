@@ -6,7 +6,7 @@ import { appendLedgerRow, buildLedgerRow, ledgerPath, readLedger } from "../eval
 import type { Pins, RunOutcome } from "../eval/runner/types.ts";
 import type { GradeResult } from "../eval/runner/grade.ts";
 
-const pins: Pins = { implementerModel: "impl", reviewerModel: "rev", evaluator: { provider: "anthropic", model: null, fallbackProvider: "openai", fallbackModel: "gpt-5-mini" }, cliVersions: { whisper: "0.16.0+a", claude: "2.0.0", codex: "0.50.0" } };
+const pins: Pins = { implementerModel: "impl", reviewerModel: "rev", billing: "subscription", evaluator: { provider: "anthropic", model: null, fallbackProvider: "openai", fallbackModel: "gpt-5-mini" }, cliVersions: { whisper: "0.16.0+a", claude: "2.0.0", codex: "0.50.0" } };
 const outcome: RunOutcome = { stopReason: "completed", stopSource: null, usage: { inputTokens: 10, outputTokens: 2, cacheWriteTokens: 0, cacheReadTokens: 1 }, tokenSource: "metered", costUsd: 0.1, seconds: 3, rounds: 2, escalated: false, reviewFindings: 1, failureMode: null, reviewerModel: "rev", evaluator: { provider: "anthropic", model: null, fallbackProvider: "openai", fallbackModel: "gpt-5-mini", fallbackUsed: true }, workspaceDir: "/ws" };
 const grade: GradeResult = { hygiene: { typecheck: "pass", lint: "pass", tests: "pass" }, gradeTestsPassed: 4, gradeTestsTotal: 4, taskSuccess: true, logs: { typecheck: "", lint: "", tests: "", grade: "" } };
 
@@ -23,6 +23,12 @@ describe("buildLedgerRow", () => {
 		const capped = buildLedgerRow({ campaignId: "c1", seed: 42, scheduledPerArm: 30, task: "t", arm: "C", trial: 1, outcome: { ...outcome, stopReason: "wall_clock_cap", stopSource: "estimated" }, grade, pins, gradedAt: "x" });
 		expect(capped.task_success).toBe(true); // graded as delivered
 	});
+	it("copies the campaign's billing pin onto every row, harness failures included", () => {
+		const row = buildLedgerRow({ campaignId: "c1", seed: 42, scheduledPerArm: 30, task: "t", arm: "A", trial: 1, outcome, grade, pins, gradedAt: "x" });
+		expect(row.billing).toBe("subscription");
+		const failed = buildLedgerRow({ campaignId: "c1", seed: 42, scheduledPerArm: 30, task: "t", arm: "C", trial: 1, outcome: null, grade: null, pins: { ...pins, billing: "api" }, gradedAt: "x", harnessFailure: "boom" });
+		expect(failed.billing).toBe("api");
+	});
 	it("builds a harness-failure row with no outcome or grade", () => {
 		const row = buildLedgerRow({ campaignId: "c1", seed: 42, scheduledPerArm: 30, task: "t", arm: "A", trial: 2, outcome: null, grade: null, pins, gradedAt: "x", harnessFailure: "runner crashed: ENOSPC" });
 		expect(row).toMatchObject({ task_success: false, stop_reason: "harness_failure", failure_mode: "runner crashed: ENOSPC", grade_tests_total: 0, hygiene: { typecheck: "skipped", lint: "skipped", tests: "skipped" } });
@@ -32,6 +38,12 @@ describe("buildLedgerRow", () => {
 describe("append / read", () => {
 	let dir: string;
 	afterEach(() => rmSync(dir, { recursive: true, force: true }));
+	it("reads rows written before the billing column as api-billed", () => {
+		dir = mkdtempSync(join(tmpdir(), "eval-ledger-"));
+		const { billing: _dropped, ...legacy } = buildLedgerRow({ campaignId: "c1", seed: 42, scheduledPerArm: 30, task: "t", arm: "A", trial: 1, outcome, grade, pins, gradedAt: "x" });
+		writeFileSync(ledgerPath(dir), JSON.stringify(legacy) + "\n");
+		expect(readLedger(dir)[0]?.billing).toBe("api");
+	});
 	it("round-trips rows and rejects a corrupt line by number", () => {
 		dir = mkdtempSync(join(tmpdir(), "eval-ledger-"));
 		const row = buildLedgerRow({ campaignId: "c1", seed: 42, scheduledPerArm: 30, task: "t", arm: "C", trial: 1, outcome, grade, pins, gradedAt: "x" });

@@ -30,9 +30,9 @@ describe("commands", () => {
 		root = mkdtempSync(join(tmpdir(), "eval-cli-"));
 		const tasksRoot = join(root, "tasks"); writeTask(tasksRoot, "t1", "feature", "quick-task"); writeTask(tasksRoot, "t2", "bugfix", "quick-task");
 		const campaignDir = join(root, "results", "c");
-		const m = cmdInit({ campaignDir, tasksRoot, trials: 2, seed: 5, implementerModel: "impl", reviewerModel: "rev", sourceStateRoot: root, cliVersions, evaluator });
+		const m = cmdInit({ campaignDir, tasksRoot, trials: 2, seed: 5, implementerModel: "impl", reviewerModel: "rev", billing: "api", sourceStateRoot: root, cliVersions, evaluator });
 		expect(m.runs).toHaveLength(12);
-		expect(() => cmdInit({ campaignDir, tasksRoot, trials: 2, seed: 5, implementerModel: "impl", reviewerModel: "rev", sourceStateRoot: root, cliVersions, evaluator })).toThrow(/exists/);
+		expect(() => cmdInit({ campaignDir, tasksRoot, trials: 2, seed: 5, implementerModel: "impl", reviewerModel: "rev", billing: "api", sourceStateRoot: root, cliVersions, evaluator })).toThrow(/exists/);
 		expect(cmdStatus({ campaignDir })).toMatch(/pending\s+12/);
 		const order: string[] = [];
 		const res = await cmdSlice({ campaignDir, tasksRoot, toolchainNodeModules: root, whisperCli: "x", workspaceRoot: join(root, "ws"), arms: ["A", "B"], parallelSolo: 2 }, {
@@ -50,17 +50,17 @@ describe("commands", () => {
 	it("init with a tasks filter schedules only those tasks", () => {
 		root = mkdtempSync(join(tmpdir(), "eval-cli-"));
 		const tasksRoot = join(root, "tasks"); writeTask(tasksRoot, "t1", "feature", "quick-task"); writeTask(tasksRoot, "t2", "bugfix", "quick-task");
-		const m = cmdInit({ campaignDir: join(root, "results", "c"), tasksRoot, trials: 1, seed: 5, implementerModel: "impl", reviewerModel: "rev", sourceStateRoot: root, cliVersions, evaluator, tasks: ["t1"] });
+		const m = cmdInit({ campaignDir: join(root, "results", "c"), tasksRoot, trials: 1, seed: 5, implementerModel: "impl", reviewerModel: "rev", billing: "api", sourceStateRoot: root, cliVersions, evaluator, tasks: ["t1"] });
 		expect(m.runs).toHaveLength(3);
 		expect(new Set(m.runs.map((r) => r.task))).toEqual(new Set(["t1"]));
-		expect(() => cmdInit({ campaignDir: join(root, "results", "d"), tasksRoot, trials: 1, seed: 5, implementerModel: "impl", reviewerModel: "rev", sourceStateRoot: root, cliVersions, evaluator, tasks: ["nope"] })).toThrow(/nope/);
+		expect(() => cmdInit({ campaignDir: join(root, "results", "d"), tasksRoot, trials: 1, seed: 5, implementerModel: "impl", reviewerModel: "rev", billing: "api", sourceStateRoot: root, cliVersions, evaluator, tasks: ["nope"] })).toThrow(/nope/);
 	});
 
 	it("slice executes in manifest order; a pair run never reorders past its neighbours", async () => {
 		root = mkdtempSync(join(tmpdir(), "eval-cli-"));
 		const tasksRoot = join(root, "tasks"); writeTask(tasksRoot, "t1", "feature", "quick-task"); writeTask(tasksRoot, "t2", "bugfix", "quick-task");
 		const campaignDir = join(root, "results", "c");
-		const m = cmdInit({ campaignDir, tasksRoot, trials: 2, seed: 9, implementerModel: "impl", reviewerModel: "rev", sourceStateRoot: root, cliVersions, evaluator });
+		const m = cmdInit({ campaignDir, tasksRoot, trials: 2, seed: 9, implementerModel: "impl", reviewerModel: "rev", billing: "api", sourceStateRoot: root, cliVersions, evaluator });
 		const expected = m.runs.map(runKey);
 		const started: string[] = []; let inFlight = 0, maxInFlight = 0, pairSawSolo = false;
 		const track = async (key: string, isPair: boolean) => { started.push(key); inFlight++; maxInFlight = Math.max(maxInFlight, inFlight); if (isPair && inFlight > 1) pairSawSolo = true; await new Promise((r) => setTimeout(r, 5)); inFlight--; };
@@ -81,7 +81,7 @@ describe("commands", () => {
 		root = mkdtempSync(join(tmpdir(), "eval-cli-"));
 		const tasksRoot = join(root, "tasks"); writeTask(tasksRoot, "t1", "feature", "quick-task"); writeTask(tasksRoot, "t2", "bugfix", "quick-task");
 		const campaignDir = join(root, "results", "c");
-		cmdInit({ campaignDir, tasksRoot, trials: 2, seed: 9, implementerModel: "impl", reviewerModel: "rev", sourceStateRoot: root, cliVersions, evaluator });
+		cmdInit({ campaignDir, tasksRoot, trials: 2, seed: 9, implementerModel: "impl", reviewerModel: "rev", billing: "api", sourceStateRoot: root, cliVersions, evaluator });
 		let inFlight = 0, maxInFlight = 0;
 		const track = async () => { inFlight++; maxInFlight = Math.max(maxInFlight, inFlight); await new Promise((r) => setTimeout(r, 5)); inFlight--; };
 		const res = await cmdSlice({ campaignDir, tasksRoot, toolchainNodeModules: root, whisperCli: "x", workspaceRoot: join(root, "ws"), arms: ["A", "B"], parallelSolo: Number.NaN }, {

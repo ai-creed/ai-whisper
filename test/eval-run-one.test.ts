@@ -9,7 +9,7 @@ import { runOne, type RunOneDeps } from "../eval/runner/run-one.ts";
 import { HarnessFailure, type Pins, type RunOutcome } from "../eval/runner/types.ts";
 import type { GradeResult } from "../eval/runner/grade.ts";
 
-const pins: Pins = { implementerModel: "impl", reviewerModel: "rev", evaluator: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, cliVersions: { whisper: "0.16.0+a", claude: "2.0.0", codex: "0.50.0" } };
+const pins: Pins = { implementerModel: "impl", reviewerModel: "rev", billing: "subscription", evaluator: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, cliVersions: { whisper: "0.16.0+a", claude: "2.0.0", codex: "0.50.0" } };
 const outcome = (arm: "A" | "B" | "C"): RunOutcome => ({ stopReason: "completed", stopSource: null, usage: { inputTokens: 1, outputTokens: 1, cacheWriteTokens: 0, cacheReadTokens: 0 }, tokenSource: "metered", costUsd: 0.01, seconds: 1, rounds: arm === "C" ? 1 : null, escalated: false, reviewFindings: arm === "C" ? 0 : null, failureMode: null, reviewerModel: arm === "C" ? "rev" : null, evaluator: arm === "C" ? { ...pins.evaluator, fallbackUsed: false } : null, workspaceDir: "/ws" });
 const green: GradeResult = { hygiene: { typecheck: "pass", lint: "pass", tests: "pass" }, gradeTestsPassed: 1, gradeTestsTotal: 1, taskSuccess: true, logs: { typecheck: "", lint: "", tests: "", grade: "" } };
 

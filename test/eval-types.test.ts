@@ -16,7 +16,7 @@ const baseRow = {
 	tokens: { input: 10, output: 5, cache_write: 0, cache_read: 0 },
 	token_source: "metered", cost_usd: 0.01, seconds: 12.5,
 	rounds: null, escalated: false, review_findings: null,
-	implementer_model: "claude-sonnet-4-5", reviewer_model: null,
+	implementer_model: "claude-sonnet-4-5", billing: "api", reviewer_model: null,
 	evaluator_provider: null, evaluator_model: null,
 	evaluator_fallback_provider: null, evaluator_fallback_model: null, evaluator_fallback_used: null,
 	cli_versions: { whisper: "0.16.0+abc1234", claude: "2.0.0", codex: "0.50.0" },
@@ -45,6 +45,13 @@ describe("budget + manifest schemas", () => {
 	it("budget requires positive integers", () => {
 		expect(budgetSchema.parse({ wallClockSeconds: 900, tokenCap: 400000 })).toEqual({ wallClockSeconds: 900, tokenCap: 400000 });
 		expect(() => budgetSchema.parse({ wallClockSeconds: 0, tokenCap: 1 })).toThrow();
+	});
+	it("pins.billing defaults to api for manifests written before the field existed, and keeps an explicit value", () => {
+		const base = { campaignId: "c", createdAt: "x", seed: 1, sourceStateRoot: "/s", runs: [] };
+		const pins = { implementerModel: "claude-sonnet-4-5", reviewerModel: "gpt-5", evaluator: { provider: "anthropic", model: null, fallbackProvider: null, fallbackModel: null }, cliVersions: { whisper: "0.16.0+abc", claude: "2.0.0", codex: "0.50.0" } };
+		expect(manifestSchema.parse({ ...base, pins }).pins.billing).toBe("api");
+		expect(manifestSchema.parse({ ...base, pins: { ...pins, billing: "subscription" } }).pins.billing).toBe("subscription");
+		expect(() => manifestSchema.parse({ ...base, pins: { ...pins, billing: "free" } })).toThrow();
 	});
 	it("manifest run statuses are the four spec states", () => {
 		const m = manifestSchema.parse({

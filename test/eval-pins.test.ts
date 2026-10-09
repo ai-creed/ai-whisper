@@ -24,7 +24,7 @@ describe("snapshotEvaluator", () => {
 
 describe("checkPinDrift", () => {
 	const pins: Pins = {
-		implementerModel: "claude-sonnet-4-5", reviewerModel: "gpt-5",
+		implementerModel: "claude-sonnet-4-5", reviewerModel: "gpt-5", billing: "api",
 		evaluator: { provider: "anthropic", model: null, fallbackProvider: "openai", fallbackModel: "gpt-5-mini" },
 		cliVersions: { whisper: "0.16.0+abc", claude: "2.0.0", codex: "0.50.0" },
 	};

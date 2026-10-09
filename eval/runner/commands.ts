@@ -10,10 +10,10 @@ import { resolveCliVersions, resolveEvaluatorSnapshot } from "./pins.ts";
 import { renderReport } from "./report.ts";
 import { RetryableRunError, runOne, type RunOneDeps, type RunOneInput } from "./run-one.ts";
 import { discoverTasks, loadTask } from "./tasks.ts";
-import type { Arm, CliVersions, EvaluatorSnapshot, Manifest, RunOutcome } from "./types.ts";
+import type { Arm, CliVersions, EvaluatorSnapshot, Manifest, RunOutcome, BillingMode } from "./types.ts";
 import { prepareWorkspace } from "./workspace.ts";
 
-export function cmdInit(o: { campaignDir: string; tasksRoot: string; trials: number; seed: number; implementerModel: string; reviewerModel: string; sourceStateRoot: string; cliVersions?: CliVersions; evaluator?: EvaluatorSnapshot; tasks?: string[] }): Manifest {
+export function cmdInit(o: { campaignDir: string; tasksRoot: string; trials: number; seed: number; implementerModel: string; reviewerModel: string; billing: BillingMode; sourceStateRoot: string; cliVersions?: CliVersions; evaluator?: EvaluatorSnapshot; tasks?: string[] }): Manifest {
 	if (existsSync(manifestPath(o.campaignDir))) throw new Error(`${manifestPath(o.campaignDir)} already exists; pick another --campaign id`);
 	mkdirSync(o.campaignDir, { recursive: true });
 	let tasks = discoverTasks(o.tasksRoot);
@@ -24,7 +24,7 @@ export function cmdInit(o: { campaignDir: string; tasksRoot: string; trials: num
 	}
 	const m = buildManifest({
 		campaignId: o.campaignDir.split("/").pop() ?? "campaign", taskSlugs: tasks.map((t) => t.slug), trials: o.trials, seed: o.seed,
-		pins: { implementerModel: o.implementerModel, reviewerModel: o.reviewerModel, evaluator: o.evaluator ?? resolveEvaluatorSnapshot(o.sourceStateRoot), cliVersions: o.cliVersions ?? resolveCliVersions() },
+		pins: { implementerModel: o.implementerModel, reviewerModel: o.reviewerModel, billing: o.billing, evaluator: o.evaluator ?? resolveEvaluatorSnapshot(o.sourceStateRoot), cliVersions: o.cliVersions ?? resolveCliVersions() },
 		sourceStateRoot: o.sourceStateRoot, now: new Date().toISOString(),
 	});
 	saveManifest(o.campaignDir, m);

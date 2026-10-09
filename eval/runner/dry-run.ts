@@ -67,7 +67,7 @@ async function full(repoRoot: string): Promise<boolean> {
 	mkdirSync(campaignDir, { recursive: true });
 	const tasksRoot = join(repoRoot, "eval", "tasks");
 	cmdInit({
-		campaignDir, tasksRoot, trials: 1, seed: 1, implementerModel: DRY_MODEL, reviewerModel: DRY_MODEL, sourceStateRoot: campaignDir,
+		campaignDir, tasksRoot, trials: 1, seed: 1, implementerModel: DRY_MODEL, reviewerModel: DRY_MODEL, billing: "api", sourceStateRoot: campaignDir,
 		cliVersions: DRY_CLI_VERSIONS, evaluator: DRY_EVALUATOR, tasks: ["csv-parse-quoted"],
 	});
 	const dry = await prepareSliceDryRun(repoRoot);

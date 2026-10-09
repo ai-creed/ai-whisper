@@ -79,6 +79,8 @@ export type CliVersions = z.infer<typeof cliVersionsSchema>;
 export const pinsSchema = z.object({
 	implementerModel: z.string().min(1),
 	reviewerModel: z.string().min(1),
+	/** Defaults to api: manifests written before the pin existed ran with the operator's ANTHROPIC_API_KEY in the agent env. */
+	billing: billingModeSchema.default("api"),
 	evaluator: evaluatorSnapshotSchema,
 	cliVersions: cliVersionsSchema,
 });
@@ -127,6 +129,8 @@ const ledgerRowBase = z.object({
 	review_findings: z.number().int().nonnegative().nullable(),
 	implementer_model: z.string(),
 	reviewer_model: z.string().nullable(),
+	/** Who paid for the claude seats; rows from before the column read as api. The evaluator always bills the API. */
+	billing: billingModeSchema.default("api"),
 	evaluator_provider: z.string().nullable(),
 	evaluator_model: z.string().nullable(),
 	evaluator_fallback_provider: z.string().nullable(),
