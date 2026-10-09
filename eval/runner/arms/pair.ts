@@ -104,7 +104,7 @@ export async function runPairArm(input: PairArmInput): Promise<RunOutcome> {
 		throw new HarnessFailure(`could not prepare run state root: ${(e as Error).message}`, e);
 	}
 	const env: NodeJS.ProcessEnv = {
-		...scrubAgentEnv(process.env, DEFAULT_REPO_ROOT), ...input.env,
+		...scrubAgentEnv(process.env, DEFAULT_REPO_ROOT, "api"), ...input.env,
 		AI_WHISPER_STATE_ROOT: stateRoot,
 		AI_WHISPER_RELAY_ORCHESTRATOR_ENABLED: "1",
 		AI_WHISPER_IDLE_THRESHOLD_MS: input.env?.AI_WHISPER_IDLE_THRESHOLD_MS ?? "15000",

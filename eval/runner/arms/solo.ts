@@ -42,7 +42,7 @@ export async function runSoloArm(input: SoloArmInput): Promise<RunOutcome> {
 	const child = spawn(input.claudeCommand ?? "claude", soloClaudeArgs(input.implementerModel, input.maxTurns ?? 400), {
 		cwd: input.workspaceDir,
 		stdio: ["pipe", "pipe", "pipe"],
-		env: scrubAgentEnv(process.env, DEFAULT_REPO_ROOT),
+		env: scrubAgentEnv(process.env, DEFAULT_REPO_ROOT, "api"),
 	});
 
 	const terminate = (reason: "token_cap" | "wall_clock_cap"): void => {

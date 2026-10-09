@@ -4,6 +4,16 @@ export const ARMS = ["A", "B", "C"] as const;
 export type Arm = (typeof ARMS)[number];
 export const armSchema = z.enum(ARMS);
 
+/**
+ * Who pays for the claude agent seats (solo arms, Arm C claude mount). `subscription` strips the Anthropic API
+ * credentials from the agent env so `claude` falls back to its claude.ai login; `api` leaves them in place.
+ * The evaluator always bills the API via the run state root's auth.json and is unaffected.
+ */
+export const BILLING_MODES = ["subscription", "api"] as const;
+export type BillingMode = (typeof BILLING_MODES)[number];
+export const billingModeSchema = z.enum(BILLING_MODES);
+export const DEFAULT_BILLING_MODE: BillingMode = "subscription";
+
 export const taskShapeSchema = z.enum(["quick-task", "spec-driven-development"]);
 export type TaskShape = z.infer<typeof taskShapeSchema>;
 export const taskCategorySchema = z.enum(["feature", "bugfix", "refactor"]);
