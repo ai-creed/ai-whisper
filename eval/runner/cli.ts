@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { parseArms, parseNonNegativeInt, parsePositiveInt, UsageError } from "./cli-args.ts";
+import { parseArms, parseNonNegativeInt, parsePositiveInt, UsageError, parseBilling } from "./cli-args.ts";
 import { cmdGrade, cmdInit, cmdReport, cmdRun, cmdSlice, cmdStatus, cmdValidateTasks } from "./commands.ts";
 import { DriftError } from "./pins.ts";
 import { runDryRun } from "./dry-run.ts";
@@ -14,6 +14,7 @@ const USAGE = `usage: pnpm eval -- <toolchain|init|status|run|slice|grade|report
   --seed <n>                run-order seed at init (default: random, printed)
   --implementer-model <m>   pinned implementer model (init)
   --reviewer-model <m>      pinned reviewer model (init)
+  --billing <mode>          who pays for the claude seats (init): subscription (default; claude.ai login) or api (ANTHROPIC_API_KEY)
   --arm <A|B|C>             restrict a slice (repeatable)
   --task <slug>             restrict a slice (repeatable)
   --limit <n>               max runs in this slice
@@ -33,7 +34,7 @@ async function run(): Promise<number> {
 		allowPositionals: true,
 		options: {
 			campaign: { type: "string", default: "default" }, trials: { type: "string" }, seed: { type: "string" },
-			"implementer-model": { type: "string" }, "reviewer-model": { type: "string" },
+			"implementer-model": { type: "string" }, "reviewer-model": { type: "string" }, billing: { type: "string" },
 			arm: { type: "string", multiple: true }, task: { type: "string", multiple: true }, limit: { type: "string" },
 			"parallel-solo": { type: "string", default: "2" }, key: { type: "string" }, green: { type: "boolean", default: false }, "dry-run": { type: "boolean", default: false },
 			"workspace-root": { type: "string", default: join(homedir(), ".ai-whisper-eval", "workspaces") },
@@ -42,6 +43,7 @@ async function run(): Promise<number> {
 	});
 	const cmd = positionals[0];
 	const arms = parseArms(values.arm);
+	const billing = parseBilling(values.billing);
 	const limit = values.limit === undefined ? undefined : parsePositiveInt("--limit", values.limit);
 	const parallelSolo = parsePositiveInt("--parallel-solo", values["parallel-solo"], 2);
 	const trials = parsePositiveInt("--trials", values.trials, 2);
@@ -61,7 +63,7 @@ async function run(): Promise<number> {
 			case "init": {
 				if (!values["implementer-model"] || !values["reviewer-model"]) { console.error("init needs --implementer-model and --reviewer-model"); return 1; }
 				const seed = seedFlag ?? Math.floor(Math.random() * 2 ** 31);
-				const m = cmdInit({ campaignDir, tasksRoot, trials, seed, implementerModel: values["implementer-model"], reviewerModel: values["reviewer-model"], billing: "api", sourceStateRoot });
+				const m = cmdInit({ campaignDir, tasksRoot, trials, seed, implementerModel: values["implementer-model"], reviewerModel: values["reviewer-model"], billing, sourceStateRoot });
 				console.log(`initialized ${m.campaignId}: ${m.runs.length} runs, seed ${m.seed}`);
 				return 0;
 			}

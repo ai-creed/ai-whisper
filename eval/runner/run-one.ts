@@ -74,13 +74,13 @@ export async function runOne(input: RunOneInput, over: Partial<RunOneDeps> = {})
 		writeFileSync(join(runDir, "workspace-path.txt"), workspaceDir + "\n");
 		if (run.arm === "C") {
 			outcome = await deps.runPair({
-				task, workspaceDir, runDir, stateRoot, implementerModel: manifest.pins.implementerModel, reviewerModel: manifest.pins.reviewerModel,
+				task, workspaceDir, runDir, stateRoot, billing: manifest.pins.billing, implementerModel: manifest.pins.implementerModel, reviewerModel: manifest.pins.reviewerModel,
 				evaluatorSnapshot: manifest.pins.evaluator, sourceStateRoot: manifest.sourceStateRoot, whisperCli: input.whisperCli,
 				...(input.dryRun ? { env: input.dryRun.env, ...(input.dryRun.onWorkflowStarted ? { hooks: { onWorkflowStarted: input.dryRun.onWorkflowStarted } } : {}) } : {}),
 			});
 		} else {
 			outcome = await deps.runSolo({
-				task, arm: run.arm, workspaceDir, runDir, implementerModel: manifest.pins.implementerModel,
+				task, arm: run.arm, workspaceDir, runDir, billing: manifest.pins.billing, implementerModel: manifest.pins.implementerModel,
 				...(input.dryRun ? { claudeCommand: input.dryRun.claudeCommand } : {}),
 			});
 		}

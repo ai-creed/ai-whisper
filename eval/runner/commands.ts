@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { validateTaskBrief } from "@ai-whisper/broker";
 import { composeQuickTaskBrief } from "./arms/pair-brief.ts";
+import { checkBillingPreflight } from "./billing.ts";
 import { gradeRun } from "./grade.ts";
 import { appendLedgerRow, buildLedgerRow, readLedger } from "./ledger.ts";
 import { buildManifest, loadManifest, manifestPath, runKey, saveManifest, scheduledPerArm, selectSlice, summarize } from "./manifest.ts";
@@ -11,7 +12,7 @@ import { renderReport } from "./report.ts";
 import { RetryableRunError, runOne, type RunOneDeps, type RunOneInput } from "./run-one.ts";
 import { discoverTasks, loadTask } from "./tasks.ts";
 import type { Arm, CliVersions, EvaluatorSnapshot, Manifest, RunOutcome, BillingMode } from "./types.ts";
-import { prepareWorkspace } from "./workspace.ts";
+import { DEFAULT_REPO_ROOT, prepareWorkspace } from "./workspace.ts";
 
 export function cmdInit(o: { campaignDir: string; tasksRoot: string; trials: number; seed: number; implementerModel: string; reviewerModel: string; billing: BillingMode; sourceStateRoot: string; cliVersions?: CliVersions; evaluator?: EvaluatorSnapshot; tasks?: string[] }): Manifest {
 	if (existsSync(manifestPath(o.campaignDir))) throw new Error(`${manifestPath(o.campaignDir)} already exists; pick another --campaign id`);
@@ -41,6 +42,14 @@ export function cmdStatus(o: { campaignDir: string }): string {
 
 type SliceOpts = { campaignDir: string; tasksRoot: string; toolchainNodeModules: string; whisperCli: string; workspaceRoot: string; arms?: Arm[]; tasks?: string[]; limit?: number; parallelSolo: number; dryRun?: RunOneInput["dryRun"] };
 
+type CommandDeps = Partial<RunOneDeps> & { preflight?: typeof checkBillingPreflight };
+
+/** Pre-spend gate: the shell must be able to honour the campaign's billing pin. Dry runs use a fake claude and skip it. */
+function billingPreflight(o: SliceOpts, m: Manifest, deps: CommandDeps): void {
+	if (o.dryRun) return;
+	(deps.preflight ?? checkBillingPreflight)(m.pins.billing, process.env, DEFAULT_REPO_ROOT);
+}
+
 async function runWithRetry(o: SliceOpts, key: string, deps: Partial<RunOneDeps>): Promise<"done" | "failed"> {
 	const input: RunOneInput = { campaignDir: o.campaignDir, tasksRoot: o.tasksRoot, toolchainNodeModules: o.toolchainNodeModules, whisperCli: o.whisperCli, workspaceRoot: o.workspaceRoot, key, ...(o.dryRun ? { dryRun: o.dryRun } : {}) };
 	try {
@@ -51,8 +60,9 @@ async function runWithRetry(o: SliceOpts, key: string, deps: Partial<RunOneDeps>
 	}
 }
 
-export async function cmdSlice(o: SliceOpts, deps: Partial<RunOneDeps> = {}): Promise<{ done: number; failed: number }> {
+export async function cmdSlice(o: SliceOpts, deps: CommandDeps = {}): Promise<{ done: number; failed: number }> {
 	const m = loadManifest(o.campaignDir);
+	billingPreflight(o, m, deps);
 	const selected = selectSlice(m, { ...(o.arms ? { arms: o.arms } : {}), ...(o.tasks ? { tasks: o.tasks } : {}), ...(o.limit !== undefined ? { limit: o.limit } : {}) });
 	let done = 0, failed = 0;
 	const tally = (s: "done" | "failed"): void => { if (s === "done") done++; else failed++; };
@@ -78,7 +88,8 @@ export async function cmdSlice(o: SliceOpts, deps: Partial<RunOneDeps> = {}): Pr
 	return { done, failed };
 }
 
-export async function cmdRun(o: SliceOpts & { key: string }, deps: Partial<RunOneDeps> = {}): Promise<"done" | "failed"> {
+export async function cmdRun(o: SliceOpts & { key: string }, deps: CommandDeps = {}): Promise<"done" | "failed"> {
+	billingPreflight(o, loadManifest(o.campaignDir), deps);
 	return runWithRetry(o, o.key, deps);
 }
 

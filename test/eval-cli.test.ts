@@ -2,8 +2,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { parseArms, parseNonNegativeInt, parsePositiveInt, UsageError } from "../eval/runner/cli-args.ts";
-import { cmdInit, cmdReport, cmdSlice, cmdStatus, cmdValidateTasks } from "../eval/runner/commands.ts";
+import { parseArms, parseBilling, parseNonNegativeInt, parsePositiveInt, UsageError } from "../eval/runner/cli-args.ts";
+import { cmdInit, cmdReport, cmdRun, cmdSlice, cmdStatus, cmdValidateTasks } from "../eval/runner/commands.ts";
 import { loadManifest, runKey } from "../eval/runner/manifest.ts";
 import type { RunOutcome } from "../eval/runner/types.ts";
 import type { GradeResult } from "../eval/runner/grade.ts";
@@ -37,7 +37,7 @@ describe("commands", () => {
 		const order: string[] = [];
 		const res = await cmdSlice({ campaignDir, tasksRoot, toolchainNodeModules: root, whisperCli: "x", workspaceRoot: join(root, "ws"), arms: ["A", "B"], parallelSolo: 2 }, {
 			runSolo: async (i) => { order.push(i.arm); return ok; }, grade: () => green, prepare: (i) => ({ workspaceDir: i.dest, baselineSha: "0".repeat(40) }),
-			liveReviewerModel: () => "rev", liveEvaluator: () => evaluator, liveCliVersions: () => cliVersions, now: () => "x",
+			liveReviewerModel: () => "rev", liveEvaluator: () => evaluator, liveCliVersions: () => cliVersions, now: () => "x", preflight: () => {},
 		});
 		expect(res).toEqual({ done: 8, failed: 0 });
 		expect(order).toHaveLength(8);
@@ -68,13 +68,36 @@ describe("commands", () => {
 			runSolo: async (i) => { await track(`${i.task.slug}/${i.arm}/?`, false); return ok; },
 			runPair: async (i) => { await track(`${i.task.slug}/C/?`, true); return { ...ok, rounds: 1, reviewFindings: 0, reviewerModel: "rev", evaluator: { ...evaluator, fallbackUsed: false } }; },
 			grade: () => green, prepare: (i) => ({ workspaceDir: i.dest, baselineSha: "0".repeat(40) }),
-			liveReviewerModel: () => "rev", liveEvaluator: () => evaluator, liveCliVersions: () => cliVersions, now: () => "x",
+			liveReviewerModel: () => "rev", liveEvaluator: () => evaluator, liveCliVersions: () => cliVersions, now: () => "x", preflight: () => {},
 		});
 		// Pair runs must appear at the same relative positions as in the manifest (solo neighbours may swap only among themselves).
 		const pairPositions = (keys: string[]) => keys.map((k, i) => (k.includes("/C/") ? i : -1)).filter((i) => i >= 0);
 		expect(pairPositions(started)).toEqual(pairPositions(expected));
 		expect(pairSawSolo).toBe(false);
 		expect(maxInFlight).toBeLessThanOrEqual(2);
+	});
+
+	it("slice and run gate on the billing preflight with the manifest's pin, before any run; dry runs skip it", async () => {
+		root = mkdtempSync(join(tmpdir(), "eval-cli-"));
+		const tasksRoot = join(root, "tasks"); writeTask(tasksRoot, "t1", "feature", "quick-task");
+		const campaignDir = join(root, "results", "c");
+		const m = cmdInit({ campaignDir, tasksRoot, trials: 1, seed: 9, implementerModel: "impl", reviewerModel: "rev", billing: "subscription", sourceStateRoot: root, cliVersions, evaluator });
+		const seen: string[] = []; let runs = 0;
+		const deps = (preflight: (b: string) => void) => ({
+			runSolo: async () => { runs++; return ok; }, runPair: async () => { runs++; return { ...ok, rounds: 1, reviewFindings: 0, reviewerModel: "rev", evaluator: { ...evaluator, fallbackUsed: false } }; },
+			grade: () => green, prepare: (i: { dest: string }) => ({ workspaceDir: i.dest, baselineSha: "0".repeat(40) }),
+			liveReviewerModel: () => "rev", liveEvaluator: () => evaluator, liveCliVersions: () => cliVersions, now: () => "x", preflight,
+		});
+		const opts = { campaignDir, tasksRoot, toolchainNodeModules: root, whisperCli: "x", workspaceRoot: join(root, "ws"), parallelSolo: 1 };
+		await expect(cmdSlice(opts, deps(() => { throw new Error("no login"); }))).rejects.toThrow(/no login/);
+		expect(runs).toBe(0);
+		await cmdSlice({ ...opts, arms: ["A"] }, deps((b) => seen.push(b)));
+		expect(seen).toEqual(["subscription"]);
+		await cmdRun({ ...opts, key: runKey(m.runs.find((r) => r.arm === "B")!) }, deps((b) => seen.push(b)));
+		expect(seen).toEqual(["subscription", "subscription"]);
+		const dry = { env: {}, claudeCommand: "fake" };
+		await cmdRun({ ...opts, key: runKey(m.runs.find((r) => r.arm === "C")!), dryRun: dry }, deps(() => { throw new Error("must not run"); }));
+		expect(runs).toBe(3);
 	});
 
 	it("a NaN parallelSolo still caps in-flight solo runs at 1", async () => {
@@ -87,7 +110,7 @@ describe("commands", () => {
 		const res = await cmdSlice({ campaignDir, tasksRoot, toolchainNodeModules: root, whisperCli: "x", workspaceRoot: join(root, "ws"), arms: ["A", "B"], parallelSolo: Number.NaN }, {
 			runSolo: async () => { await track(); return ok; },
 			grade: () => green, prepare: (i) => ({ workspaceDir: i.dest, baselineSha: "0".repeat(40) }),
-			liveReviewerModel: () => "rev", liveEvaluator: () => evaluator, liveCliVersions: () => cliVersions, now: () => "x",
+			liveReviewerModel: () => "rev", liveEvaluator: () => evaluator, liveCliVersions: () => cliVersions, now: () => "x", preflight: () => {},
 		});
 		expect(res.done).toBe(8);
 		expect(maxInFlight).toBe(1);
@@ -102,6 +125,9 @@ describe("commands", () => {
 		expect(parseNonNegativeInt("--seed", "0")).toBe(0);
 		expect(() => parseNonNegativeInt("--seed", "x")).toThrow(UsageError);
 		expect(parseArms(undefined)).toBeUndefined();
+		expect(parseBilling(undefined)).toBe("subscription");
+		expect(parseBilling("api")).toBe("api");
+		expect(() => parseBilling("free")).toThrow(/--billing must be one of subscription, api, got free/);
 		expect(parseArms(["A", "C"])).toEqual(["A", "C"]);
 		expect(() => parseArms(["D"])).toThrow("--arm must be one of A, B, C");
 	});

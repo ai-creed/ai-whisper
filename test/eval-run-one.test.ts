@@ -83,4 +83,15 @@ describe("runOne", () => {
 		expect(r.status).toBe("done");
 		expect(r.row).toMatchObject({ stop_reason: "agent_failure", failure_mode: "mount_bind_timeout", task_success: false, grade_tests_passed: 1 });
 	});
+
+describe("billing pin", () => {
+	it("hands the manifest's billing mode to both arm drivers", async () => {
+		const root = mkdtempSync(join(tmpdir(), "eval-runone-")); const { campaignDir, tasksRoot } = campaign(root);
+		const seen: string[] = [];
+		const d = deps({ runSolo: async (i) => { seen.push(`${i.arm}:${i.billing}`); return outcome(i.arm); }, runPair: async (i) => { seen.push(`C:${i.billing}`); return outcome("C"); } });
+		for (const arm of ["A", "C"] as const) await runOne({ campaignDir, tasksRoot, toolchainNodeModules: root, whisperCli: "x", workspaceRoot: join(root, "ws-outside"), key: `t1/${arm}/1` }, d);
+		expect(seen).toEqual(["A:subscription", "C:subscription"]);
+		rmSync(root, { recursive: true, force: true });
+	});
+});
 });

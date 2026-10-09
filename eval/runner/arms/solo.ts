@@ -4,7 +4,7 @@ import { createWriteStream, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { costFor, loadPricing, type PricingTable } from "../pricing.ts";
-import { HarnessFailure, type RunOutcome, type TaskMeta } from "../types.ts";
+import { HarnessFailure, type RunOutcome, type TaskMeta, type BillingMode } from "../types.ts";
 import { DEFAULT_REPO_ROOT } from "../workspace.ts";
 import { scrubAgentEnv } from "./agent-env.ts";
 import { parseSelfReviewFindings } from "./self-review.ts";
@@ -14,6 +14,8 @@ import { StreamUsageAccumulator } from "./stream-usage.ts";
 export interface SoloArmInput {
 	task: TaskMeta;
 	arm: "A" | "B";
+	/** Campaign billing pin: subscription strips the API credentials so claude uses its claude.ai login. */
+	billing: BillingMode;
 	workspaceDir: string;
 	runDir: string;
 	implementerModel: string;
@@ -42,7 +44,7 @@ export async function runSoloArm(input: SoloArmInput): Promise<RunOutcome> {
 	const child = spawn(input.claudeCommand ?? "claude", soloClaudeArgs(input.implementerModel, input.maxTurns ?? 400), {
 		cwd: input.workspaceDir,
 		stdio: ["pipe", "pipe", "pipe"],
-		env: scrubAgentEnv(process.env, DEFAULT_REPO_ROOT, "api"),
+		env: scrubAgentEnv(process.env, DEFAULT_REPO_ROOT, input.billing),
 	});
 
 	const terminate = (reason: "token_cap" | "wall_clock_cap"): void => {

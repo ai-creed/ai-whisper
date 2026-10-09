@@ -5,7 +5,7 @@ import * as pty from "node-pty";
 import { assertOutsideRepo, physicalPath } from "../paths.ts";
 import { DEFAULT_TRUST_CONFIG, trustWorkspace, type TrustConfig, type TrustGrant } from "./agent-trust.ts";
 import { costFor, loadPricing, type PricingTable } from "../pricing.ts";
-import { HarnessFailure, ZERO_USAGE, addUsage, estimateTokensFromChars, type EvaluatorSnapshot, type RunOutcome, type TaskMeta, type UsageTotals } from "../types.ts";
+import { HarnessFailure, ZERO_USAGE, addUsage, estimateTokensFromChars, type EvaluatorSnapshot, type RunOutcome, type TaskMeta, type UsageTotals, type BillingMode } from "../types.ts";
 import { DEFAULT_REPO_ROOT } from "../workspace.ts";
 import { scrubAgentEnv } from "./agent-env.ts";
 import { writePairArtifact } from "./pair-brief.ts";
@@ -46,6 +46,8 @@ export function computePairCost(input: { claude: UsageTotals; codex: UsageTotals
 export interface PairArmInput {
 	task: TaskMeta;
 	workspaceDir: string;
+	/** Campaign billing pin for the claude mount; codex and the evaluator are unaffected. */
+	billing: BillingMode;
 	/** Mount logs live here (inside eval/results; agents never see this path). */
 	runDir: string;
 	/** AI_WHISPER_STATE_ROOT for this run — must be outside the repo. */
@@ -104,7 +106,7 @@ export async function runPairArm(input: PairArmInput): Promise<RunOutcome> {
 		throw new HarnessFailure(`could not prepare run state root: ${(e as Error).message}`, e);
 	}
 	const env: NodeJS.ProcessEnv = {
-		...scrubAgentEnv(process.env, DEFAULT_REPO_ROOT, "api"), ...input.env,
+		...scrubAgentEnv(process.env, DEFAULT_REPO_ROOT, input.billing), ...input.env,
 		AI_WHISPER_STATE_ROOT: stateRoot,
 		AI_WHISPER_RELAY_ORCHESTRATOR_ENABLED: "1",
 		AI_WHISPER_IDLE_THRESHOLD_MS: input.env?.AI_WHISPER_IDLE_THRESHOLD_MS ?? "15000",

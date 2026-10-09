@@ -1,4 +1,4 @@
-import { ARMS, type Arm } from "./types.ts";
+import { ARMS, BILLING_MODES, DEFAULT_BILLING_MODE, type Arm, type BillingMode } from "./types.ts";
 
 export class UsageError extends Error {}
 
@@ -23,4 +23,10 @@ export function parseArms(raw: string[] | undefined): Arm[] | undefined {
 	if (!raw) return undefined;
 	for (const a of raw) if (!(ARMS as readonly string[]).includes(a)) throw new UsageError(`--arm must be one of ${ARMS.join(", ")}`);
 	return raw as Arm[];
+}
+
+export function parseBilling(raw: string | undefined): BillingMode {
+	if (raw === undefined) return DEFAULT_BILLING_MODE;
+	if (!(BILLING_MODES as readonly string[]).includes(raw)) throw new UsageError(`--billing must be one of ${BILLING_MODES.join(", ")}, got ${raw}`);
+	return raw as BillingMode;
 }
