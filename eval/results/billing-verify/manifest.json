@@ -1,0 +1,474 @@
+{
+	"campaignId": "billing-verify",
+	"createdAt": "2026-10-09T03:58:58.892Z",
+	"seed": 1,
+	"sourceStateRoot": "/Users/vuphan/.ai-whisper",
+	"pins": {
+		"implementerModel": "claude-sonnet-5-5",
+		"reviewerModel": "gpt-5.6-sol",
+		"billing": "subscription",
+		"evaluator": {
+			"provider": "anthropic",
+			"model": null,
+			"fallbackProvider": null,
+			"fallbackModel": null
+		},
+		"cliVersions": {
+			"whisper": "0.16.0+afcc9bb",
+			"claude": "2.1.293",
+			"codex": "0.161.0"
+		}
+	},
+	"runs": [
+		{
+			"task": "refactor-http-router-extract",
+			"arm": "C",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "task-scheduler-deps",
+			"arm": "C",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "csv-parse-quoted",
+			"arm": "C",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/billing-verify/runs/csv-parse-quoted/C/1/attempt-1",
+			"startedAt": "2026-10-09T03:59:13.800Z",
+			"endedAt": "2026-10-09T04:02:26.228Z"
+		},
+		{
+			"task": "task-scheduler-deps",
+			"arm": "A",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "lru-cache-ttl",
+			"arm": "C",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "lru-cache-ttl",
+			"arm": "A",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "refactor-http-router-extract",
+			"arm": "B",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "bug-money-rounding",
+			"arm": "A",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "cli-args-subcommands",
+			"arm": "B",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "event-bus-wildcards",
+			"arm": "C",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "lru-cache-ttl",
+			"arm": "B",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "event-bus-wildcards",
+			"arm": "A",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "json-schema-validator-refs",
+			"arm": "A",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "bug-debounce-trailing-call",
+			"arm": "C",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "refactor-config-loader-layers",
+			"arm": "A",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "bug-money-rounding",
+			"arm": "C",
+			"trial": 1,
+			"status": "done",
+			"attempts": 1,
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/billing-verify/runs/bug-money-rounding/C/1/attempt-1",
+			"startedAt": "2026-10-09T04:02:26.261Z",
+			"endedAt": "2026-10-09T04:06:26.099Z"
+		},
+		{
+			"task": "refactor-report-formatter-strategy",
+			"arm": "B",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "bug-ini-parser-sections",
+			"arm": "A",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "bug-ini-parser-sections",
+			"arm": "C",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "refactor-config-loader-layers",
+			"arm": "B",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "rate-limiter-sliding",
+			"arm": "B",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "bug-path-normalize-dotdot",
+			"arm": "A",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "task-scheduler-deps",
+			"arm": "B",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "markdown-table-render",
+			"arm": "C",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "rate-limiter-sliding",
+			"arm": "A",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "event-bus-wildcards",
+			"arm": "B",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "bug-path-normalize-dotdot",
+			"arm": "B",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "bug-debounce-trailing-call",
+			"arm": "B",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "cli-args-subcommands",
+			"arm": "C",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "rate-limiter-sliding",
+			"arm": "C",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "bug-money-rounding",
+			"arm": "B",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "cli-args-subcommands",
+			"arm": "A",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "bug-ini-parser-sections",
+			"arm": "B",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "csv-parse-quoted",
+			"arm": "B",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "refactor-http-router-extract",
+			"arm": "A",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "refactor-config-loader-layers",
+			"arm": "C",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "csv-parse-quoted",
+			"arm": "A",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "markdown-table-render",
+			"arm": "A",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "json-schema-validator-refs",
+			"arm": "C",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "bug-path-normalize-dotdot",
+			"arm": "C",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "refactor-report-formatter-strategy",
+			"arm": "A",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "refactor-report-formatter-strategy",
+			"arm": "C",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "json-schema-validator-refs",
+			"arm": "B",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "bug-debounce-trailing-call",
+			"arm": "A",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		},
+		{
+			"task": "markdown-table-render",
+			"arm": "B",
+			"trial": 1,
+			"status": "pending",
+			"attempts": 0,
+			"runDir": null,
+			"startedAt": null,
+			"endedAt": null
+		}
+	]
+}
