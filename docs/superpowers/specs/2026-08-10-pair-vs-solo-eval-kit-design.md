@@ -16,6 +16,8 @@ A reusable, resumable evaluation campaign comparing three arms on a purpose-buil
 
 **Scale (decided):** 15 tasks × 3 arms × 2 trials = 90 runs, executed in resumable slices.
 
+**The claim under test.** The eval exists to establish whether pairing an implementer with an independent reviewer (a) raises the quality bar — the delivered code carries fewer defects the implementer alone would ship — and (b) does so autonomously, without the workflow itself failing. Task success (below) answers "does each arm meet the task's acceptance bar"; it cannot answer (a), because a competent solo agent can clear the acceptance bar while shipping exactly the defects a reviewer exists to catch. The **defect-escape metric** answers (a); the Arm C workflow-failure and escalation accounting answers (b).
+
 ## Layout
 
 ```
@@ -29,6 +31,8 @@ eval/
     budget.json       # wall-clock + token caps for this task
     grade/            # HELD-OUT acceptance tests + grade script — never present
                       # in the working copy agents see; applied at grading time
+    hardening/        # HELD-OUT defect probes (see Defect-escape metric) — same
+                      # isolation as grade/; authored blind, never shown to agents
   runner/             # campaign scripts (manifest, arm drivers, grader, reporter)
   results/<campaign>/ # committed: manifest, ledger.jsonl, report.md
                       # gitignored: raw run dirs, transcripts, workspaces
@@ -43,6 +47,17 @@ eval/
 - 12 quick-task-shaped (scope ≤5 non-test files — must clear the quick-task hard gate); the 3 largest are SDD-shaped with a proper spec.
 - Authoring rules: solvable within budget by a competent engineer; acceptance tests deterministic (no network, no timing flakiness); `task.md` states acceptance criteria in checkable prose but never reveals the graded test code; fixture ships green (typecheck/lint/tests pass before the task is attempted).
 - Each quick-task-shaped task also ships `approach.md`: the implementation approach the quick-task workflow's `## Approved approach` section requires. The benchmark operator ratifies it once, at task-authoring time — that authoring-time ratification is the human approval the quick-task contract demands, made before any run and identical for all 90 runs. SDD-shaped tasks need no `approach.md`; their spec is the approved artifact.
+
+## Defect-escape metric
+
+Added after the first campaign (`2026-10`, `2026-10-sub`): every arm scored 100% task success on the quick tasks, while probing the deliveries with defects the Arm C reviewer had flagged showed solo deliveries still carrying them (ini parser losing keys for prototype-named sections: A 0/2 correct, B 1/2, C 2/2; cli-args dropping a `__proto__` command flag: A 0/2, B 0/2, C 1/2). The acceptance suite was blind to the reviewer's contribution by construction.
+
+- **Hardening suite.** Each task gains `hardening/`: held-out probes for defect classes a careful second reader is expected to catch and the acceptance criteria do not spell out — prototype-named and otherwise hostile keys, numeric edge cases (overflow, rounding, zero, negative), ordering and at-most-once guarantees, exact error-message and error-ordering contracts, idempotence and re-entrancy, and boundary inputs implied but not enumerated by `task.md`. Every probe must be justified by the task's stated contract or by behaviour a reasonable user of that API would expect; a probe that demands behaviour `task.md` leaves genuinely open is rejected.
+- **Blind authorship.** Probes are written from `task.md` and the fixture alone, before any campaign's deliveries are inspected, by an author who has not seen any arm's output or any reviewer finding — in practice a separate model session given only the task directory. Reviewer findings from past campaigns may inform which *defect classes* the authoring rubric lists, never individual probes; a probe derived from an Arm C finding would favour Arm C by construction. The operator ratifies each task's suite once, like `approach.md`, and the suite is frozen for the campaign (its content hash is a campaign pin).
+- **Scoring.** Hardening runs after the acceptance gate, on the same graded copy, for every run that produced a delivery (task success is not a precondition). Per run: probes passed ÷ probes total. Per arm: **defect-escape rate** = 1 − (probes passed ÷ probes total), micro-averaged, plus the per-task breakdown and a per-defect-class breakdown. A probe that fails on the untouched fixture *and* is outside the task's scope is invalid and dropped for every arm.
+- **Reporting.** `report.md` shows the defect-escape rate beside task success, never folded into it — the primary metric's meaning does not change. The quality claim (a) is supported only when Arm C's escape rate is lower than both A and B on the same tasks, and the report names that comparison explicitly with the n=2 caveat.
+- **Reviewer attribution.** For Arm C, review rounds whose verdict sends the work back (`loop` — the broker's verdict for "reviewer found issues"; the original `findings` label never occurs) are counted as review findings; Arm B keeps parsed self-review findings. Attribution is diagnostic, not a score: it explains *why* escape rates differ, it does not prove it.
+- **Re-grading.** Hardening applies to any past campaign whose workspaces survive (`<workspaceRoot>/<campaign>/…`) via `grade` without re-running agents; such a re-grade is recorded as its own report section and states which runs had no surviving workspace.
 
 ## Arm drivers
 
@@ -76,8 +91,9 @@ Mechanical, no human judgment in the primary metric:
 1. Copy the run's resulting workspace to a grading dir; apply `grade/`; run the hygiene gate (the fixture's own typecheck, lint, and pre-existing tests) and the held-out grade tests.
 2. **Per-run score — binary task success:** a run succeeds iff the hygiene gate is fully green AND 100% of the held-out grade tests pass. A hygiene failure fails the run regardless of grade-test results.
 3. **Primary metric:** per-arm task success rate = successful runs ÷ (30 scheduled runs − unrecovered harness failures), with a per-task breakdown (successes out of trials graded). Agent-caused failures (gave up, empty or broken delivery, budget exhausted) stay in the denominator as unsuccessful runs; escalated Arm C runs are graded as delivered and scored normally, with escalation tracked separately. Harness failures are faults **outside the system under test** — runner-process crashes, host/OS faults, grading-infrastructure failures — classified by the runner before grading; they are retried once, and a run failing twice is an **unrecovered harness failure**: marked `failed` in the manifest, subtracted from that arm's denominator by the formula above, and reported run-by-run together with a per-arm coverage line (e.g. "graded 29/30 scheduled"). Failures of the ai-whisper stack itself — mount, daemon, broker, relay, or idle-detection faults during an Arm C run — are **not** harness failures: Arm C is the pair as shipped, so such runs count as unsuccessful Arm C runs, stay in the denominator, and carry a failure-mode tag in the ledger. Ambiguous classifications default to unsuccessful run — the conservative reading against the system under test.
-4. **Secondary:** micro-averaged held-out test pass fraction (grade tests passed ÷ total, averaged per arm — partial credit, never a substitute for the primary); defects caught by review (Arm C: `findings` verdicts in the run trail; Arm B: parsed self-review findings); rounds used; escalation rate; tokens/cost per **Token & cost accounting**; wall-clock.
-5. Output: `ledger.jsonl` (one row per run: task, arm, trial, task_success, grade tests passed/total, hygiene result, tokens, token_source, cost, seconds, rounds, escalated, implementer_model, reviewer_model (Arm C; null otherwise), evaluator_provider / evaluator_model / evaluator_fallback_provider / evaluator_fallback_model / evaluator_fallback_used (Arm C; null otherwise — the fallback pair is also null when no fallback is configured), CLI versions, stop_reason — `completed | wall_clock_cap | token_cap | agent_failure | escalated | harness_failure` — stop_source recording which accounting source triggered a cap stop, and failure_mode carrying the product-stack tag for unsuccessful Arm C runs, null otherwise) + a generated `report.md` with per-arm tables, the named residual confounds, and explicit n=2 caveats (directional, not statistical proof). The report and the primary-metric denominator must be reproducible from the committed ledger alone.
+4. **Quality metric (reported beside the primary, never folded into it):** defect-escape rate per arm from the hardening suite — see **Defect-escape metric**.
+5. **Secondary:** micro-averaged held-out test pass fraction (grade tests passed ÷ total, averaged per arm — partial credit, never a substitute for the primary); defects caught by review (Arm C: review rounds with the `loop` verdict in the run trail; Arm B: parsed self-review findings); rounds used; escalation rate; tokens/cost per **Token & cost accounting**; wall-clock.
+6. Output: `ledger.jsonl` (one row per run: task, arm, trial, task_success, grade tests passed/total, hardening probes passed/total, hygiene result, tokens, token_source, cost, seconds, rounds, escalated, implementer_model, reviewer_model (Arm C; null otherwise), evaluator_provider / evaluator_model / evaluator_fallback_provider / evaluator_fallback_model / evaluator_fallback_used (Arm C; null otherwise — the fallback pair is also null when no fallback is configured), CLI versions, stop_reason — `completed | wall_clock_cap | token_cap | agent_failure | escalated | harness_failure` — stop_source recording which accounting source triggered a cap stop, and failure_mode carrying the product-stack tag for unsuccessful Arm C runs, null otherwise) + a generated `report.md` with per-arm tables, the named residual confounds, and explicit n=2 caveats (directional, not statistical proof). The report and the primary-metric denominator must be reproducible from the committed ledger alone.
 
 ## Campaign operations
 
@@ -108,10 +124,12 @@ Mechanical, no human judgment in the primary metric:
 5. One real smoke task completes across all three arms and produces correct ledger rows.
 6. `report.md` generator produces the per-arm comparison table from the ledger.
 7. Raw run outputs are gitignored; manifest, ledger, and report are committable.
-8. Root `pnpm typecheck` / `pnpm test` / `pnpm lint` / `pnpm build` all remain green (eval kit code is typechecked and linted; fixtures are excluded from the root test and lint runs).
+8. Every task ships a ratified `hardening/` suite authored blind (see Defect-escape metric); its content hash is a campaign pin; each ledger row carries hardening probes passed/total; `report.md` shows the per-arm defect-escape rate, per-task and per-defect-class breakdowns, beside task success; `grade` can re-grade a past campaign's surviving workspaces.
+9. Root `pnpm typecheck` / `pnpm test` / `pnpm lint` / `pnpm build` all remain green (eval kit code is typechecked and linted; fixtures are excluded from the root test and lint runs).
 
 ## Sequencing
 
 1. Spec `2026-08-10-read-fanout-guidance-design.md` lands first.
 2. Build the kit; pass the dry-run gate; run the real smoke task.
 3. Execute the 90-run campaign in slices; publish `report.md`.
+4. **(Parked, 2026-10-10.)** Author the blind hardening suites, implement the defect-escape metric and the corrected review-finding count, re-grade the surviving `2026-10` / `2026-10-sub` workspaces, and fix the Arm C phase-handoff truncation seen in that campaign before any further Arm C spend. Revisit when the eval is resumed.
