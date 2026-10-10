@@ -14,7 +14,7 @@
 			"fallbackModel": null
 		},
 		"cliVersions": {
-			"whisper": "0.16.0+3014f22",
+			"whisper": "0.16.0+660243c",
 			"claude": "2.1.293",
 			"codex": "0.162.0"
 		}
@@ -816,23 +816,23 @@
 			"task": "refactor-http-router-extract",
 			"arm": "C",
 			"trial": 1,
-			"status": "pending",
-			"attempts": 1,
+			"status": "done",
+			"attempts": 2,
 			"quotaAborts": 1,
-			"runDir": null,
-			"startedAt": null,
-			"endedAt": null
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10-sub/runs/refactor-http-router-extract/C/1/attempt-2",
+			"startedAt": "2026-10-10T05:58:32.655Z",
+			"endedAt": "2026-10-10T06:05:57.062Z"
 		},
 		{
 			"task": "refactor-config-loader-layers",
 			"arm": "C",
 			"trial": 2,
-			"status": "pending",
-			"attempts": 0,
+			"status": "done",
+			"attempts": 1,
 			"quotaAborts": 0,
-			"runDir": null,
-			"startedAt": null,
-			"endedAt": null
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10-sub/runs/refactor-config-loader-layers/C/2/attempt-1",
+			"startedAt": "2026-10-10T06:05:57.094Z",
+			"endedAt": "2026-10-10T06:12:55.298Z"
 		},
 		{
 			"task": "refactor-http-router-extract",
@@ -893,12 +893,12 @@
 			"task": "csv-parse-quoted",
 			"arm": "C",
 			"trial": 1,
-			"status": "pending",
-			"attempts": 0,
+			"status": "done",
+			"attempts": 1,
 			"quotaAborts": 0,
-			"runDir": null,
-			"startedAt": null,
-			"endedAt": null
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10-sub/runs/csv-parse-quoted/C/1/attempt-1",
+			"startedAt": "2026-10-10T06:12:55.327Z",
+			"endedAt": "2026-10-10T06:22:27.930Z"
 		},
 		{
 			"task": "bug-debounce-trailing-call",
@@ -937,12 +937,12 @@
 			"task": "rate-limiter-sliding",
 			"arm": "C",
 			"trial": 2,
-			"status": "pending",
-			"attempts": 0,
+			"status": "done",
+			"attempts": 1,
 			"quotaAborts": 0,
-			"runDir": null,
-			"startedAt": null,
-			"endedAt": null
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10-sub/runs/rate-limiter-sliding/C/2/attempt-1",
+			"startedAt": "2026-10-10T06:22:27.961Z",
+			"endedAt": "2026-10-10T06:26:09.784Z"
 		},
 		{
 			"task": "bug-ini-parser-sections",
@@ -1003,12 +1003,12 @@
 			"task": "bug-path-normalize-dotdot",
 			"arm": "C",
 			"trial": 1,
-			"status": "pending",
-			"attempts": 0,
+			"status": "done",
+			"attempts": 1,
 			"quotaAborts": 0,
-			"runDir": null,
-			"startedAt": null,
-			"endedAt": null
+			"runDir": "/Users/vuphan/Dev/ai-whisper/eval/results/2026-10-sub/runs/bug-path-normalize-dotdot/C/1/attempt-1",
+			"startedAt": "2026-10-10T06:26:09.815Z",
+			"endedAt": "2026-10-10T06:27:11.188Z"
 		}
 	]
 }
