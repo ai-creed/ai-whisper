@@ -440,14 +440,12 @@ describe("notice-path control methods", () => {
 			await broker.stop();
 		});
 
-		it("when a newer handoff exists in the same chain", async () => {
-			const broker = boot();
-			const { handoff } = await startWorkflow(broker);
+		// Clones `handoff` as ho_newer in the same chain and makes it the collab's
+		// current handoff, as inserting the next workflow handoff does.
+		function insertCurrentChainSibling(broker: Broker, handoffId: string, createdAt: string) {
 			const cols = (
 				broker.db.prepare("PRAGMA table_info(relay_handoff)").all() as Array<{ name: string }>
 			).map((c) => c.name);
-			// The driver stamps created_at from the wall clock, so derive "newer" from the row.
-			const newerCreatedAt = new Date(Date.parse(handoff.createdAt) + 1000).toISOString();
 			const select = cols
 				.map((c) => (c === "handoff_id" ? "'ho_newer'" : c === "created_at" ? "@createdAt" : c))
 				.join(", ");
@@ -455,8 +453,45 @@ describe("notice-path control methods", () => {
 				.prepare(
 					`INSERT INTO relay_handoff (${cols.join(", ")}) SELECT ${select} FROM relay_handoff WHERE handoff_id = @id`,
 				)
-				.run({ id: handoff.handoffId, createdAt: newerCreatedAt });
+				.run({ id: handoffId, createdAt });
+			broker.db
+				.prepare("UPDATE relay_turn_state SET unresolved_handoff_id = 'ho_newer' WHERE collab_id = ?")
+				.run("collab_c1");
+		}
+
+		it("when a newer handoff exists in the same chain", async () => {
+			const broker = boot();
+			const { handoff } = await startWorkflow(broker);
+			// The driver stamps created_at from the wall clock, so derive "newer" from the row.
+			const newerCreatedAt = new Date(Date.parse(handoff.createdAt) + 1000).toISOString();
+			insertCurrentChainSibling(broker, handoff.handoffId, newerCreatedAt);
 			await expectSuperseded(broker, handoff.handoffId, handoff.targetAgent);
+			await broker.stop();
+		});
+
+		it("when a newer same-chain handoff shares its created_at", async () => {
+			const broker = boot();
+			const { handoff } = await startWorkflow(broker);
+			insertCurrentChainSibling(broker, handoff.handoffId, handoff.createdAt);
+			expect(rawRow(broker, "ho_newer").created_at).toBe(rawRow(broker, handoff.handoffId).created_at);
+			await expectSuperseded(broker, handoff.handoffId, handoff.targetAgent);
+			expect(
+				broker.control.fetchWorkflowHandoff({
+					handoffId: "ho_newer",
+					collabId: "collab_c1",
+					callerAgent: handoff.targetAgent,
+					now: "2026-04-21T00:00:10Z",
+				}),
+			).toMatchObject({ ok: true });
+			expect(
+				broker.control.replyWorkflowHandoff({
+					handoffId: "ho_newer",
+					collabId: "collab_c1",
+					callerAgent: handoff.targetAgent,
+					body: "CURRENT REPLY",
+					now: "2026-04-21T00:00:11Z",
+				}),
+			).toEqual({ ok: true });
 			await broker.stop();
 		});
 	});

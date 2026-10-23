@@ -223,19 +223,16 @@ function checkNoticeHandoff(
 				| { status: string }
 				| undefined)?.status
 		: undefined;
-	// Lexicographic `created_at > ?` is only a correct time comparison while every
-	// relay_handoff writer stores `toISOString()` timestamps (fixed width, UTC, Z).
-	const newer = handoff.chainId
-		? db
-				.prepare(
-					"SELECT 1 FROM relay_handoff WHERE chain_id = ? AND created_at > ? LIMIT 1",
-				)
-				.get(handoff.chainId, handoff.createdAt)
-		: undefined;
+	// Identity, not timestamps: the collab's turn state points at the one current
+	// handoff (set on workflow-handoff insert, cleared on handback).
+	const current = db
+		.prepare("SELECT unresolved_handoff_id FROM relay_turn_state WHERE collab_id = ?")
+		.get(handoff.collabId) as { unresolved_handoff_id: string | null } | undefined;
+	const isCurrent = current?.unresolved_handoff_id === handoff.handoffId;
 	if (
 		(workflowStatus !== "running" && workflowStatus !== "paused") ||
 		chainStatus !== "active" ||
-		newer
+		!isCurrent
 	) {
 		return { ok: false, reason: "superseded", status: handoff.status };
 	}
