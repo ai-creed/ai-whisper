@@ -9,11 +9,43 @@ import { handoffBackRelayTxn } from "../packages/broker/src/storage/repositories
 import {
 	findFetchedUnrepliedHandoff,
 	getNoticePathFields,
-	getSeatTurnDone,
+	getSessionBindingTurnDone,
 	markHandoffReplied,
+	markSessionBindingTurnDone,
 	recordHandoffFetch,
-	upsertSeatTurnDone,
 } from "../packages/broker/src/storage/repositories/notice-path-repository.ts";
+import {
+	DIAGNOSTICS_TABLES,
+	LEDGER_TABLES,
+	RUNTIME_TABLES,
+	assertCollabTablesClassified,
+	listCollabIdTables,
+} from "../packages/broker/src/storage/repositories/collab-repository.ts";
+
+// RUNTIME_TABLES as shipped in 0.16.0 (master before the notice path). Installed
+// 0.16.0's `whisper collab purge` refuses any DB carrying a collab_id table it
+// does not classify, so this branch must not add one.
+const RUNTIME_TABLES_0_16_0 = [
+	"artifact_attachment",
+	"artifact_manifest",
+	"attach_claim",
+	"broker_daemon",
+	"companion_session",
+	"duo_assignment",
+	"duo_roll",
+	"event_log",
+	"recovery_state",
+	"relay_event",
+	"relay_monitor",
+	"relay_turn_state",
+	"reply",
+	"session",
+	"session_attachment",
+	"session_binding",
+	"thread",
+	"work_item",
+	"workflow_event_outbox",
+];
 
 const NEW_HANDOFF_COLUMNS = [
 	"delivery_path",
@@ -35,6 +67,12 @@ function freshDb() {
 		"INSERT INTO collab (collab_id, workspace_root, display_name, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
 	).run("c1", "/tmp/r", "test", "active", "2026-05-15T00:00:00Z", "2026-05-15T00:00:00Z");
 	return db;
+}
+
+function seedBinding(db: Database.Database, collabId: string, agent: string) {
+	db.prepare(
+		"INSERT INTO session_binding (collab_id, agent_type, binding_state, updated_at) VALUES (?, ?, 'bound', '2026-05-15T00:00:00Z')",
+	).run(collabId, agent);
 }
 
 function columnNames(db: Database.Database, table: string): string[] {
@@ -90,15 +128,25 @@ describe("notice-path schema", () => {
 		const cols = columnNames(db, "relay_handoff");
 		for (const c of NEW_HANDOFF_COLUMNS) expect(cols).toContain(c);
 		expect(columnNames(db, "broker_daemon")).toContain("cli_version");
-		expect(tableExists(db, "seat_turn_done")).toBe(true);
+		expect(columnNames(db, "session_binding")).toContain("turn_done_at");
+		expect(tableExists(db, "seat_turn_done")).toBe(false);
 		expect(db.pragma("user_version", { simple: true })).toBe(8);
+	});
+
+	it("adds no collab_id table that installed 0.16.0 would not classify", () => {
+		const db = freshDb();
+		expect([...RUNTIME_TABLES]).toEqual(RUNTIME_TABLES_0_16_0);
+		const classified0160 = new Set([...LEDGER_TABLES, ...DIAGNOSTICS_TABLES, ...RUNTIME_TABLES_0_16_0]);
+		const unclassified = listCollabIdTables(db).filter((t) => !classified0160.has(t));
+		expect(unclassified).toEqual([]);
+		expect(() => assertCollabTablesClassified(db)).not.toThrow();
 	});
 
 	it("adds columns to a DB already at user_version 8", () => {
 		const db = freshDb();
 		for (const c of NEW_HANDOFF_COLUMNS) db.exec(`ALTER TABLE relay_handoff DROP COLUMN ${c}`);
 		db.exec("ALTER TABLE broker_daemon DROP COLUMN cli_version");
-		db.exec("DROP TABLE seat_turn_done");
+		db.exec("ALTER TABLE session_binding DROP COLUMN turn_done_at");
 		expect(db.pragma("user_version", { simple: true })).toBe(8);
 
 		applyMigrations(db);
@@ -106,7 +154,7 @@ describe("notice-path schema", () => {
 		const cols = columnNames(db, "relay_handoff");
 		for (const c of NEW_HANDOFF_COLUMNS) expect(cols).toContain(c);
 		expect(columnNames(db, "broker_daemon")).toContain("cli_version");
-		expect(tableExists(db, "seat_turn_done")).toBe(true);
+		expect(columnNames(db, "session_binding")).toContain("turn_done_at");
 		expect(db.pragma("user_version", { simple: true })).toBe(8);
 	});
 });
@@ -156,14 +204,24 @@ describe("notice-path repository", () => {
 		expect(f?.repliedAt).toBe("T1");
 	});
 
-	it("upsertSeatTurnDone overwrites per seat", () => {
+	it("markSessionBindingTurnDone overwrites per seat", () => {
 		const db = freshDb();
-		upsertSeatTurnDone(db, { collabId: "c1", agent: "codex", now: "T1" });
-		upsertSeatTurnDone(db, { collabId: "c1", agent: "claude", now: "T5" });
-		upsertSeatTurnDone(db, { collabId: "c1", agent: "codex", now: "T2" });
-		expect(getSeatTurnDone(db, { collabId: "c1", agent: "codex" })).toBe("T2");
-		expect(getSeatTurnDone(db, { collabId: "c1", agent: "claude" })).toBe("T5");
-		expect(getSeatTurnDone(db, { collabId: "other", agent: "codex" })).toBeNull();
+		seedBinding(db, "c1", "codex");
+		seedBinding(db, "c1", "claude");
+		markSessionBindingTurnDone(db, { collabId: "c1", agent: "codex", now: "T1" });
+		markSessionBindingTurnDone(db, { collabId: "c1", agent: "claude", now: "T5" });
+		markSessionBindingTurnDone(db, { collabId: "c1", agent: "codex", now: "T2" });
+		expect(getSessionBindingTurnDone(db, { collabId: "c1", agent: "codex" })).toBe("T2");
+		expect(getSessionBindingTurnDone(db, { collabId: "c1", agent: "claude" })).toBe("T5");
+		expect(getSessionBindingTurnDone(db, { collabId: "other", agent: "codex" })).toBeNull();
+	});
+
+	it("markSessionBindingTurnDone records nothing without a binding row", () => {
+		const db = freshDb();
+		markSessionBindingTurnDone(db, { collabId: "c1", agent: "codex", now: "T1" });
+		expect(getSessionBindingTurnDone(db, { collabId: "c1", agent: "codex" })).toBeNull();
+		const n = (db.prepare("SELECT COUNT(*) AS n FROM session_binding").get() as { n: number }).n;
+		expect(n).toBe(0);
 	});
 
 	it("findFetchedUnrepliedHandoff ignores unfetched, replied, non-workflow and other-agent rows", () => {
@@ -195,5 +253,15 @@ describe("notice-path reads on an unmigrated DB", () => {
 		});
 		expect(getNoticePathFields(db, "nope")).toBeNull();
 		expect(findFetchedUnrepliedHandoff(db, { collabId: "c1", agent: "codex" })).toBeNull();
+	});
+
+	it("session-binding turn-done read and write do not throw without turn_done_at", () => {
+		const db = freshDb();
+		seedBinding(db, "c1", "codex");
+		db.exec("ALTER TABLE session_binding DROP COLUMN turn_done_at");
+		expect(() =>
+			markSessionBindingTurnDone(db, { collabId: "c1", agent: "codex", now: "T1" }),
+		).not.toThrow();
+		expect(getSessionBindingTurnDone(db, { collabId: "c1", agent: "codex" })).toBeNull();
 	});
 });

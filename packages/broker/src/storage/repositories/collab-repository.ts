@@ -134,7 +134,6 @@ export const RUNTIME_TABLES: readonly string[] = [
 	"relay_turn_state",
 	"reply",
 	"session",
-	"seat_turn_done",
 	"session_attachment",
 	"session_binding",
 	"thread",

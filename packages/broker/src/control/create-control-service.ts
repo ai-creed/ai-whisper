@@ -178,8 +178,8 @@ import {
 	findFetchedUnrepliedHandoff,
 	markHandoffReplied,
 	recordHandoffFetch,
+	markSessionBindingTurnDone,
 	recordHandoffReplyRefused,
-	upsertSeatTurnDone,
 } from "../storage/repositories/notice-path-repository.js";
 import { createWorkflowControl } from "./workflow-control.js";
 import type { BrokerEventBus } from "../runtime/broker-event-bus.js";
@@ -1457,7 +1457,7 @@ export function createControlService(db: Database.Database, events: BrokerEventB
 		recordSeatTurnDone(input: { collabId: string; agent: AgentType; now: string }): {
 			fetchedUnrepliedHandoffId: string | null;
 		} {
-			upsertSeatTurnDone(db, input);
+			markSessionBindingTurnDone(db, input);
 			return {
 				fetchedUnrepliedHandoffId: findFetchedUnrepliedHandoff(db, {
 					collabId: input.collabId,

@@ -364,7 +364,7 @@ function ensureWorkflowEventOutbox(db: Database.Database): void {
 }
 
 // Notice-path handoff delivery state (relay_handoff columns, broker_daemon
-// cli_version, seat_turn_done). Ungated and idempotent for the same reason as
+// cli_version, session_binding turn_done_at). Ungated and idempotent for the same reason as
 // ensureWorkflowEventOutbox: it must land on fresh AND already-persisted DBs
 // without bumping the read-contract schema version.
 function ensureNoticePathSchema(db: Database.Database): void {
@@ -395,14 +395,15 @@ function ensureNoticePathSchema(db: Database.Database): void {
 	if (!daemonColumns.some((c) => c.name === "cli_version")) {
 		db.exec("ALTER TABLE broker_daemon ADD COLUMN cli_version TEXT");
 	}
-	db.exec(`
-		CREATE TABLE IF NOT EXISTS seat_turn_done (
-			collab_id   TEXT NOT NULL,
-			agent_type  TEXT NOT NULL,
-			done_at     TEXT NOT NULL,
-			PRIMARY KEY (collab_id, agent_type)
-		);
-	`);
+	// Turn-done lives on session_binding (already classified RUNTIME in 0.16.0)
+	// rather than a new collab_id table: installed 0.16.0's `collab purge` drift
+	// guard refuses any collab_id table it does not classify.
+	const bindingColumns = db.prepare("PRAGMA table_info(session_binding)").all() as Array<{
+		name: string;
+	}>;
+	if (!bindingColumns.some((c) => c.name === "turn_done_at")) {
+		db.exec("ALTER TABLE session_binding ADD COLUMN turn_done_at TEXT");
+	}
 }
 
 export function applyMigrations(db: Database.Database): void {

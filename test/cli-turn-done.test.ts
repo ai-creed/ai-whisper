@@ -47,15 +47,20 @@ function fileDbFixture(daemonVersion: string) {
 		cliVersion: daemonVersion,
 	});
 	updateBrokerDaemonPid(db, { collabId: "c1", pid: 1234, pidStartTime: null, now: "2026-05-15T00:00:01Z" });
+	db.prepare(
+		"INSERT INTO session_binding (collab_id, agent_type, binding_state, updated_at) VALUES ('c1', 'claude', 'bound', '2026-05-15T00:00:00Z')",
+	).run();
 	db.close();
 	return { sqlitePath, cwd };
 }
 
-function turnDoneRows(sqlitePath: string): number {
+function turnDoneAt(sqlitePath: string): string | null {
 	const db = openDatabase(sqlitePath);
-	const n = (db.prepare("SELECT COUNT(*) AS n FROM seat_turn_done").get() as { n: number }).n;
+	const row = db
+		.prepare("SELECT turn_done_at FROM session_binding WHERE collab_id = 'c1' AND agent_type = 'claude'")
+		.get() as { turn_done_at: string | null };
 	db.close();
-	return n;
+	return row.turn_done_at;
 }
 
 describe("runTurnDone", () => {
@@ -100,10 +105,10 @@ describe("resolveTurnDoneResult", () => {
 		});
 		expect(r.exitCode).toBe(1);
 		expect(r.stdout).toContain("does not match the running broker 0.16.0");
-		expect(turnDoneRows(sqlitePath)).toBe(0);
+		expect(turnDoneAt(sqlitePath)).toBeNull();
 	});
 
-	it("matching version records a seat_turn_done row and closes", () => {
+	it("matching version records session_binding.turn_done_at", () => {
 		const { sqlitePath, cwd } = fileDbFixture("0.17.0");
 		const r = resolveTurnDoneResult({
 			callerAgent: "claude",
@@ -111,7 +116,7 @@ describe("resolveTurnDoneResult", () => {
 			now: NOW,
 		});
 		expect(r).toEqual({ exitCode: 0, stdout: "ok" });
-		expect(turnDoneRows(sqlitePath)).toBe(1);
+		expect(turnDoneAt(sqlitePath)).toBe(NOW);
 	});
 
 	it("resolver failure prints the message", () => {

@@ -46,7 +46,7 @@ function buildFixture(opts: { cliVersion: string | null; keepCliVersion: boolean
 	});
 	updateBrokerDaemonPid(db, { collabId: "c1", pid: 1234, pidStartTime: null, now: "2026-05-15T00:00:01Z" });
 	for (const col of NOTICE_COLUMNS) db.exec(`ALTER TABLE relay_handoff DROP COLUMN ${col}`);
-	db.exec("DROP TABLE seat_turn_done");
+	db.exec("ALTER TABLE session_binding DROP COLUMN turn_done_at");
 	if (!opts.keepCliVersion) db.exec("ALTER TABLE broker_daemon DROP COLUMN cli_version");
 	db.pragma("user_version = 7");
 	db.close();

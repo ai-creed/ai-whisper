@@ -41,24 +41,33 @@ export function recordHandoffReplyRefused(
 	);
 }
 
-export function upsertSeatTurnDone(
+function sessionBindingHasTurnDoneAt(db: Database.Database): boolean {
+	return (db.prepare("PRAGMA table_info(session_binding)").all() as Array<{ name: string }>).some(
+		(c) => c.name === "turn_done_at",
+	);
+}
+
+// Updates the seat's existing binding row only; a seat without a binding row
+// records nothing. Skipped on a DB that predates the column.
+export function markSessionBindingTurnDone(
 	db: Database.Database,
 	input: { collabId: string; agent: AgentType; now: string },
 ): void {
+	if (!sessionBindingHasTurnDoneAt(db)) return;
 	db.prepare(
-		`INSERT INTO seat_turn_done (collab_id, agent_type, done_at) VALUES (?, ?, ?)
-		 ON CONFLICT (collab_id, agent_type) DO UPDATE SET done_at = excluded.done_at`,
-	).run(input.collabId, input.agent, input.now);
+		"UPDATE session_binding SET turn_done_at = ? WHERE collab_id = ? AND agent_type = ?",
+	).run(input.now, input.collabId, input.agent);
 }
 
-export function getSeatTurnDone(
+export function getSessionBindingTurnDone(
 	db: Database.Database,
 	input: { collabId: string; agent: AgentType },
 ): string | null {
+	if (!sessionBindingHasTurnDoneAt(db)) return null;
 	const row = db
-		.prepare("SELECT done_at FROM seat_turn_done WHERE collab_id = ? AND agent_type = ?")
-		.get(input.collabId, input.agent) as { done_at: string } | undefined;
-	return row?.done_at ?? null;
+		.prepare("SELECT turn_done_at FROM session_binding WHERE collab_id = ? AND agent_type = ?")
+		.get(input.collabId, input.agent) as { turn_done_at: string | null } | undefined;
+	return row?.turn_done_at ?? null;
 }
 
 export function findFetchedUnrepliedHandoff(

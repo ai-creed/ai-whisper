@@ -474,6 +474,28 @@ describe("notice-path control methods", () => {
 		await broker.stop();
 	});
 
+	it("recordSeatTurnDone without a binding row records nothing and still reports", async () => {
+		const broker = boot();
+		const { handoff } = await startWorkflow(broker);
+		broker.db.prepare("DELETE FROM session_binding WHERE collab_id = ?").run("collab_c1");
+		broker.control.fetchWorkflowHandoff({
+			handoffId: handoff.handoffId,
+			collabId: "collab_c1",
+			callerAgent: handoff.targetAgent,
+			now: "2026-04-21T00:00:03Z",
+		});
+		expect(
+			broker.control.recordSeatTurnDone({
+				collabId: "collab_c1",
+				agent: handoff.targetAgent,
+				now: "2026-04-21T00:00:04Z",
+			}),
+		).toEqual({ fetchedUnrepliedHandoffId: handoff.handoffId });
+		const n = (broker.db.prepare("SELECT COUNT(*) AS n FROM session_binding").get() as { n: number }).n;
+		expect(n).toBe(0);
+		await broker.stop();
+	});
+
 	it("recordSeatTurnDone returns the fetched-unreplied handoff, else null", async () => {
 		const broker = boot();
 		const { handoff } = await startWorkflow(broker);
@@ -493,9 +515,9 @@ describe("notice-path control methods", () => {
 		).toEqual({ fetchedUnrepliedHandoffId: handoff.handoffId });
 		expect(
 			broker.db
-				.prepare("SELECT done_at FROM seat_turn_done WHERE collab_id = ? AND agent_type = ?")
+				.prepare("SELECT turn_done_at FROM session_binding WHERE collab_id = ? AND agent_type = ?")
 				.get("collab_c1", agent),
-		).toEqual({ done_at: "2026-04-21T00:00:04Z" });
+		).toEqual({ turn_done_at: "2026-04-21T00:00:04Z" });
 
 		broker.control.replyWorkflowHandoff({
 			handoffId: handoff.handoffId,
