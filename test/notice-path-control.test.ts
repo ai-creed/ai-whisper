@@ -469,6 +469,7 @@ describe("notice-path control methods", () => {
 			broker.control.recordWorkflowReplyRefused({
 				handoffId: handoff.handoffId,
 				collabId: "collab_c1",
+				callerAgent: handoff.targetAgent,
 				now: "2026-04-21T00:00:05Z",
 			}),
 		).not.toThrow();
@@ -479,7 +480,12 @@ describe("notice-path control methods", () => {
 		const broker = boot();
 		const { handoff } = await startWorkflow(broker, { accept: false });
 		const call = (collabId: string, now: string) =>
-			broker.control.recordWorkflowReplyRefused({ handoffId: handoff.handoffId, collabId, now });
+			broker.control.recordWorkflowReplyRefused({
+				handoffId: handoff.handoffId,
+				collabId,
+				callerAgent: handoff.targetAgent,
+				now,
+			});
 
 		call("collab_c1", "2026-04-21T00:00:02Z");
 		expect(getNoticePathFields(broker.db, handoff.handoffId)?.replyRefusedAt).toBeNull();
@@ -492,6 +498,7 @@ describe("notice-path control methods", () => {
 			broker.control.recordWorkflowReplyRefused({
 				handoffId: "ho_nope",
 				collabId: "collab_c1",
+				callerAgent: handoff.targetAgent,
 				now: "2026-04-21T00:00:04Z",
 			}),
 		).not.toThrow();
@@ -499,6 +506,28 @@ describe("notice-path control methods", () => {
 		call("collab_c1", "2026-04-21T00:00:05Z");
 		expect(getNoticePathFields(broker.db, handoff.handoffId)?.replyRefusedAt).toBe(
 			"2026-04-21T00:00:05Z",
+		);
+		await broker.stop();
+	});
+
+	it("recordWorkflowReplyRefused ignores a caller that is not the target agent", async () => {
+		const broker = boot();
+		const { handoff } = await startWorkflow(broker);
+		broker.control.recordWorkflowReplyRefused({
+			handoffId: handoff.handoffId,
+			collabId: "collab_c1",
+			callerAgent: otherAgent(handoff.targetAgent),
+			now: "2026-04-21T00:00:05Z",
+		});
+		expect(getNoticePathFields(broker.db, handoff.handoffId)?.replyRefusedAt).toBeNull();
+		broker.control.recordWorkflowReplyRefused({
+			handoffId: handoff.handoffId,
+			collabId: "collab_c1",
+			callerAgent: handoff.targetAgent,
+			now: "2026-04-21T00:00:06Z",
+		});
+		expect(getNoticePathFields(broker.db, handoff.handoffId)?.replyRefusedAt).toBe(
+			"2026-04-21T00:00:06Z",
 		);
 		await broker.stop();
 	});

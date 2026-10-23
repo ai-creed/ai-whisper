@@ -46,14 +46,16 @@ export function resolveReplyResult(input: {
 	now: string;
 }): HandoffReplyResult {
 	const { callerAgent } = input;
+	if (callerAgent === null) return nullAgentRefusal();
 	return runAgentCommand({
 		context: "reply",
-		refuseBeforeConnect: callerAgent === null ? nullAgentRefusal() : null,
+		refuseBeforeConnect: null,
 		connect: input.connect,
 		onVersionMismatch: (conn) =>
 			handleReplyVersionMismatch({
 				db: conn.db,
 				collabId: conn.collabId,
+				callerAgent,
 				handoffId: input.handoffId,
 				message: conn.message,
 				now: input.now,
@@ -133,6 +135,7 @@ function refusalCopy(refusal: ReplyRefusal, id: string, callerAgent: AgentType):
 export function handleReplyVersionMismatch(input: {
 	db: Database.Database;
 	collabId: string;
+	callerAgent: AgentType;
 	handoffId: string;
 	message: string;
 	now: string;
@@ -141,6 +144,7 @@ export function handleReplyVersionMismatch(input: {
 		createControlService(input.db, createBrokerEventBus()).recordWorkflowReplyRefused({
 			handoffId: input.handoffId,
 			collabId: input.collabId,
+			callerAgent: input.callerAgent,
 			now: input.now,
 		});
 	} catch {

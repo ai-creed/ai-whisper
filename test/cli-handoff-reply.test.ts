@@ -169,6 +169,7 @@ describe("handleReplyVersionMismatch", () => {
 		const result = handleReplyVersionMismatch({
 			db,
 			collabId: "collab_c1",
+			callerAgent: handoff.targetAgent,
 			handoffId: handoff.handoffId,
 			message: "MISMATCH COPY",
 			now: "2026-04-21T00:00:09Z",
@@ -182,6 +183,37 @@ describe("handleReplyVersionMismatch", () => {
 			v: db.pragma("user_version", { simple: true }),
 			t: db.prepare("SELECT name FROM sqlite_master ORDER BY name").all(),
 		}).toEqual(before);
+		db.close();
+	});
+});
+
+describe("handleReplyVersionMismatch wrong agent", () => {
+	it("does not record reply_refused_at for an agent the handoff is not assigned to", async () => {
+		const sqlitePath = join(mkdtempSync(join(tmpdir(), "hr-")), "b.sqlite");
+		const { broker, handoff } = await bootWithAcceptedHandoff(sqlitePath);
+		await broker.stop();
+		const db = openDatabase(sqlitePath);
+		const close = vi.fn();
+		const result = resolveReplyResult({
+			callerAgent: handoff.targetAgent === "claude" ? "codex" : "claude",
+			connect: () => ({
+				ok: false,
+				reason: "version_mismatch",
+				collabId: "collab_c1",
+				db,
+				message: "MISMATCH COPY",
+				close,
+			}),
+			handoffId: handoff.handoffId,
+			filePath: "/x",
+			readFile: () => "body",
+			now: "2026-04-21T00:00:09Z",
+		});
+		expect(result).toEqual({ exitCode: 1, stdout: "MISMATCH COPY" });
+		const row = db
+			.prepare("SELECT reply_refused_at FROM relay_handoff WHERE handoff_id = ?")
+			.get(handoff.handoffId) as { reply_refused_at: string | null };
+		expect(row.reply_refused_at).toBeNull();
 		db.close();
 	});
 });
@@ -228,7 +260,7 @@ describe("resolveReplyResult", () => {
 		const db = openDatabase(sqlitePath);
 		const close = vi.fn();
 		const result = resolveReplyResult({
-			callerAgent: "claude",
+			callerAgent: handoff.targetAgent,
 			connect: () => ({
 				ok: false,
 				reason: "version_mismatch",

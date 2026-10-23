@@ -1461,11 +1461,23 @@ export function createControlService(db: Database.Database, events: BrokerEventB
 				return { ok: true as const };
 			})();
 		},
-		recordWorkflowReplyRefused(input: { handoffId: string; collabId: string; now: string }): void {
+		recordWorkflowReplyRefused(input: {
+			handoffId: string;
+			collabId: string;
+			callerAgent: AgentType;
+			now: string;
+		}): void {
 			// An older broker's DB lacks the column; the refusal is diagnostic only.
 			if (!relayHandoffHasColumn(db, "reply_refused_at")) return;
 			const current = queryRelayHandoff(db, input.handoffId);
-			if (!current || current.collabId !== input.collabId || current.status !== "accepted") return;
+			if (
+				!current ||
+				current.collabId !== input.collabId ||
+				current.status !== "accepted" ||
+				current.targetAgent !== input.callerAgent
+			) {
+				return;
+			}
 			recordHandoffReplyRefused(db, { handoffId: input.handoffId, now: input.now });
 		},
 		recordSeatTurnDone(input: { collabId: string; agent: AgentType; now: string }): {
