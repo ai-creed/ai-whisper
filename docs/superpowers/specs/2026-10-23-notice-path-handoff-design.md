@@ -178,7 +178,7 @@ New `whisper handoff` command group, plus `whisper turn done`.
 
 - Records "turn finished" for the calling seat, with a timestamp. It never completes a handoff.
 - If the seat has a fetched handoff with no reply, it prints this to stdout: `note: handoff <ho_id> is fetched but has no reply — if your work for it is complete, run whisper handoff reply <ho_id> --file <path>`.
-- Seat identity comes from an env var the mount sets on the provider process. **Phase 1 as built:** the existing `AI_WHISPER_AGENT=<agent>` (already stamped by every adapter) plus collab resolution from the command's working directory, instead of the example `AI_WHISPER_SEAT=<collab>:<agent>`. **Open before phase 2:** cwd resolution only matches the exact workspace root, so an agent working in a subdirectory or a `.worktrees/` checkout gets "no active collab found". Decide between an adapter-stamped `AI_WHISPER_COLLAB` passed as the collab override, or an ancestor / git-common-dir walk. **Verified 2026-10-23:** codex 0.162 passes a mount-set env var through to its shell commands, login shell included (`seat=[collab_x:codex]`). claude passes the env through as standard.
+- Seat identity comes from an env var the mount sets on the provider process. **Phase 1 as built:** the existing `AI_WHISPER_AGENT=<agent>` (already stamped by every adapter) plus collab resolution from the command's working directory, instead of the example `AI_WHISPER_SEAT=<collab>:<agent>`. **Decided for phase 2 (operator, 2026-10-23):** the mount also stamps `AI_WHISPER_COLLAB=<collab_id>` on every provider process, next to `AI_WHISPER_AGENT`. The agent commands pass it to collab resolution as the collab override, and resolving from the working directory is only a fallback for commands run by hand. Reason: cwd resolution matches only the exact workspace root. In the blackroom runs about 14% of main-agent turns ran from a subdirectory, and 74 commands ran from a sibling worktree outside the repo. Claude's Bash keeps its cwd between calls, and a parent-folder walk cannot reach a sibling worktree. **Verified 2026-10-23:** codex 0.162 passes a mount-set env var through to its shell commands, login shell included (`seat=[collab_x:codex]`). claude passes the env through as standard.
 - If the variable is missing, for example on a provider that does not pass it through, `turn done` exits non-zero with a clear message. That seat then runs on the extended idle cap (§5); nothing breaks. *(My call.)*
 
 **§3.4 Version check.** Each command compares its own CLI version with the broker's version, which is recorded where the broker already persists its runtime facts. *Builder's call:* exact source, and whether to compare the full `x.y.z+sha` build id or `x.y.z` only. On a mismatch, it exits non-zero. The message depends on where in the handoff it happens:
@@ -338,6 +338,8 @@ Each phase is shippable and leaves every provider working.
 
 1. **Data and CLI.** Migration, `whisper handoff show|reply`, `whisper turn done`, version check, seat env var. Nothing calls them yet.
 2. **Notice delivery and ladder.**
+   - `AI_WHISPER_COLLAB` stamped on provider processes and used by the agent commands (see §3).
+   - **Moved here from phase 3:** the fixed handback fragment appended to every stored workflow request. It names `whisper handoff reply <ho_id> --file <path>` and asks for `whisper turn done` at the end of each completed turn. Without it, phase 2 would ship with agents never sending `turn done`, the reply-side `/copy` fallback (§5, step 2) could never fire, and every forgotten reply would escalate. Phase 3 keeps only the operator-control workflow id, the skill sections and the docs.
    - Mount types notices.
    - Exactly-once state moves to the broker.
    - Request and reply ladders.
@@ -345,7 +347,6 @@ Each phase is shippable and leaves every provider working.
    - Visibility lines and data.
    - Strict mode.
 3. **Composition and guidance.**
-   - Reply fragment in stored requests.
    - Real workflow id in operator control.
    - Skill sections with version bumps.
    - README and docs.
