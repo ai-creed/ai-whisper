@@ -1,4 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { AgentType } from "../packages/shared/src/index.ts";
 import { createBrokerRuntime } from "../packages/broker/src/index.ts";
 import { runWorkflowStart } from "../packages/cli/src/commands/workflow/start.ts";
@@ -9,10 +13,10 @@ type Broker = ReturnType<typeof createBrokerRuntime>;
 
 const T0 = "2026-04-21T00:00:00Z";
 
-function startCollab(broker: Broker, collabId: string) {
+function startCollab(broker: Broker, collabId: string, workspaceRoot = "/tmp") {
 	broker.control.startCollab({
 		collabId,
-		workspaceRoot: "/tmp",
+		workspaceRoot,
 		displayName: collabId,
 		orchestratorEnabled: true,
 		orchestratorMaxRounds: 3,
@@ -261,25 +265,88 @@ describe("notice-path control methods", () => {
 			body: "REPLY BODY",
 			now: "2026-04-21T00:00:05Z",
 		});
-		const pendingBefore = broker.control
-			.listRelayHandoffsPendingOrchestration("collab_c1")
-			.filter((h) => h.handoffId === handoff.handoffId);
+		// The orchestrator claims the replied handoff, as the real one would.
+		expect(
+			broker.control.claimRelayHandoffForOrchestration({
+				handoffId: handoff.handoffId,
+				claimedAt: "2026-04-21T00:00:05.500Z",
+			}),
+		).not.toBeNull();
+		const pick = (row: Record<string, unknown>) => ({
+			orchestrator_status: row.orchestrator_status,
+			status: row.status,
+			resolved_at: row.resolved_at,
+		});
+		const before = pick(rawRow(broker, handoff.handoffId));
+		expect(before.orchestrator_status).toBe("pending");
+		const countRows = () =>
+			(broker.db.prepare("SELECT COUNT(*) AS n FROM relay_handoff").get() as { n: number }).n;
+		const rowsBefore = countRows();
+
 		broker.control.handoffBackRelay({
 			handoffId: handoff.handoffId,
+			nextHandoffId: "handoff_late_capture",
 			senderAgent: handoff.targetAgent,
 			targetAgent: handoff.senderAgent,
 			requestText: "CAPTURED",
 			captureStatus: "ok",
 			now: "2026-04-21T00:00:06Z",
 		});
-		expect(rawRow(broker, handoff.handoffId).handback_text).toBe("REPLY BODY");
+
+		const after = rawRow(broker, handoff.handoffId);
+		expect(after.handback_text).toBe("REPLY BODY");
 		expect(getNoticePathFields(broker.db, handoff.handoffId)?.capturePath).toBe("reply");
-		const pendingAfter = broker.control
-			.listRelayHandoffsPendingOrchestration("collab_c1")
-			.filter((h) => h.handoffId === handoff.handoffId);
-		expect(pendingBefore.length).toBeLessThanOrEqual(1);
-		expect(pendingAfter.length).toBeLessThanOrEqual(1);
+		expect(pick(after)).toEqual(before);
+		expect(
+			broker.control
+				.listRelayHandoffsPendingOrchestration("collab_c1")
+				.some((h) => h.handoffId === handoff.handoffId),
+		).toBe(false);
+		expect(countRows()).toBe(rowsBefore);
 		await broker.stop();
+	});
+
+	it("reply on a paused workflow hands back, captures the quiesce snapshot and defers orchestration", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "np-git-"));
+		const git = (...args: string[]) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" });
+		git("init", "-q");
+		git("config", "user.email", "t@t");
+		git("config", "user.name", "t");
+		writeFileSync(join(dir, "a.txt"), "a\n");
+		git("add", ".");
+		git("commit", "-q", "-m", "init");
+		const broker = createBrokerRuntime({ sqlitePath: ":memory:", host: "127.0.0.1", port: 4321 });
+		startCollab(broker, "collab_c1", dir);
+		try {
+			const { workflowId, handoff } = await startWorkflow(broker);
+			broker.control.pauseWorkflow({ workflowId, now: "2026-04-21T00:00:02Z" });
+			const ctx = () =>
+				broker.control.getWorkflow(workflowId)?.workflowContext as { pauseSnapshotRef?: string | null };
+			// In-flight accepted handoff: not at the quiesce boundary yet.
+			expect(ctx().pauseSnapshotRef).toBeUndefined();
+
+			const result = broker.control.replyWorkflowHandoff({
+				handoffId: handoff.handoffId,
+				collabId: "collab_c1",
+				callerAgent: handoff.targetAgent,
+				body: "PAUSED REPLY",
+				now: "2026-04-21T00:00:05Z",
+			});
+			expect(result).toEqual({ ok: true });
+			const row = rawRow(broker, handoff.handoffId);
+			expect(row.status).toBe("handed_back");
+			expect(row.handback_text).toBe("PAUSED REPLY");
+			expect(getNoticePathFields(broker.db, handoff.handoffId)?.capturePath).toBe("reply");
+			expect(ctx().pauseSnapshotRef).toMatch(/^[0-9a-f]{40}$/);
+			expect(
+				broker.control
+					.listRelayHandoffsPendingOrchestration("collab_c1")
+					.some((h) => h.handoffId === handoff.handoffId),
+			).toBe(false);
+		} finally {
+			await broker.stop();
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 
 	it("show and reply refuse a handoff from another collab", async () => {
