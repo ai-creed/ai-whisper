@@ -208,9 +208,9 @@ describe("notice-path repository", () => {
 		const db = freshDb();
 		seedBinding(db, "c1", "codex");
 		seedBinding(db, "c1", "claude");
-		markSessionBindingTurnDone(db, { collabId: "c1", agent: "codex", now: "T1" });
-		markSessionBindingTurnDone(db, { collabId: "c1", agent: "claude", now: "T5" });
-		markSessionBindingTurnDone(db, { collabId: "c1", agent: "codex", now: "T2" });
+		expect(markSessionBindingTurnDone(db, { collabId: "c1", agent: "codex", now: "T1" })).toBe(true);
+		expect(markSessionBindingTurnDone(db, { collabId: "c1", agent: "claude", now: "T5" })).toBe(true);
+		expect(markSessionBindingTurnDone(db, { collabId: "c1", agent: "codex", now: "T2" })).toBe(true);
 		expect(getSessionBindingTurnDone(db, { collabId: "c1", agent: "codex" })).toBe("T2");
 		expect(getSessionBindingTurnDone(db, { collabId: "c1", agent: "claude" })).toBe("T5");
 		expect(getSessionBindingTurnDone(db, { collabId: "other", agent: "codex" })).toBeNull();
@@ -218,7 +218,7 @@ describe("notice-path repository", () => {
 
 	it("markSessionBindingTurnDone records nothing without a binding row", () => {
 		const db = freshDb();
-		markSessionBindingTurnDone(db, { collabId: "c1", agent: "codex", now: "T1" });
+		expect(markSessionBindingTurnDone(db, { collabId: "c1", agent: "codex", now: "T1" })).toBe(false);
 		expect(getSessionBindingTurnDone(db, { collabId: "c1", agent: "codex" })).toBeNull();
 		const n = (db.prepare("SELECT COUNT(*) AS n FROM session_binding").get() as { n: number }).n;
 		expect(n).toBe(0);
@@ -259,9 +259,7 @@ describe("notice-path reads on an unmigrated DB", () => {
 		const db = freshDb();
 		seedBinding(db, "c1", "codex");
 		db.exec("ALTER TABLE session_binding DROP COLUMN turn_done_at");
-		expect(() =>
-			markSessionBindingTurnDone(db, { collabId: "c1", agent: "codex", now: "T1" }),
-		).not.toThrow();
+		expect(markSessionBindingTurnDone(db, { collabId: "c1", agent: "codex", now: "T1" })).toBe(false);
 		expect(getSessionBindingTurnDone(db, { collabId: "c1", agent: "codex" })).toBeNull();
 	});
 });

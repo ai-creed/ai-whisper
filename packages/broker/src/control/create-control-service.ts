@@ -1481,10 +1481,11 @@ export function createControlService(db: Database.Database, events: BrokerEventB
 			recordHandoffReplyRefused(db, { handoffId: input.handoffId, now: input.now });
 		},
 		recordSeatTurnDone(input: { collabId: string; agent: AgentType; now: string }): {
+			recorded: boolean;
 			fetchedUnrepliedHandoffId: string | null;
 		} {
-			markSessionBindingTurnDone(db, input);
 			return {
+				recorded: markSessionBindingTurnDone(db, input),
 				fetchedUnrepliedHandoffId: findFetchedUnrepliedHandoff(db, {
 					collabId: input.collabId,
 					agent: input.agent,

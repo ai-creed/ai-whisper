@@ -18,8 +18,15 @@ const NOW = "2026-10-23T00:00:00.000Z";
 const UNREACHABLE = (detail: string) =>
 	`ai-whisper could not reach the broker for this workspace (${detail}). Stop here and end your turn; do not read ~/.ai-whisper/state.db directly.`;
 
-function deps(fetched: string | null, overrides: Record<string, unknown> = {}) {
-	const recordSeatTurnDone = vi.fn(() => ({ fetchedUnrepliedHandoffId: fetched }));
+const NOT_RECORDED = (agent: string) =>
+	`whisper turn done could not record this turn: ${agent} has no mounted seat in this collaboration. Stop here and end your turn; do not read ~/.ai-whisper/state.db directly.`;
+
+function deps(
+	fetched: string | null,
+	overrides: Record<string, unknown> = {},
+	recorded = true,
+) {
+	const recordSeatTurnDone = vi.fn(() => ({ recorded, fetchedUnrepliedHandoffId: fetched }));
 	return {
 		recordSeatTurnDone,
 		input: {
@@ -80,6 +87,14 @@ describe("runTurnDone", () => {
 		});
 	});
 
+	it("a seat without a binding row exits 1 with no-seat copy and no hint", () => {
+		expect(runTurnDone(deps(null, {}, false).input)).toEqual({ exitCode: 1, stdout: NOT_RECORDED("claude") });
+		expect(runTurnDone(deps("ho_7", {}, false).input)).toEqual({
+			exitCode: 1,
+			stdout: NOT_RECORDED("claude"),
+		});
+	});
+
 	it("missing AI_WHISPER_AGENT exits 1 and records nothing", () => {
 		const d = deps(null, { callerAgent: null });
 		expect(runTurnDone(d.input)).toEqual({
@@ -119,6 +134,17 @@ describe("resolveTurnDoneResult", () => {
 		});
 		expect(r).toEqual({ exitCode: 0, stdout: "ok" });
 		expect(turnDoneAt(sqlitePath)).toBe(NOW);
+	});
+
+	it("matching version without a binding row for the caller exits 1", () => {
+		const { sqlitePath, cwd } = fileDbFixture("0.17.0");
+		const r = resolveTurnDoneResult({
+			callerAgent: "codex",
+			connect: () => connectAgentCommand({ cwd, context: "turn-done", cliVersion: "0.17.0", sqlitePath }),
+			now: NOW,
+		});
+		expect(r).toEqual({ exitCode: 1, stdout: NOT_RECORDED("codex") });
+		expect(turnDoneAt(sqlitePath)).toBeNull();
 	});
 
 	it("resolver failure prints guidance and closes", () => {

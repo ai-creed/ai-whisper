@@ -532,7 +532,7 @@ describe("notice-path control methods", () => {
 		await broker.stop();
 	});
 
-	it("recordSeatTurnDone without a binding row records nothing and still reports", async () => {
+	it("recordSeatTurnDone without a binding row records nothing and reports recorded false", async () => {
 		const broker = boot();
 		const { handoff } = await startWorkflow(broker);
 		broker.db.prepare("DELETE FROM session_binding WHERE collab_id = ?").run("collab_c1");
@@ -548,7 +548,7 @@ describe("notice-path control methods", () => {
 				agent: handoff.targetAgent,
 				now: "2026-04-21T00:00:04Z",
 			}),
-		).toEqual({ fetchedUnrepliedHandoffId: handoff.handoffId });
+		).toEqual({ recorded: false, fetchedUnrepliedHandoffId: handoff.handoffId });
 		const n = (broker.db.prepare("SELECT COUNT(*) AS n FROM session_binding").get() as { n: number }).n;
 		expect(n).toBe(0);
 		await broker.stop();
@@ -560,7 +560,7 @@ describe("notice-path control methods", () => {
 		const agent = handoff.targetAgent;
 		expect(
 			broker.control.recordSeatTurnDone({ collabId: "collab_c1", agent, now: "2026-04-21T00:00:02Z" }),
-		).toEqual({ fetchedUnrepliedHandoffId: null });
+		).toEqual({ recorded: true, fetchedUnrepliedHandoffId: null });
 
 		broker.control.fetchWorkflowHandoff({
 			handoffId: handoff.handoffId,
@@ -570,7 +570,7 @@ describe("notice-path control methods", () => {
 		});
 		expect(
 			broker.control.recordSeatTurnDone({ collabId: "collab_c1", agent, now: "2026-04-21T00:00:04Z" }),
-		).toEqual({ fetchedUnrepliedHandoffId: handoff.handoffId });
+		).toEqual({ recorded: true, fetchedUnrepliedHandoffId: handoff.handoffId });
 		expect(
 			broker.db
 				.prepare("SELECT turn_done_at FROM session_binding WHERE collab_id = ? AND agent_type = ?")
@@ -586,7 +586,7 @@ describe("notice-path control methods", () => {
 		});
 		expect(
 			broker.control.recordSeatTurnDone({ collabId: "collab_c1", agent, now: "2026-04-21T00:00:06Z" }),
-		).toEqual({ fetchedUnrepliedHandoffId: null });
+		).toEqual({ recorded: true, fetchedUnrepliedHandoffId: null });
 		await broker.stop();
 	});
 });

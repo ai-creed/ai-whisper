@@ -18,13 +18,18 @@ export interface TurnDoneResult {
 const NULL_AGENT_COPY =
 	"whisper turn done must be run by a mounted agent (AI_WHISPER_AGENT is not set).";
 
+function noSeatCopy(agent: AgentType): string {
+	return `whisper turn done could not record this turn: ${agent} has no mounted seat in this collaboration. Stop here and end your turn; do not read ~/.ai-whisper/state.db directly.`;
+}
+
 export function runTurnDone(deps: TurnDoneDeps): TurnDoneResult {
 	if (deps.callerAgent === null) return { exitCode: 1, stdout: NULL_AGENT_COPY };
-	const { fetchedUnrepliedHandoffId: id } = deps.control.recordSeatTurnDone({
+	const { recorded, fetchedUnrepliedHandoffId: id } = deps.control.recordSeatTurnDone({
 		collabId: deps.collabId,
 		agent: deps.callerAgent,
 		now: deps.now,
 	});
+	if (!recorded) return { exitCode: 1, stdout: noSeatCopy(deps.callerAgent) };
 	if (id !== null) {
 		return {
 			exitCode: 0,

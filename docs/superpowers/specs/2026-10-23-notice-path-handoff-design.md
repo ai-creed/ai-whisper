@@ -266,7 +266,7 @@ Add to `relay_handoff`, through a migration. Names are suggestions.
 | `replied_at` | Set by `reply` |
 | `reply_refused_at` | Set when `reply` was refused on a version mismatch (§3.4) |
 
-Turn-done storage: the latest `turn done` per seat, with a timestamp. **As built (phase 1):** a nullable `session_binding.turn_done_at` column, written by UPDATE only, so a seat without a binding row records nothing. A new collab-scoped table was rejected because installed 0.16.0's `collab purge` refuses on unclassified `collab_id` tables. **Phase-2 note:** `turn_done_at` survives a rebind, so the ladder must compare it against handoff and notice timestamps rather than treat any non-null value as "done".
+Turn-done storage: the latest `turn done` per seat, with a timestamp. **As built (phase 1):** a nullable `session_binding.turn_done_at` column, written by UPDATE only, so a seat without a binding row records nothing; `whisper turn done` then exits 1 and tells the agent it has no mounted seat instead of printing `ok`. A new collab-scoped table was rejected because installed 0.16.0's `collab purge` refuses on unclassified `collab_id` tables. **Phase-2 note:** `turn_done_at` survives a rebind, so the ladder must compare it against handoff and notice timestamps rather than treat any non-null value as "done".
 
 - Request composition is **unchanged**: `renderTemplate`, `withOperatorControl` and `withResumeNotice` in `workflow-control.ts` / `workflow-registry.ts`.
 - **One addition to composition:** a fixed handback-via-reply fragment appended to every stored workflow request, naming `whisper handoff reply <ho_id> --file <path>`. Because it is part of `request_text`, the paste fallback carries it too.

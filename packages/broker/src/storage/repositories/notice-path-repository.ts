@@ -47,16 +47,17 @@ function sessionBindingHasTurnDoneAt(db: Database.Database): boolean {
 	);
 }
 
-// Updates the seat's existing binding row only; a seat without a binding row
-// records nothing. Skipped on a DB that predates the column.
+// Updates the seat's existing binding row only. Returns false when nothing was
+// written: no binding row for the seat, or a DB that predates the column.
 export function markSessionBindingTurnDone(
 	db: Database.Database,
 	input: { collabId: string; agent: AgentType; now: string },
-): void {
-	if (!sessionBindingHasTurnDoneAt(db)) return;
-	db.prepare(
-		"UPDATE session_binding SET turn_done_at = ? WHERE collab_id = ? AND agent_type = ?",
-	).run(input.now, input.collabId, input.agent);
+): boolean {
+	if (!sessionBindingHasTurnDoneAt(db)) return false;
+	const result = db
+		.prepare("UPDATE session_binding SET turn_done_at = ? WHERE collab_id = ? AND agent_type = ?")
+		.run(input.now, input.collabId, input.agent);
+	return result.changes > 0;
 }
 
 export function getSessionBindingTurnDone(
