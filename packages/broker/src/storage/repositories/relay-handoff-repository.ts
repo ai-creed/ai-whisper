@@ -301,6 +301,12 @@ export function declineRelayHandoffTxn(
 	})();
 }
 
+export function relayHandoffHasColumn(db: Database.Database, name: string): boolean {
+	return (db.prepare("PRAGMA table_info(relay_handoff)").all() as Array<{ name: string }>).some(
+		(column) => column.name === name,
+	);
+}
+
 export function handoffBackRelayTxn(
 	db: Database.Database,
 	input: {
@@ -317,6 +323,17 @@ export function handoffBackRelayTxn(
 		const current = queryRelayHandoff(db, input.handoffId);
 		if (!current) {
 			throw new Error(`Unknown handoff: ${input.handoffId}`);
+		}
+
+		// A handoff already answered via `whisper handoff reply` must not be
+		// overwritten by a later capture. Tolerate DBs that predate replied_at.
+		if (relayHandoffHasColumn(db, "replied_at")) {
+			const replied = db
+				.prepare("SELECT replied_at FROM relay_handoff WHERE handoff_id = ?")
+				.get(input.handoffId) as { replied_at: string | null } | undefined;
+			if (replied?.replied_at) {
+				return current;
+			}
 		}
 
 		const collab = getCollab(db, current.collabId);

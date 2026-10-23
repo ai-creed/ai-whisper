@@ -42,6 +42,16 @@ const PREDICATES = {
 // order). The lost_and_found c0..c(width-1) ordinals map 1:1 onto them.
 const WIDTHS = { workflows: 12, phases: 8, chains: 9, handoffs: 29 } as const;
 
+// Pinned v8 column names per target table, in ordinal order. The recovered
+// c0..cN ordinals map positionally onto these, so the live table's first N
+// columns must match exactly; only columns appended after them are tolerated.
+const V8_COLUMNS: Record<string, readonly string[]> = {
+	workflows: ["workflow_id","collab_id","workflow_type","name","spec_path","role_bindings","status","current_phase_index","halt_reason","workflow_context","created_at","updated_at"],
+	workflow_phases: ["phase_run_id","workflow_id","phase_index","phase_name","chain_id","started_at","ended_at","outcome"],
+	relay_chains: ["chain_id","collab_id","status","current_round","max_rounds","terminal_handoff_id","terminal_reason","created_at","updated_at"],
+	relay_handoff: ["handoff_id","collab_id","sender_agent","target_agent","request_text","status","created_at","accepted_at","deferred_at","resolved_at","last_activity_at","capture_status","chain_id","parent_handoff_id","round_number","root_request_text","handback_text","orchestrator_status","orchestrator_verdict","orchestrator_reason","orchestrator_claimed_at","orchestrator_evaluated_at","handoff_step","workflow_id","phase_run_id","evaluator_verdict","evaluator_confidence","evaluator_reason","evaluator_evaluated_at"],
+};
+
 type LafRow = Record<string, string | number | null>;
 
 function assertNoLiveDaemon(db: Database.Database): void {
@@ -117,21 +127,32 @@ function assertCountsMatch(
 // deliberately NOT `INSERT OR IGNORE`: PK re-imports are idempotent, but a genuine
 // constraint violation (e.g. a NOT NULL column recovered as NULL) still throws so
 // the single import transaction rolls back rather than silently dropping the row.
-function insertRows(
+/** @internal exported for the layout-guard test. */
+export function insertRows(
 	db: Database.Database,
 	table: string,
 	pk: string,
 	rows: LafRow[],
 	width: number,
 ): number {
-	const cols = (
+	const allCols = (
 		db.prepare(`PRAGMA table_info("${table}")`).all() as Array<{ name: string }>
 	).map((c) => c.name);
-	if (cols.length !== width) {
+	const pinned = V8_COLUMNS[table];
+	const prefix = allCols.slice(0, width);
+	if (
+		!pinned ||
+		pinned.length !== width ||
+		prefix.length !== width ||
+		prefix.some((name, i) => name !== pinned[i])
+	) {
 		throw new Error(
-			`Recovery aborted: target table ${table} has ${cols.length} columns, expected ${width}. The ordinal mapping is no longer valid for this schema.`,
+			`Recovery aborted: target table ${table} first ${width} columns (${prefix.join(", ")}) do not match the pinned v8 layout. The ordinal mapping is no longer valid for this schema.`,
 		);
 	}
+	// Columns appended after the recovered snapshot (via ungated ALTER ADD COLUMN)
+	// are not in the dump; they keep their defaults. Appends never shift ordinals.
+	const cols = allCols.slice(0, width);
 	const stmt = db.prepare(
 		`INSERT INTO "${table}" (${cols.map((c) => `"${c}"`).join(", ")}) ` +
 			`VALUES (${cols.map(() => "?").join(", ")}) ON CONFLICT("${pk}") DO NOTHING`,

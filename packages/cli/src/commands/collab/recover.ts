@@ -8,6 +8,7 @@ import {
 	upsertRecoveryState,
 	type IsAliveResult,
 } from "@ai-whisper/broker";
+import { resolveCliVersion } from "../../runtime/cli-package-info.js";
 import { resolveCollab } from "../../runtime/collab-resolver.js";
 import { DEFAULT_PORT_RANGE } from "../../runtime/port-allocator.js";
 import { getSharedSqlitePath } from "../../runtime/state-root.js";
@@ -179,6 +180,7 @@ export async function runCollabRecover(
 			port: allocatedPort,
 			startedAt: now,
 			lastHeartbeatAt: now,
+			cliVersion: resolveCliVersion(),
 		});
 	});
 

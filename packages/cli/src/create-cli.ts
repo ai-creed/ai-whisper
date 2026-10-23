@@ -1,4 +1,5 @@
 import { execSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import type { AgentType } from "@ai-whisper/shared";
 import { createBrokerRuntime } from "@ai-whisper/broker";
 import { Command, Option } from "commander";
@@ -35,11 +36,14 @@ import { runWorkflowResume } from "./commands/workflow/resume.js";
 import { runWorkflowPause } from "./commands/workflow/pause.js";
 import { runWorkflowCancel } from "./commands/workflow/cancel.js";
 import { runWorkflowComplete } from "./commands/workflow/complete.js";
+import { resolveShowResult } from "./commands/handoff/show.js";
+import { resolveReplyResult } from "./commands/handoff/reply.js";
+import { resolveTurnDoneResult } from "./commands/turn/done.js";
 import { runWorkflowTypes } from "./commands/workflow/types.js";
 import { runWorkflowStats } from "./commands/workflow/stats.js";
 import { runSkillInstall } from "./commands/skill/install.js";
 import { buildEnvReport, renderEnvReportText } from "./commands/env/report.js";
-import { connectToWorkspaceBroker } from "./runtime/broker-connect.js";
+import { connectAgentCommand, connectToWorkspaceBroker } from "./runtime/broker-connect.js";
 import { CollabResolverError } from "./runtime/collab-resolver.js";
 import { resolveCliVersion } from "./runtime/cli-package-info.js";
 export { resolveCliVersion } from "./runtime/cli-package-info.js";
@@ -500,6 +504,78 @@ export function createCli(): Command {
 				process.exitCode = result.exitCode;
 			},
 		);
+
+	const handoff = cli
+		.command("handoff")
+		.description("Fetch and answer workflow handoffs (for mounted agents)");
+
+	handoff
+		.command("show")
+		.description("Show the full request of a workflow handoff")
+		.argument("<handoffId>", "Handoff ID")
+		.option("--workspace <path>", "Workspace root", process.cwd())
+		.action((handoffId: string, opts: WorkspaceOpts) => {
+			const result = resolveShowResult({
+				callerAgent: parseCallerAgent(process.env.AI_WHISPER_AGENT),
+				connect: () =>
+					connectAgentCommand({
+						cwd: opts.workspace,
+						context: "show",
+						cliVersion: resolveCliVersion(),
+					}),
+				handoffId,
+				now: new Date().toISOString(),
+			});
+			console.log(result.stdout);
+			process.exitCode = result.exitCode;
+		});
+
+	handoff
+		.command("reply")
+		.description("Hand back finished work for a workflow handoff")
+		.argument("<handoffId>", "Handoff ID")
+		.requiredOption("--file <path>", "File containing your complete handback")
+		.option("--workspace <path>", "Workspace root", process.cwd())
+		.action((handoffId: string, opts: WorkspaceOpts & { file: string }) => {
+			const result = resolveReplyResult({
+				callerAgent: parseCallerAgent(process.env.AI_WHISPER_AGENT),
+				connect: () =>
+					connectAgentCommand({
+						cwd: opts.workspace,
+						context: "reply",
+						cliVersion: resolveCliVersion(),
+					}),
+				handoffId,
+				filePath: opts.file,
+				readFile: (p) => readFileSync(p, "utf8"),
+				now: new Date().toISOString(),
+			});
+			console.log(result.stdout);
+			process.exitCode = result.exitCode;
+		});
+
+	const turn = cli
+		.command("turn")
+		.description("Report turn state (for mounted agents)");
+
+	turn
+		.command("done")
+		.description("Record that your turn has finished")
+		.option("--workspace <path>", "Workspace root", process.cwd())
+		.action((opts: WorkspaceOpts) => {
+			const result = resolveTurnDoneResult({
+				callerAgent: parseCallerAgent(process.env.AI_WHISPER_AGENT),
+				connect: () =>
+					connectAgentCommand({
+						cwd: opts.workspace,
+						context: "turn-done",
+						cliVersion: resolveCliVersion(),
+					}),
+				now: new Date().toISOString(),
+			});
+			console.log(result.stdout);
+			process.exitCode = result.exitCode;
+		});
 
 	const workflow = cli
 		.command("workflow")

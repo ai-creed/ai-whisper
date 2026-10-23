@@ -4,6 +4,7 @@ export const brokerPackage = {
 
 export { brokerConfigSchema, type BrokerConfig } from "./config.js";
 export { createControlService } from "./control/create-control-service.js";
+export type { ControlService } from "./control/create-control-service.js";
 export { createBrokerApp } from "./http/create-broker-app.js";
 export {
 	createBrokerRuntime,

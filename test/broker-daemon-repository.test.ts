@@ -67,6 +67,37 @@ describe("broker-daemon-repository", () => {
 		).not.toThrow();
 	});
 
+	it("stores and reads cliVersion", () => {
+		const db = freshDb();
+		insertBrokerDaemon(db, {
+			collabId: "c1",
+			host: "127.0.0.1",
+			port: 4500,
+			startedAt: "2026-05-15T00:00:00Z",
+			lastHeartbeatAt: "2026-05-15T00:00:00Z",
+			cliVersion: "0.17.0",
+		});
+		expect(getBrokerDaemonByCollab(db, "c1")?.cliVersion).toBe("0.17.0");
+		expect(getBrokerDaemonByPort(db, 4500)?.cliVersion).toBe("0.17.0");
+	});
+
+	it("reads degrade to cliVersion null when the column is missing", () => {
+		const db = freshDb();
+		insertBrokerDaemon(db, {
+			collabId: "c1",
+			host: "127.0.0.1",
+			port: 4500,
+			startedAt: "2026-05-15T00:00:00Z",
+			lastHeartbeatAt: "2026-05-15T00:00:00Z",
+		});
+		db.exec("ALTER TABLE broker_daemon DROP COLUMN cli_version");
+
+		expect(getBrokerDaemonByCollab(db, "c1")?.cliVersion).toBeNull();
+		expect(getBrokerDaemonByPort(db, 4500)?.cliVersion).toBeNull();
+		expect(listAllBrokerDaemons(db)[0]?.cliVersion).toBeNull();
+		expect(listStaleBrokerDaemons(db, "2099-01-01T00:00:00Z")[0]?.cliVersion).toBeNull();
+	});
+
 	it("updates pid and pid_start_time atomically", () => {
 		const db = freshDb();
 		insertBrokerDaemon(db, {
