@@ -156,7 +156,7 @@ New `whisper handoff` command group, plus `whisper turn done`.
 2. Prints a fixed header, the stored `request_text` verbatim, and a fixed footer:
    - Header: `=== ai-whisper handoff <ho_id> — operator request, delivered by ai-whisper on the operator's behalf ===`, followed by one line with workflow, phase, step, round, from and to.
    - Footer: `=== end of handoff <ho_id> ===`.
-3. **Records the fetch.** The first call sets `fetched_at`; every call increments `fetch_count`.
+3. **Records the fetch.** The first call sets `fetched_at`; every call increments `fetch_count`. A caller with no `AI_WHISPER_AGENT` (an operator inspecting from their own shell) gets the same output but **no fetch is recorded**. Otherwise an inspection would switch off the request-side ladder's never-paste-after-fetch guard (phase 1 ruling).
 4. Is idempotent: repeat calls print the same text.
 5. Refuses a handoff that is not in an accepted, awaiting-handback state. The refusal message names the state and says not to act on it.
 6. Output goes to stdout. *Builder's call:* whether to also offer `--out <file>` for very large requests. The largest request observed is 9.5 KB, which is fine on stdout.
@@ -178,7 +178,7 @@ New `whisper handoff` command group, plus `whisper turn done`.
 
 - Records "turn finished" for the calling seat, with a timestamp. It never completes a handoff.
 - If the seat has a fetched handoff with no reply, it prints this to stdout: `note: handoff <ho_id> is fetched but has no reply — if your work for it is complete, run whisper handoff reply <ho_id> --file <path>`.
-- Seat identity comes from an env var the mount sets on the provider process (for example `AI_WHISPER_SEAT=<collab>:<agent>`). **Verified 2026-10-23:** codex 0.162 passes a mount-set env var through to its shell commands, login shell included (`seat=[collab_x:codex]`). claude passes the env through as standard.
+- Seat identity comes from an env var the mount sets on the provider process. **Phase 1 as built:** the existing `AI_WHISPER_AGENT=<agent>` (already stamped by every adapter) plus collab resolution from the command's working directory, instead of the example `AI_WHISPER_SEAT=<collab>:<agent>`. **Open before phase 2:** cwd resolution only matches the exact workspace root, so an agent working in a subdirectory or a `.worktrees/` checkout gets "no active collab found". Decide between an adapter-stamped `AI_WHISPER_COLLAB` passed as the collab override, or an ancestor / git-common-dir walk. **Verified 2026-10-23:** codex 0.162 passes a mount-set env var through to its shell commands, login shell included (`seat=[collab_x:codex]`). claude passes the env through as standard.
 - If the variable is missing, for example on a provider that does not pass it through, `turn done` exits non-zero with a clear message. That seat then runs on the extended idle cap (§5); nothing breaks. *(My call.)*
 
 **§3.4 Version check.** Each command compares its own CLI version with the broker's version, which is recorded where the broker already persists its runtime facts. *Builder's call:* exact source, and whether to compare the full `x.y.z+sha` build id or `x.y.z` only. On a mismatch, it exits non-zero. The message depends on where in the handoff it happens:
@@ -266,7 +266,7 @@ Add to `relay_handoff`, through a migration. Names are suggestions.
 | `replied_at` | Set by `reply` |
 | `reply_refused_at` | Set when `reply` was refused on a version mismatch (§3.4) |
 
-Add `seat_turn_done` storage: the latest `turn done` per seat, with a timestamp. *Builder's call:* table vs. existing state row.
+Turn-done storage: the latest `turn done` per seat, with a timestamp. **As built (phase 1):** a nullable `session_binding.turn_done_at` column, written by UPDATE only, so a seat without a binding row records nothing. A new collab-scoped table was rejected because installed 0.16.0's `collab purge` refuses on unclassified `collab_id` tables. **Phase-2 note:** `turn_done_at` survives a rebind, so the ladder must compare it against handoff and notice timestamps rather than treat any non-null value as "done".
 
 - Request composition is **unchanged**: `renderTemplate`, `withOperatorControl` and `withResumeNotice` in `workflow-control.ts` / `workflow-registry.ts`.
 - **One addition to composition:** a fixed handback-via-reply fragment appended to every stored workflow request, naming `whisper handoff reply <ho_id> --file <path>`. Because it is part of `request_text`, the paste fallback carries it too.
@@ -372,7 +372,7 @@ These are marked *builder's call* above:
 - the version-source detail;
 - keeping `show`/`reply` from migrating;
 - idle-window and cap defaults;
-- `seat_turn_done` storage shape;
+- ~~turn-done storage shape~~ (settled in phase 1: `session_binding.turn_done_at`);
 - depth of eval integration;
 - exact pane-line wording, keeping the elements named in §2 and §5.
 
