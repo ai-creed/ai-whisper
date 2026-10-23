@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import { createBrokerEventBus, createControlService } from "@ai-whisper/broker";
 import type { ControlService } from "@ai-whisper/broker";
 import type { AgentType } from "@ai-whisper/shared";
+import type { AgentCommandConnection } from "../../runtime/broker-connect.js";
 
 export interface HandoffReplyDeps {
 	control: Pick<ControlService, "replyWorkflowHandoff">;
@@ -24,14 +25,57 @@ type ReplyRefusal = Extract<ReplyOutcome, { ok: false }>;
 const NOT_RECORDED = "your reply was not recorded.";
 const DO_NOT_RETRY = `${NOT_RECORDED} Do not retry; end your turn.`;
 
+function nullAgentRefusal(): HandoffReplyResult {
+	return {
+		exitCode: 1,
+		stdout: `whisper handoff reply must be run by a mounted agent (AI_WHISPER_AGENT is not set); ${NOT_RECORDED}`,
+	};
+}
+
+/**
+ * Full reply command flow. The caller-identity check runs before connecting so
+ * an unidentified caller can never touch the DB, including the mismatch path.
+ */
+export function resolveReplyResult(input: {
+	callerAgent: AgentType | null;
+	connect: () => AgentCommandConnection;
+	handoffId: string;
+	filePath: string;
+	readFile: (path: string) => string;
+	now: string;
+}): HandoffReplyResult {
+	if (input.callerAgent === null) return nullAgentRefusal();
+	const conn = input.connect();
+	try {
+		if (conn.ok) {
+			return runHandoffReply({
+				control: conn.control,
+				collabId: conn.collabId,
+				handoffId: input.handoffId,
+				callerAgent: input.callerAgent,
+				filePath: input.filePath,
+				readFile: input.readFile,
+				now: input.now,
+			});
+		}
+		if (conn.db !== null && conn.collabId !== null) {
+			return handleReplyVersionMismatch({
+				db: conn.db,
+				collabId: conn.collabId,
+				handoffId: input.handoffId,
+				message: conn.message,
+				now: input.now,
+			});
+		}
+		return { exitCode: 1, stdout: conn.message };
+	} finally {
+		conn.close();
+	}
+}
+
 export function runHandoffReply(deps: HandoffReplyDeps): HandoffReplyResult {
 	const { handoffId, callerAgent } = deps;
-	if (callerAgent === null) {
-		return {
-			exitCode: 1,
-			stdout: `whisper handoff reply must be run by a mounted agent (AI_WHISPER_AGENT is not set); ${NOT_RECORDED}`,
-		};
-	}
+	if (callerAgent === null) return nullAgentRefusal();
 
 	let body: string | null;
 	try {

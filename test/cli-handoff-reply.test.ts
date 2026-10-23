@@ -7,6 +7,7 @@ import { openDatabase } from "../packages/broker/src/storage/open-database.ts";
 import { runWorkflowStart } from "../packages/cli/src/commands/workflow/start.ts";
 import {
 	handleReplyVersionMismatch,
+	resolveReplyResult,
 	runHandoffReply,
 } from "../packages/cli/src/commands/handoff/reply.ts";
 
@@ -174,5 +175,77 @@ describe("handleReplyVersionMismatch", () => {
 			t: db.prepare("SELECT name FROM sqlite_master ORDER BY name").all(),
 		}).toEqual(before);
 		db.close();
+	});
+});
+
+describe("resolveReplyResult", () => {
+	it("null agent plus version mismatch refuses without connecting or recording", async () => {
+		const sqlitePath = join(mkdtempSync(join(tmpdir(), "hr-")), "b.sqlite");
+		const { broker, handoff } = await bootWithAcceptedHandoff(sqlitePath);
+		await broker.stop();
+		const db = openDatabase(sqlitePath);
+		const close = vi.fn();
+		const connect = vi.fn(() => ({
+			ok: false as const,
+			collabId: "collab_c1",
+			db,
+			message: "MISMATCH COPY",
+			close,
+		}));
+		const result = resolveReplyResult({
+			callerAgent: null,
+			connect,
+			handoffId: handoff.handoffId,
+			filePath: "/x",
+			readFile: () => "body",
+			now: "2026-04-21T00:00:09Z",
+		});
+		expect(result).toEqual({
+			exitCode: 1,
+			stdout:
+				"whisper handoff reply must be run by a mounted agent (AI_WHISPER_AGENT is not set); your reply was not recorded.",
+		});
+		const row = db
+			.prepare("SELECT reply_refused_at FROM relay_handoff WHERE handoff_id = ?")
+			.get(handoff.handoffId) as { reply_refused_at: string | null };
+		expect(row.reply_refused_at).toBeNull();
+		db.close();
+	});
+
+	it("known agent plus version mismatch records the refusal and closes", async () => {
+		const sqlitePath = join(mkdtempSync(join(tmpdir(), "hr-")), "b.sqlite");
+		const { broker, handoff } = await bootWithAcceptedHandoff(sqlitePath);
+		await broker.stop();
+		const db = openDatabase(sqlitePath);
+		const close = vi.fn();
+		const result = resolveReplyResult({
+			callerAgent: "claude",
+			connect: () => ({ ok: false, collabId: "collab_c1", db, message: "MISMATCH COPY", close }),
+			handoffId: handoff.handoffId,
+			filePath: "/x",
+			readFile: () => "body",
+			now: "2026-04-21T00:00:09Z",
+		});
+		expect(result).toEqual({ exitCode: 1, stdout: "MISMATCH COPY" });
+		expect(close).toHaveBeenCalledTimes(1);
+		const row = db
+			.prepare("SELECT reply_refused_at FROM relay_handoff WHERE handoff_id = ?")
+			.get(handoff.handoffId) as { reply_refused_at: string | null };
+		expect(row.reply_refused_at).toBe("2026-04-21T00:00:09Z");
+		db.close();
+	});
+
+	it("resolver failure (no db) prints the message without recording", () => {
+		const close = vi.fn();
+		const result = resolveReplyResult({
+			callerAgent: "claude",
+			connect: () => ({ ok: false, collabId: null, db: null, message: "no collab", close }),
+			handoffId: "ho_1",
+			filePath: "/x",
+			readFile: () => "body",
+			now: NOW,
+		});
+		expect(result).toEqual({ exitCode: 1, stdout: "no collab" });
+		expect(close).toHaveBeenCalledTimes(1);
 	});
 });
