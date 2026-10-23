@@ -38,6 +38,7 @@ import { runWorkflowCancel } from "./commands/workflow/cancel.js";
 import { runWorkflowComplete } from "./commands/workflow/complete.js";
 import { runHandoffShow } from "./commands/handoff/show.js";
 import { resolveReplyResult } from "./commands/handoff/reply.js";
+import { resolveTurnDoneResult } from "./commands/turn/done.js";
 import { connectAgentCommand } from "./runtime/broker-connect.js";
 import { runWorkflowTypes } from "./commands/workflow/types.js";
 import { runWorkflowStats } from "./commands/workflow/stats.js";
@@ -559,6 +560,29 @@ export function createCli(): Command {
 				handoffId,
 				filePath: opts.file,
 				readFile: (p) => readFileSync(p, "utf8"),
+				now: new Date().toISOString(),
+			});
+			console.log(result.stdout);
+			process.exitCode = result.exitCode;
+		});
+
+	const turn = cli
+		.command("turn")
+		.description("Report turn state (for mounted agents)");
+
+	turn
+		.command("done")
+		.description("Record that your turn has finished")
+		.option("--workspace <path>", "Workspace root", process.cwd())
+		.action((opts: WorkspaceOpts) => {
+			const result = resolveTurnDoneResult({
+				callerAgent: parseCallerAgent(process.env.AI_WHISPER_AGENT),
+				connect: () =>
+					connectAgentCommand({
+						cwd: opts.workspace,
+						context: "turn-done",
+						cliVersion: resolveCliVersion(),
+					}),
 				now: new Date().toISOString(),
 			});
 			console.log(result.stdout);
