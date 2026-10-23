@@ -319,6 +319,20 @@ export function handoffBackRelayTxn(
 			throw new Error(`Unknown handoff: ${input.handoffId}`);
 		}
 
+		// A handoff already answered via `whisper handoff reply` must not be
+		// overwritten by a later capture. Tolerate DBs that predate replied_at.
+		const hasRepliedAt = (
+			db.prepare("PRAGMA table_info(relay_handoff)").all() as Array<{ name: string }>
+		).some((column) => column.name === "replied_at");
+		if (hasRepliedAt) {
+			const replied = db
+				.prepare("SELECT replied_at FROM relay_handoff WHERE handoff_id = ?")
+				.get(input.handoffId) as { replied_at: string | null } | undefined;
+			if (replied?.replied_at) {
+				return current;
+			}
+		}
+
 		const collab = getCollab(db, current.collabId);
 		const orchestratorEnabled = collab?.orchestratorEnabled ?? false;
 

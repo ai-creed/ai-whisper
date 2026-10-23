@@ -1,0 +1,106 @@
+import type Database from "better-sqlite3";
+import type { AgentType } from "@ai-whisper/shared";
+
+export type NoticePathFields = {
+	deliveryPath: string | null;
+	fetchedAt: string | null;
+	fetchCount: number;
+	capturePath: string | null;
+	repliedAt: string | null;
+	replyRefusedAt: string | null;
+};
+
+export function recordHandoffFetch(
+	db: Database.Database,
+	input: { handoffId: string; now: string },
+): void {
+	db.prepare(
+		`UPDATE relay_handoff
+		    SET fetched_at = COALESCE(fetched_at, ?), fetch_count = fetch_count + 1
+		  WHERE handoff_id = ?`,
+	).run(input.now, input.handoffId);
+}
+
+export function markHandoffReplied(
+	db: Database.Database,
+	input: { handoffId: string; now: string },
+): void {
+	db.prepare(
+		"UPDATE relay_handoff SET capture_path = 'reply', replied_at = ? WHERE handoff_id = ?",
+	).run(input.now, input.handoffId);
+}
+
+export function recordHandoffReplyRefused(
+	db: Database.Database,
+	input: { handoffId: string; now: string },
+): void {
+	db.prepare("UPDATE relay_handoff SET reply_refused_at = ? WHERE handoff_id = ?").run(
+		input.now,
+		input.handoffId,
+	);
+}
+
+export function upsertSeatTurnDone(
+	db: Database.Database,
+	input: { collabId: string; agent: AgentType; now: string },
+): void {
+	db.prepare(
+		`INSERT INTO seat_turn_done (collab_id, agent_type, done_at) VALUES (?, ?, ?)
+		 ON CONFLICT (collab_id, agent_type) DO UPDATE SET done_at = excluded.done_at`,
+	).run(input.collabId, input.agent, input.now);
+}
+
+export function getSeatTurnDone(
+	db: Database.Database,
+	input: { collabId: string; agent: AgentType },
+): string | null {
+	const row = db
+		.prepare("SELECT done_at FROM seat_turn_done WHERE collab_id = ? AND agent_type = ?")
+		.get(input.collabId, input.agent) as { done_at: string } | undefined;
+	return row?.done_at ?? null;
+}
+
+export function findFetchedUnrepliedHandoff(
+	db: Database.Database,
+	input: { collabId: string; agent: AgentType },
+): string | null {
+	const row = db
+		.prepare(
+			`SELECT handoff_id FROM relay_handoff
+			  WHERE collab_id = ? AND target_agent = ? AND status = 'accepted'
+			    AND workflow_id IS NOT NULL AND fetched_at IS NOT NULL AND replied_at IS NULL
+			  ORDER BY accepted_at DESC LIMIT 1`,
+		)
+		.get(input.collabId, input.agent) as { handoff_id: string } | undefined;
+	return row?.handoff_id ?? null;
+}
+
+export function getNoticePathFields(
+	db: Database.Database,
+	handoffId: string,
+): NoticePathFields | null {
+	const row = db
+		.prepare(
+			`SELECT delivery_path, fetched_at, fetch_count, capture_path, replied_at, reply_refused_at
+			   FROM relay_handoff WHERE handoff_id = ?`,
+		)
+		.get(handoffId) as
+		| {
+				delivery_path: string | null;
+				fetched_at: string | null;
+				fetch_count: number;
+				capture_path: string | null;
+				replied_at: string | null;
+				reply_refused_at: string | null;
+		  }
+		| undefined;
+	if (!row) return null;
+	return {
+		deliveryPath: row.delivery_path,
+		fetchedAt: row.fetched_at,
+		fetchCount: row.fetch_count,
+		capturePath: row.capture_path,
+		repliedAt: row.replied_at,
+		replyRefusedAt: row.reply_refused_at,
+	};
+}

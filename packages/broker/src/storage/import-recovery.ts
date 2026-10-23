@@ -124,14 +124,17 @@ function insertRows(
 	rows: LafRow[],
 	width: number,
 ): number {
-	const cols = (
+	const allCols = (
 		db.prepare(`PRAGMA table_info("${table}")`).all() as Array<{ name: string }>
 	).map((c) => c.name);
-	if (cols.length !== width) {
+	if (allCols.length < width) {
 		throw new Error(
-			`Recovery aborted: target table ${table} has ${cols.length} columns, expected ${width}. The ordinal mapping is no longer valid for this schema.`,
+			`Recovery aborted: target table ${table} has ${allCols.length} columns, expected at least ${width}. The ordinal mapping is no longer valid for this schema.`,
 		);
 	}
+	// Columns appended after the recovered snapshot (via ungated ALTER ADD COLUMN)
+	// are not in the dump; they keep their defaults. Appends never shift ordinals.
+	const cols = allCols.slice(0, width);
 	const stmt = db.prepare(
 		`INSERT INTO "${table}" (${cols.map((c) => `"${c}"`).join(", ")}) ` +
 			`VALUES (${cols.map(() => "?").join(", ")}) ON CONFLICT("${pk}") DO NOTHING`,

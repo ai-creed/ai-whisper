@@ -363,6 +363,48 @@ function ensureWorkflowEventOutbox(db: Database.Database): void {
 	`);
 }
 
+// Notice-path handoff delivery state (relay_handoff columns, broker_daemon
+// cli_version, seat_turn_done). Ungated and idempotent for the same reason as
+// ensureWorkflowEventOutbox: it must land on fresh AND already-persisted DBs
+// without bumping the read-contract schema version.
+function ensureNoticePathSchema(db: Database.Database): void {
+	const handoffColumns = new Set(
+		(db.prepare("PRAGMA table_info(relay_handoff)").all() as Array<{ name: string }>).map(
+			(c) => c.name,
+		),
+	);
+	const handoffAdditions: Array<[string, string]> = [
+		["delivery_path", "TEXT"],
+		["notice_sent_at", "TEXT"],
+		["reminder_sent_at", "TEXT"],
+		["nudge_sent_at", "TEXT"],
+		["fetched_at", "TEXT"],
+		["fetch_count", "INTEGER NOT NULL DEFAULT 0"],
+		["capture_path", "TEXT"],
+		["replied_at", "TEXT"],
+		["reply_refused_at", "TEXT"],
+	];
+	for (const [name, type] of handoffAdditions) {
+		if (!handoffColumns.has(name)) {
+			db.exec(`ALTER TABLE relay_handoff ADD COLUMN ${name} ${type}`);
+		}
+	}
+	const daemonColumns = db.prepare("PRAGMA table_info(broker_daemon)").all() as Array<{
+		name: string;
+	}>;
+	if (!daemonColumns.some((c) => c.name === "cli_version")) {
+		db.exec("ALTER TABLE broker_daemon ADD COLUMN cli_version TEXT");
+	}
+	db.exec(`
+		CREATE TABLE IF NOT EXISTS seat_turn_done (
+			collab_id   TEXT NOT NULL,
+			agent_type  TEXT NOT NULL,
+			done_at     TEXT NOT NULL,
+			PRIMARY KEY (collab_id, agent_type)
+		);
+	`);
+}
+
 export function applyMigrations(db: Database.Database): void {
 	const current = db.pragma("user_version", { simple: true }) as number;
 	if (current < CURRENT_SCHEMA_VERSION) {
@@ -389,6 +431,8 @@ export function applyMigrations(db: Database.Database): void {
 	// every DB (fresh and already-persisted v6) without bumping the read-contract
 	// schema version. See ensureWorkflowEventOutbox for the rationale.
 	ensureWorkflowEventOutbox(db);
+	// Ungated, idempotent notice-path schema. See ensureNoticePathSchema.
+	ensureNoticePathSchema(db);
 }
 
 function runMigrationBody(db: Database.Database): void {
