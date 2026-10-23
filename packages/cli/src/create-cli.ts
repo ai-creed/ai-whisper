@@ -35,6 +35,8 @@ import { runWorkflowResume } from "./commands/workflow/resume.js";
 import { runWorkflowPause } from "./commands/workflow/pause.js";
 import { runWorkflowCancel } from "./commands/workflow/cancel.js";
 import { runWorkflowComplete } from "./commands/workflow/complete.js";
+import { runHandoffShow } from "./commands/handoff/show.js";
+import { connectAgentCommand } from "./runtime/broker-connect.js";
 import { runWorkflowTypes } from "./commands/workflow/types.js";
 import { runWorkflowStats } from "./commands/workflow/stats.js";
 import { runSkillInstall } from "./commands/skill/install.js";
@@ -500,6 +502,42 @@ export function createCli(): Command {
 				process.exitCode = result.exitCode;
 			},
 		);
+
+	const handoff = cli
+		.command("handoff")
+		.description("Fetch and answer workflow handoffs (for mounted agents)");
+
+	handoff
+		.command("show")
+		.description("Show the full request of a workflow handoff")
+		.argument("<handoffId>", "Handoff ID")
+		.option("--workspace <path>", "Workspace root", process.cwd())
+		.action((handoffId: string, opts: WorkspaceOpts) => {
+			const conn = connectAgentCommand({
+				cwd: opts.workspace,
+				context: "show",
+				cliVersion: resolveCliVersion(),
+			});
+			if (!conn.ok) {
+				console.log(conn.message);
+				process.exitCode = 1;
+				conn.close();
+				return;
+			}
+			try {
+				const result = runHandoffShow({
+					control: conn.control,
+					collabId: conn.collabId,
+					handoffId,
+					callerAgent: parseCallerAgent(process.env.AI_WHISPER_AGENT),
+					now: new Date().toISOString(),
+				});
+				console.log(result.stdout);
+				process.exitCode = result.exitCode;
+			} finally {
+				conn.close();
+			}
+		});
 
 	const workflow = cli
 		.command("workflow")
