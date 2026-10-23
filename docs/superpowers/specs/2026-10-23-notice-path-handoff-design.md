@@ -1,7 +1,7 @@
 # Notice-Path Handoff Delivery — Design
 
 **Date:** 2026-10-23
-**Status:** Draft, builder-checked. Awaiting operator approval.
+**Status:** Approved for planning (2026-10-23).
 **Canonical copy:** `~/.ai-pref-nsync/local-docs/ai-whisper/specs/2026-10-23-notice-path-handoff-design.md`
 **Repo mirror:** `docs/superpowers/specs/2026-10-23-notice-path-handoff-design.md`
 
