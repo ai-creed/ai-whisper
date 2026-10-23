@@ -36,15 +36,14 @@ import { runWorkflowResume } from "./commands/workflow/resume.js";
 import { runWorkflowPause } from "./commands/workflow/pause.js";
 import { runWorkflowCancel } from "./commands/workflow/cancel.js";
 import { runWorkflowComplete } from "./commands/workflow/complete.js";
-import { runHandoffShow } from "./commands/handoff/show.js";
+import { resolveShowResult } from "./commands/handoff/show.js";
 import { resolveReplyResult } from "./commands/handoff/reply.js";
 import { resolveTurnDoneResult } from "./commands/turn/done.js";
-import { connectAgentCommand } from "./runtime/broker-connect.js";
 import { runWorkflowTypes } from "./commands/workflow/types.js";
 import { runWorkflowStats } from "./commands/workflow/stats.js";
 import { runSkillInstall } from "./commands/skill/install.js";
 import { buildEnvReport, renderEnvReportText } from "./commands/env/report.js";
-import { connectToWorkspaceBroker } from "./runtime/broker-connect.js";
+import { connectAgentCommand, connectToWorkspaceBroker } from "./runtime/broker-connect.js";
 import { CollabResolverError } from "./runtime/collab-resolver.js";
 import { resolveCliVersion } from "./runtime/cli-package-info.js";
 export { resolveCliVersion } from "./runtime/cli-package-info.js";
@@ -516,30 +515,19 @@ export function createCli(): Command {
 		.argument("<handoffId>", "Handoff ID")
 		.option("--workspace <path>", "Workspace root", process.cwd())
 		.action((handoffId: string, opts: WorkspaceOpts) => {
-			const conn = connectAgentCommand({
-				cwd: opts.workspace,
-				context: "show",
-				cliVersion: resolveCliVersion(),
+			const result = resolveShowResult({
+				callerAgent: parseCallerAgent(process.env.AI_WHISPER_AGENT),
+				connect: () =>
+					connectAgentCommand({
+						cwd: opts.workspace,
+						context: "show",
+						cliVersion: resolveCliVersion(),
+					}),
+				handoffId,
+				now: new Date().toISOString(),
 			});
-			if (!conn.ok) {
-				console.log(conn.message);
-				process.exitCode = 1;
-				conn.close();
-				return;
-			}
-			try {
-				const result = runHandoffShow({
-					control: conn.control,
-					collabId: conn.collabId,
-					handoffId,
-					callerAgent: parseCallerAgent(process.env.AI_WHISPER_AGENT),
-					now: new Date().toISOString(),
-				});
-				console.log(result.stdout);
-				process.exitCode = result.exitCode;
-			} finally {
-				conn.close();
-			}
+			console.log(result.stdout);
+			process.exitCode = result.exitCode;
 		});
 
 	handoff

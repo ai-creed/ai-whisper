@@ -71,8 +71,19 @@ export async function connectToWorkspaceBroker(
 export type AgentCommandConnection =
 	| {
 			ok: false;
-			collabId: string | null;
-			db: Database.Database | null;
+			/** No collab/daemon for the workspace; `message` is the resolver's reason. */
+			reason: "unresolved";
+			collabId: null;
+			db: null;
+			message: string;
+			close(): void;
+	  }
+	| {
+			ok: false;
+			/** `message` is the spec's mismatch copy, printed as-is. */
+			reason: "version_mismatch";
+			collabId: string;
+			db: Database.Database;
 			message: string;
 			close(): void;
 	  }
@@ -103,7 +114,14 @@ export function connectAgentCommand(input: {
 	} catch (err) {
 		if (err instanceof CollabResolverError) {
 			close();
-			return { ok: false, collabId: null, db: null, message: err.message, close() {} };
+			return {
+				ok: false,
+				reason: "unresolved",
+				collabId: null,
+				db: null,
+				message: err.message,
+				close() {},
+			};
 		}
 		close();
 		throw err;
@@ -114,12 +132,21 @@ export function connectAgentCommand(input: {
 		context: input.context,
 	});
 	if (!check.ok) {
-		return { ok: false, collabId: resolved.collabId, db, message: check.message, close };
+		return {
+			ok: false,
+			reason: "version_mismatch",
+			collabId: resolved.collabId,
+			db,
+			message: check.message,
+			close,
+		};
 	}
-	return {
-		ok: true,
-		collabId: resolved.collabId,
-		control: createControlService(db, createBrokerEventBus()),
-		close,
-	};
+	let control: ControlService;
+	try {
+		control = createControlService(db, createBrokerEventBus());
+	} catch (err) {
+		close();
+		throw err;
+	}
+	return { ok: true, collabId: resolved.collabId, control, close };
 }

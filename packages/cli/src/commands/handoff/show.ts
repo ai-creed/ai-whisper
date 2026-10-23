@@ -1,5 +1,7 @@
 import type { ControlService } from "@ai-whisper/broker";
 import type { AgentType } from "@ai-whisper/shared";
+import type { AgentCommandConnection } from "../../runtime/broker-connect.js";
+import { runAgentCommand } from "../agent-command.js";
 
 export interface HandoffShowDeps {
 	control: Pick<ControlService, "fetchWorkflowHandoff">;
@@ -16,6 +18,31 @@ export interface HandoffShowResult {
 
 const DO_NOT_ACT = "Do not act on it; end your turn.";
 
+/**
+ * Full `handoff show` flow. A null caller is allowed (it peeks: the handoff is
+ * printed but the fetch is not recorded), so there is no pre-connect refusal.
+ */
+export function resolveShowResult(input: {
+	callerAgent: AgentType | null;
+	connect: () => AgentCommandConnection;
+	handoffId: string;
+	now: string;
+}): HandoffShowResult {
+	return runAgentCommand({
+		context: "show",
+		refuseBeforeConnect: null,
+		connect: input.connect,
+		run: (conn) =>
+			runHandoffShow({
+				control: conn.control,
+				collabId: conn.collabId,
+				handoffId: input.handoffId,
+				callerAgent: input.callerAgent,
+				now: input.now,
+			}),
+	});
+}
+
 export function runHandoffShow(deps: HandoffShowDeps): HandoffShowResult {
 	const { handoffId } = deps;
 	const result = deps.control.fetchWorkflowHandoff({
@@ -23,6 +50,8 @@ export function runHandoffShow(deps: HandoffShowDeps): HandoffShowResult {
 		collabId: deps.collabId,
 		callerAgent: deps.callerAgent,
 		now: deps.now,
+		// An unidentified caller cannot be the seat the fetch would be credited to.
+		record: deps.callerAgent !== null,
 	});
 
 	if (!result.ok) {

@@ -1,6 +1,7 @@
 import type { ControlService } from "@ai-whisper/broker";
 import type { AgentType } from "@ai-whisper/shared";
 import type { AgentCommandConnection } from "../../runtime/broker-connect.js";
+import { runAgentCommand } from "../agent-command.js";
 
 export interface TurnDoneDeps {
 	control: Pick<ControlService, "recordSeatTurnDone">;
@@ -42,17 +43,12 @@ export function resolveTurnDoneResult(input: {
 	connect: () => AgentCommandConnection;
 	now: string;
 }): TurnDoneResult {
-	if (input.callerAgent === null) return { exitCode: 1, stdout: NULL_AGENT_COPY };
-	const conn = input.connect();
-	try {
-		if (!conn.ok) return { exitCode: 1, stdout: conn.message };
-		return runTurnDone({
-			control: conn.control,
-			collabId: conn.collabId,
-			callerAgent: input.callerAgent,
-			now: input.now,
-		});
-	} finally {
-		conn.close();
-	}
+	const { callerAgent } = input;
+	return runAgentCommand({
+		context: "turn-done",
+		refuseBeforeConnect: callerAgent === null ? { exitCode: 1, stdout: NULL_AGENT_COPY } : null,
+		connect: input.connect,
+		run: (conn) =>
+			runTurnDone({ control: conn.control, collabId: conn.collabId, callerAgent, now: input.now }),
+	});
 }

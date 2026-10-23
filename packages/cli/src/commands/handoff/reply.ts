@@ -3,6 +3,7 @@ import { createBrokerEventBus, createControlService } from "@ai-whisper/broker";
 import type { ControlService } from "@ai-whisper/broker";
 import type { AgentType } from "@ai-whisper/shared";
 import type { AgentCommandConnection } from "../../runtime/broker-connect.js";
+import { runAgentCommand } from "../agent-command.js";
 
 export interface HandoffReplyDeps {
 	control: Pick<ControlService, "replyWorkflowHandoff">;
@@ -44,33 +45,30 @@ export function resolveReplyResult(input: {
 	readFile: (path: string) => string;
 	now: string;
 }): HandoffReplyResult {
-	if (input.callerAgent === null) return nullAgentRefusal();
-	const conn = input.connect();
-	try {
-		if (conn.ok) {
-			return runHandoffReply({
-				control: conn.control,
-				collabId: conn.collabId,
-				handoffId: input.handoffId,
-				callerAgent: input.callerAgent,
-				filePath: input.filePath,
-				readFile: input.readFile,
-				now: input.now,
-			});
-		}
-		if (conn.db !== null && conn.collabId !== null) {
-			return handleReplyVersionMismatch({
+	const { callerAgent } = input;
+	return runAgentCommand({
+		context: "reply",
+		refuseBeforeConnect: callerAgent === null ? nullAgentRefusal() : null,
+		connect: input.connect,
+		onVersionMismatch: (conn) =>
+			handleReplyVersionMismatch({
 				db: conn.db,
 				collabId: conn.collabId,
 				handoffId: input.handoffId,
 				message: conn.message,
 				now: input.now,
-			});
-		}
-		return { exitCode: 1, stdout: conn.message };
-	} finally {
-		conn.close();
-	}
+			}),
+		run: (conn) =>
+			runHandoffReply({
+				control: conn.control,
+				collabId: conn.collabId,
+				handoffId: input.handoffId,
+				callerAgent,
+				filePath: input.filePath,
+				readFile: input.readFile,
+				now: input.now,
+			}),
+	});
 }
 
 export function runHandoffReply(deps: HandoffReplyDeps): HandoffReplyResult {
@@ -106,7 +104,7 @@ export function runHandoffReply(deps: HandoffReplyDeps): HandoffReplyResult {
 function refusalCopy(refusal: ReplyRefusal, id: string, callerAgent: AgentType): string {
 	switch (refusal.reason) {
 		case "wrong_agent":
-			return `handoff ${id} is assigned to ${refusal.targetAgent ?? "another agent"}, not ${callerAgent}; ${NOT_RECORDED}`;
+			return `handoff ${id} is assigned to ${refusal.targetAgent ?? "another agent"}, not ${callerAgent}; ${DO_NOT_RETRY}`;
 		case "other_collab":
 			return `handoff ${id} belongs to another collaboration; ${DO_NOT_RETRY}`;
 		case "superseded":
@@ -114,6 +112,9 @@ function refusalCopy(refusal: ReplyRefusal, id: string, callerAgent: AgentType):
 		case "not_workflow":
 			return `handoff ${id} is not a workflow handoff; ${DO_NOT_RETRY}`;
 		case "not_accepted":
+			if (refusal.capturePath === "reply") {
+				return `handoff ${id} is already handed back; your earlier reply stands. Do not retry; end your turn.`;
+			}
 			return `handoff ${id} is ${refusal.status ?? "unknown"}; ${DO_NOT_RETRY}`;
 		case "unknown":
 			return `handoff ${id} is unknown; ${DO_NOT_RETRY}`;
@@ -136,10 +137,14 @@ export function handleReplyVersionMismatch(input: {
 	message: string;
 	now: string;
 }): HandoffReplyResult {
-	createControlService(input.db, createBrokerEventBus()).recordWorkflowReplyRefused({
-		handoffId: input.handoffId,
-		collabId: input.collabId,
-		now: input.now,
-	});
+	try {
+		createControlService(input.db, createBrokerEventBus()).recordWorkflowReplyRefused({
+			handoffId: input.handoffId,
+			collabId: input.collabId,
+			now: input.now,
+		});
+	} catch {
+		// Diagnostic only: the agent must still get the mismatch copy.
+	}
 	return { exitCode: 1, stdout: input.message };
 }

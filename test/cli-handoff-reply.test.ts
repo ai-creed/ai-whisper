@@ -14,6 +14,8 @@ import {
 type Reply = Parameters<typeof runHandoffReply>[0]["control"]["replyWorkflowHandoff"];
 
 const NOW = "2026-10-23T00:00:00.000Z";
+const REPLY_FAILED = (detail: string) =>
+	`ai-whisper could not record your reply (${detail}). Your reply was not recorded. End your turn with your complete handback as your final message; ai-whisper will capture it. Do not read ~/.ai-whisper/state.db directly.`;
 const T0 = "2026-04-21T00:00:00Z";
 
 function deps(overrides: Record<string, unknown> = {}) {
@@ -134,11 +136,17 @@ describe("runHandoffReply", () => {
 
 	const NR = "your reply was not recorded. Do not retry; end your turn.";
 	const cases: Array<[string, Record<string, unknown>, string]> = [
-		["wrong_agent", { targetAgent: "codex" }, "handoff ho_9 is assigned to codex, not claude; your reply was not recorded."],
+		["wrong_agent", { targetAgent: "codex" }, `handoff ho_9 is assigned to codex, not claude; ${NR}`],
 		["other_collab", {}, `handoff ho_9 belongs to another collaboration; ${NR}`],
 		["superseded", {}, `handoff ho_9 is no longer the current handoff for its workflow; ${NR}`],
 		["not_workflow", {}, `handoff ho_9 is not a workflow handoff; ${NR}`],
 		["not_accepted", { status: "pending" }, `handoff ho_9 is pending; ${NR}`],
+		["not_accepted", { status: "handed_back", capturePath: null }, `handoff ho_9 is handed_back; ${NR}`],
+		[
+			"not_accepted",
+			{ status: "handed_back", capturePath: "reply" },
+			"handoff ho_9 is already handed back; your earlier reply stands. Do not retry; end your turn.",
+		],
 		["unknown", {}, `handoff ho_9 is unknown; ${NR}`],
 	];
 	it.each(cases)("broker refusal %s prints its copy and exits 1", (reason, extra, copy) => {
@@ -187,6 +195,7 @@ describe("resolveReplyResult", () => {
 		const close = vi.fn();
 		const connect = vi.fn(() => ({
 			ok: false as const,
+			reason: "version_mismatch" as const,
 			collabId: "collab_c1",
 			db,
 			message: "MISMATCH COPY",
@@ -220,7 +229,14 @@ describe("resolveReplyResult", () => {
 		const close = vi.fn();
 		const result = resolveReplyResult({
 			callerAgent: "claude",
-			connect: () => ({ ok: false, collabId: "collab_c1", db, message: "MISMATCH COPY", close }),
+			connect: () => ({
+				ok: false,
+				reason: "version_mismatch",
+				collabId: "collab_c1",
+				db,
+				message: "MISMATCH COPY",
+				close,
+			}),
 			handoffId: handoff.handoffId,
 			filePath: "/x",
 			readFile: () => "body",
@@ -235,17 +251,85 @@ describe("resolveReplyResult", () => {
 		db.close();
 	});
 
-	it("resolver failure (no db) prints the message without recording", () => {
+	it("resolver failure prints reply guidance without recording", () => {
 		const close = vi.fn();
 		const result = resolveReplyResult({
 			callerAgent: "claude",
-			connect: () => ({ ok: false, collabId: null, db: null, message: "no collab", close }),
+			connect: () => ({
+				ok: false,
+				reason: "unresolved",
+				collabId: null,
+				db: null,
+				message: "no active collab found for cwd /x",
+				close,
+			}),
 			handoffId: "ho_1",
 			filePath: "/x",
 			readFile: () => "body",
 			now: NOW,
 		});
-		expect(result).toEqual({ exitCode: 1, stdout: "no collab" });
+		expect(result).toEqual({ exitCode: 1, stdout: REPLY_FAILED("no active collab found for cwd /x") });
+		expect(close).toHaveBeenCalledTimes(1);
+	});
+
+	it("a throw inside the body prints reply guidance, exits 1 and closes", () => {
+		const close = vi.fn();
+		const result = resolveReplyResult({
+			callerAgent: "claude",
+			connect: () => ({
+				ok: true,
+				collabId: "collab_1",
+				control: {
+					replyWorkflowHandoff: () => {
+						throw new Error("SQLITE_BUSY: database is locked");
+					},
+				} as never,
+				close,
+			}),
+			handoffId: "ho_1",
+			filePath: "/x",
+			readFile: () => "body",
+			now: NOW,
+		});
+		expect(result).toEqual({ exitCode: 1, stdout: REPLY_FAILED("SQLITE_BUSY: database is locked") });
+		expect(close).toHaveBeenCalledTimes(1);
+	});
+
+	it("a throw from connect prints reply guidance", () => {
+		const result = resolveReplyResult({
+			callerAgent: "claude",
+			connect: () => {
+				throw new Error("unable to open database file");
+			},
+			handoffId: "ho_1",
+			filePath: "/x",
+			readFile: () => "body",
+			now: NOW,
+		});
+		expect(result).toEqual({ exitCode: 1, stdout: REPLY_FAILED("unable to open database file") });
+	});
+
+	it("mismatch still prints the mismatch copy when recording the refusal throws", () => {
+		const sqlitePath = join(mkdtempSync(join(tmpdir(), "hr-")), "b.sqlite");
+		const db = openDatabase(sqlitePath);
+		db.close(); // any prepare() on a closed handle throws
+		const close = vi.fn();
+		const result = resolveReplyResult({
+			callerAgent: "claude",
+			connect: () => ({
+				ok: false,
+				reason: "version_mismatch",
+				collabId: "collab_c1",
+				db,
+				message: "MISMATCH COPY",
+				close,
+			}),
+			handoffId: "ho_1",
+			filePath: "/x",
+			readFile: () => "body",
+			now: NOW,
+		});
+		expect(result).toEqual({ exitCode: 1, stdout: "MISMATCH COPY" });
 		expect(close).toHaveBeenCalledTimes(1);
 	});
 });

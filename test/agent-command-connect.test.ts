@@ -74,6 +74,7 @@ describe("connectAgentCommand", () => {
 		expect(r.message).toBe(
 			"ai-whisper CLI 0.17.0 does not match the running broker unknown. Stop here and end your turn; ai-whisper will resend this handoff. Do not read ~/.ai-whisper/state.db directly.",
 		);
+		expect(r.reason).toBe("version_mismatch");
 		expect(r.collabId).toBe("c1");
 		expect(r.db).not.toBeNull();
 		r.close();
@@ -101,6 +102,7 @@ describe("connectAgentCommand", () => {
 		expect(r.ok).toBe(false);
 		if (r.ok) throw new Error("unreachable");
 		expect(r.message).toContain("no active collab found");
+		expect(r.reason).toBe("unresolved");
 		expect(r.collabId).toBeNull();
 		expect(r.db).toBeNull();
 	});

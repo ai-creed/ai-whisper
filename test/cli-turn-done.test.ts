@@ -15,6 +15,8 @@ import { resolveTurnDoneResult, runTurnDone } from "../packages/cli/src/commands
 type Record_ = Parameters<typeof runTurnDone>[0]["control"]["recordSeatTurnDone"];
 
 const NOW = "2026-10-23T00:00:00.000Z";
+const UNREACHABLE = (detail: string) =>
+	`ai-whisper could not reach the broker for this workspace (${detail}). Stop here and end your turn; do not read ~/.ai-whisper/state.db directly.`;
 
 function deps(fetched: string | null, overrides: Record<string, unknown> = {}) {
 	const recordSeatTurnDone = vi.fn(() => ({ fetchedUnrepliedHandoffId: fetched }));
@@ -119,14 +121,52 @@ describe("resolveTurnDoneResult", () => {
 		expect(turnDoneAt(sqlitePath)).toBe(NOW);
 	});
 
-	it("resolver failure prints the message", () => {
+	it("resolver failure prints guidance and closes", () => {
 		const close = vi.fn();
 		const r = resolveTurnDoneResult({
 			callerAgent: "claude",
-			connect: () => ({ ok: false, collabId: null, db: null, message: "no collab", close }),
+			connect: () => ({
+				ok: false,
+				reason: "unresolved",
+				collabId: null,
+				db: null,
+				message: "no active collab found for cwd /x",
+				close,
+			}),
 			now: NOW,
 		});
-		expect(r).toEqual({ exitCode: 1, stdout: "no collab" });
+		expect(r).toEqual({ exitCode: 1, stdout: UNREACHABLE("no active collab found for cwd /x") });
 		expect(close).toHaveBeenCalledTimes(1);
+	});
+
+	it("a throw inside the body prints guidance, exits 1 and closes", () => {
+		const close = vi.fn();
+		const r = resolveTurnDoneResult({
+			callerAgent: "claude",
+			connect: () => ({
+				ok: true,
+				collabId: "c1",
+				control: {
+					recordSeatTurnDone: () => {
+						throw new Error("SQLITE_BUSY: database is locked");
+					},
+				} as never,
+				close,
+			}),
+			now: NOW,
+		});
+		expect(r).toEqual({ exitCode: 1, stdout: UNREACHABLE("SQLITE_BUSY: database is locked") });
+		expect(close).toHaveBeenCalledTimes(1);
+	});
+
+	it("a throw from connect prints guidance", () => {
+		const r = resolveTurnDoneResult({
+			callerAgent: "claude",
+			connect: () => {
+				throw new Error("unable to open database file");
+			},
+			now: NOW,
+		});
+		expect(r).toEqual({ exitCode: 1, stdout: UNREACHABLE("unable to open database file") });
 	});
 });
