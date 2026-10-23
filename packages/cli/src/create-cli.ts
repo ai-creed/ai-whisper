@@ -1,4 +1,5 @@
 import { execSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import type { AgentType } from "@ai-whisper/shared";
 import { createBrokerRuntime } from "@ai-whisper/broker";
 import { Command, Option } from "commander";
@@ -36,6 +37,7 @@ import { runWorkflowPause } from "./commands/workflow/pause.js";
 import { runWorkflowCancel } from "./commands/workflow/cancel.js";
 import { runWorkflowComplete } from "./commands/workflow/complete.js";
 import { runHandoffShow } from "./commands/handoff/show.js";
+import { handleReplyVersionMismatch, runHandoffReply } from "./commands/handoff/reply.js";
 import { connectAgentCommand } from "./runtime/broker-connect.js";
 import { runWorkflowTypes } from "./commands/workflow/types.js";
 import { runWorkflowStats } from "./commands/workflow/stats.js";
@@ -532,6 +534,46 @@ export function createCli(): Command {
 					callerAgent: parseCallerAgent(process.env.AI_WHISPER_AGENT),
 					now: new Date().toISOString(),
 				});
+				console.log(result.stdout);
+				process.exitCode = result.exitCode;
+			} finally {
+				conn.close();
+			}
+		});
+
+	handoff
+		.command("reply")
+		.description("Hand back finished work for a workflow handoff")
+		.argument("<handoffId>", "Handoff ID")
+		.requiredOption("--file <path>", "File containing your complete handback")
+		.option("--workspace <path>", "Workspace root", process.cwd())
+		.action((handoffId: string, opts: WorkspaceOpts & { file: string }) => {
+			const conn = connectAgentCommand({
+				cwd: opts.workspace,
+				context: "reply",
+				cliVersion: resolveCliVersion(),
+			});
+			try {
+				const now = new Date().toISOString();
+				const result = conn.ok
+					? runHandoffReply({
+							control: conn.control,
+							collabId: conn.collabId,
+							handoffId,
+							callerAgent: parseCallerAgent(process.env.AI_WHISPER_AGENT),
+							filePath: opts.file,
+							readFile: (p) => readFileSync(p, "utf8"),
+							now,
+						})
+					: conn.db !== null && conn.collabId !== null
+						? handleReplyVersionMismatch({
+								db: conn.db,
+								collabId: conn.collabId,
+								handoffId,
+								message: conn.message,
+								now,
+							})
+						: { exitCode: 1 as const, stdout: conn.message };
 				console.log(result.stdout);
 				process.exitCode = result.exitCode;
 			} finally {
