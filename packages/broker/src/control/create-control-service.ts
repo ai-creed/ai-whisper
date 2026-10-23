@@ -1528,3 +1528,5 @@ export function createControlService(db: Database.Database, events: BrokerEventB
 		},
 	}, workflowControl);
 }
+
+export type ControlService = ReturnType<typeof createControlService>;

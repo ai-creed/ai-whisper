@@ -10,6 +10,7 @@ import {
 	upsertSessionAttachment,
 	upsertWorkspace,
 } from "@ai-whisper/broker";
+import { resolveCliVersion } from "../../runtime/cli-package-info.js";
 import { createCliCollabId } from "../../runtime/id-factory.js";
 import type { LaunchMode, LaunchResult } from "../../runtime/launcher.js";
 import { DEFAULT_PORT_RANGE } from "../../runtime/port-allocator.js";
@@ -156,6 +157,7 @@ export async function runCollabStart(
 			port: allocatedPort,
 			startedAt: now,
 			lastHeartbeatAt: now,
+			cliVersion: resolveCliVersion(),
 		});
 		upsertRecoveryState(db, {
 			collabId,

@@ -1,12 +1,22 @@
-import { createBrokerRuntime, openDatabase } from "@ai-whisper/broker";
-import type { BrokerRuntime } from "@ai-whisper/broker";
-import { resolveCollab } from "./collab-resolver.js";
+import {
+	createBrokerEventBus,
+	createBrokerRuntime,
+	createControlService,
+	openDatabase,
+} from "@ai-whisper/broker";
+import type { BrokerRuntime, ControlService } from "@ai-whisper/broker";
+import type Database from "better-sqlite3";
+import {
+	checkCliBrokerVersion,
+	type VersionCheckContext,
+} from "./cli-broker-version-check.js";
+import { CollabResolverError, resolveCollab } from "./collab-resolver.js";
 import { getSharedSqlitePath } from "./state-root.js";
 
 // eslint-disable-next-line @typescript-eslint/require-await
 export async function connectToWorkspaceBroker(
 	input: { cwd: string; collabIdOverride?: string },
-): Promise<{ broker: BrokerRuntime; collabId: string }> {
+): Promise<{ broker: BrokerRuntime; collabId: string; daemonCliVersion: string | null }> {
 	const db = openDatabase(getSharedSqlitePath());
 	let resolved;
 	try {
@@ -35,7 +45,12 @@ export async function connectToWorkspaceBroker(
 	}
 
 	// daemon is non-null because requireDaemon: true
-	const daemon = resolved.daemon as { host: string; port: number; pid: number };
+	const daemon = resolved.daemon as {
+		host: string;
+		port: number;
+		pid: number;
+		cliVersion: string | null;
+	};
 
 	const broker = createBrokerRuntime({
 		sqlitePath: getSharedSqlitePath(),
@@ -50,6 +65,61 @@ export async function connectToWorkspaceBroker(
 		runBrokerDaemonSweep: false,
 	});
 
-	return { broker, collabId: resolved.collabId };
+	return { broker, collabId: resolved.collabId, daemonCliVersion: daemon.cliVersion };
 }
 
+export type AgentCommandConnection =
+	| {
+			ok: false;
+			collabId: string | null;
+			db: Database.Database | null;
+			message: string;
+			close(): void;
+	  }
+	| { ok: true; collabId: string; control: ControlService; close(): void };
+
+// Agent-facing commands (handoff show/reply, turn done) must never migrate the
+// shared DB: a CLI that is out of sync with the running broker must not rewrite
+// its schema. So this opens the DB raw and builds a control service directly,
+// never going through createBrokerRuntime (which applies migrations).
+export function connectAgentCommand(input: {
+	cwd: string;
+	context: VersionCheckContext;
+	cliVersion: string;
+	sqlitePath?: string;
+}): AgentCommandConnection {
+	const db = openDatabase(input.sqlitePath ?? getSharedSqlitePath());
+	const close = (): void => {
+		if (db.open) db.close();
+	};
+	let resolved;
+	try {
+		resolved = resolveCollab({
+			db,
+			cwd: input.cwd,
+			requireActive: true,
+			requireDaemon: true,
+		});
+	} catch (err) {
+		if (err instanceof CollabResolverError) {
+			close();
+			return { ok: false, collabId: null, db: null, message: err.message, close() {} };
+		}
+		close();
+		throw err;
+	}
+	const check = checkCliBrokerVersion({
+		cliVersion: input.cliVersion,
+		brokerVersion: resolved.daemon?.cliVersion ?? null,
+		context: input.context,
+	});
+	if (!check.ok) {
+		return { ok: false, collabId: resolved.collabId, db, message: check.message, close };
+	}
+	return {
+		ok: true,
+		collabId: resolved.collabId,
+		control: createControlService(db, createBrokerEventBus()),
+		close,
+	};
+}

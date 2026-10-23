@@ -24,7 +24,7 @@ export interface ResolvedCollab {
 	collabId: string;
 	workspaceId: string | null;
 	workspaceRoot: string;
-	daemon: { host: string; port: number; pid: number } | null;
+	daemon: { host: string; port: number; pid: number; cliVersion: string | null } | null;
 	launch: { mode: "tmux" | "terminals" | "none"; tmuxSession?: string };
 	recovery: {
 		state: "normal" | "recovery_required" | "recovered";
@@ -78,7 +78,12 @@ export function resolveCollab(opts: {
 	const daemonRow = getBrokerDaemonByCollab(opts.db, row.collab_id);
 	const daemon =
 		daemonRow && daemonRow.pid !== null
-			? { host: daemonRow.host, port: daemonRow.port, pid: daemonRow.pid }
+			? {
+				host: daemonRow.host,
+				port: daemonRow.port,
+				pid: daemonRow.pid,
+				cliVersion: daemonRow.cliVersion,
+			}
 			: null;
 
 	if (opts.requireDaemon && daemon === null) {

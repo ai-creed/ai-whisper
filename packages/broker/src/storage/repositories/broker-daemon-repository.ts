@@ -9,6 +9,7 @@ export type BrokerDaemonRecord = {
 	startedAt: string;
 	lastHeartbeatAt: string;
 	evaluatorStatus: string | null;
+	cliVersion: string | null;
 };
 
 type Row = {
@@ -20,6 +21,7 @@ type Row = {
 	started_at: string;
 	last_heartbeat_at: string;
 	evaluator_status: string | null;
+	cli_version: string | null;
 };
 
 // evaluator_status may be absent on a pre-migration (v3) DB read before the
@@ -29,11 +31,18 @@ type Row = {
 // degrade to evaluatorStatus: null (-> "unknown" -> ready) instead of throwing
 // "no such column: evaluator_status".
 function brokerDaemonSelectColumns(db: Database.Database): string {
-	const hasEvaluatorStatus = (
-		db.prepare("PRAGMA table_info(broker_daemon)").all() as Array<{ name: string }>
-	).some((column) => column.name === "evaluator_status");
-	const tail = hasEvaluatorStatus ? "evaluator_status" : "NULL AS evaluator_status";
-	return `collab_id, host, port, pid, pid_start_time, started_at, last_heartbeat_at, ${tail}`;
+	const names = new Set(
+		(db.prepare("PRAGMA table_info(broker_daemon)").all() as Array<{ name: string }>).map(
+			(column) => column.name,
+		),
+	);
+	const evaluator = names.has("evaluator_status")
+		? "evaluator_status"
+		: "NULL AS evaluator_status";
+	// cli_version is added by ensureNoticePathSchema; an agent command reading a
+	// not-yet-migrated DB must degrade to null (-> "unknown") rather than throw.
+	const cliVersion = names.has("cli_version") ? "cli_version" : "NULL AS cli_version";
+	return `collab_id, host, port, pid, pid_start_time, started_at, last_heartbeat_at, ${evaluator}, ${cliVersion}`;
 }
 
 function toRecord(row: Row): BrokerDaemonRecord {
@@ -46,6 +55,7 @@ function toRecord(row: Row): BrokerDaemonRecord {
 		startedAt: row.started_at,
 		lastHeartbeatAt: row.last_heartbeat_at,
 		evaluatorStatus: row.evaluator_status,
+		cliVersion: row.cli_version,
 	};
 }
 
@@ -57,13 +67,21 @@ export function insertBrokerDaemon(
 		port: number;
 		startedAt: string;
 		lastHeartbeatAt: string;
+		cliVersion?: string;
 	},
 ): void {
 	db.prepare(`
 		INSERT INTO broker_daemon
-			(collab_id, host, port, pid, pid_start_time, started_at, last_heartbeat_at)
-		VALUES (?, ?, ?, NULL, NULL, ?, ?)
-	`).run(input.collabId, input.host, input.port, input.startedAt, input.lastHeartbeatAt);
+			(collab_id, host, port, pid, pid_start_time, started_at, last_heartbeat_at, cli_version)
+		VALUES (?, ?, ?, NULL, NULL, ?, ?, ?)
+	`).run(
+		input.collabId,
+		input.host,
+		input.port,
+		input.startedAt,
+		input.lastHeartbeatAt,
+		input.cliVersion ?? null,
+	);
 }
 
 export function updateBrokerDaemonPid(
