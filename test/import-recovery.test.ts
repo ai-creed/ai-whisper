@@ -8,6 +8,7 @@ import { openDatabase } from "../packages/broker/src/storage/open-database.ts";
 import {
 	runRecoveryImport,
 	runRecoveryImportFromPaths,
+	insertRows,
 } from "../packages/broker/src/storage/import-recovery.ts";
 
 const NOW = "2026-07-23T00:00:00.000Z";
@@ -409,5 +410,26 @@ describe("runRecoveryImportFromPaths", () => {
 			handoffs: 1,
 			collabTombstones: 1,
 		});
+	});
+});
+
+describe("insertRows column-layout guard", () => {
+	const row = Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`c${i}`, `v${i}`]));
+
+	it("accepts the current v8-plus-appended layout", () => {
+		const db = openDatabase(tmpPath("t.sqlite"));
+		db.exec("CREATE TABLE relay_chains (chain_id TEXT PRIMARY KEY, collab_id, status, current_round, max_rounds, terminal_handoff_id, terminal_reason, created_at, updated_at, extra TEXT)");
+		expect(insertRows(db, "relay_chains", "chain_id", [row], 9)).toBe(1);
+	});
+
+	it("rejects a layout whose first columns differ from the pinned v8 names", () => {
+		const db = openDatabase(tmpPath("t.sqlite"));
+		// Reordered first columns, same width.
+		db.exec("CREATE TABLE relay_chains (chain_id TEXT PRIMARY KEY, status, collab_id, current_round, max_rounds, terminal_handoff_id, terminal_reason, created_at, updated_at)");
+		expect(() => insertRows(db, "relay_chains", "chain_id", [row], 9)).toThrow(/pinned v8 layout/);
+		// Missing one v8 column but carrying enough appended ones to reach the width.
+		const db2 = openDatabase(tmpPath("t2.sqlite"));
+		db2.exec("CREATE TABLE relay_chains (chain_id TEXT PRIMARY KEY, collab_id, status, current_round, max_rounds, terminal_handoff_id, created_at, updated_at, a, b)");
+		expect(() => insertRows(db2, "relay_chains", "chain_id", [row], 9)).toThrow(/pinned v8 layout/);
 	});
 });

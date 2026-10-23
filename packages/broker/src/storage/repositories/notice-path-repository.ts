@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import type { AgentType } from "@ai-whisper/shared";
+import { relayHandoffHasColumn } from "./relay-handoff-repository.js";
 
 export type NoticePathFields = {
 	deliveryPath: string | null;
@@ -64,6 +65,10 @@ export function findFetchedUnrepliedHandoff(
 	db: Database.Database,
 	input: { collabId: string; agent: AgentType },
 ): string | null {
+	// Reads must not throw on a DB that predates the notice-path columns.
+	if (!relayHandoffHasColumn(db, "fetched_at") || !relayHandoffHasColumn(db, "replied_at")) {
+		return null;
+	}
 	const row = db
 		.prepare(
 			`SELECT handoff_id FROM relay_handoff
@@ -79,9 +84,12 @@ export function getNoticePathFields(
 	db: Database.Database,
 	handoffId: string,
 ): NoticePathFields | null {
+	const col = (name: string, fallback = "NULL") =>
+		relayHandoffHasColumn(db, name) ? name : `${fallback} AS ${name}`;
 	const row = db
 		.prepare(
-			`SELECT delivery_path, fetched_at, fetch_count, capture_path, replied_at, reply_refused_at
+			`SELECT ${col("delivery_path")}, ${col("fetched_at")}, ${col("fetch_count", "0")},
+			        ${col("capture_path")}, ${col("replied_at")}, ${col("reply_refused_at")}
 			   FROM relay_handoff WHERE handoff_id = ?`,
 		)
 		.get(handoffId) as

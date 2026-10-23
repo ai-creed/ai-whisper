@@ -179,3 +179,21 @@ describe("notice-path repository", () => {
 		expect(findFetchedUnrepliedHandoff(db, { collabId: "c2", agent: "codex" })).toBeNull();
 	});
 });
+
+describe("notice-path reads on an unmigrated DB", () => {
+	it("getNoticePathFields and findFetchedUnrepliedHandoff do not throw without the new columns", () => {
+		const db = freshDb();
+		seedHandoff(db, "h1");
+		for (const c of NEW_HANDOFF_COLUMNS) db.exec(`ALTER TABLE relay_handoff DROP COLUMN ${c}`);
+		expect(getNoticePathFields(db, "h1")).toEqual({
+			deliveryPath: null,
+			fetchedAt: null,
+			fetchCount: 0,
+			capturePath: null,
+			repliedAt: null,
+			replyRefusedAt: null,
+		});
+		expect(getNoticePathFields(db, "nope")).toBeNull();
+		expect(findFetchedUnrepliedHandoff(db, { collabId: "c1", agent: "codex" })).toBeNull();
+	});
+});
