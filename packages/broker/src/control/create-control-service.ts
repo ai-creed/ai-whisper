@@ -160,6 +160,8 @@ import {
 	markRelayChainAbandonedTxn,
 	cleanupOrchestrationOnShutdownTxn,
 	listRelayHandoffs as listRelayHandoffsRepo,
+	getHandoffWithWorkflowMetaById,
+	relayHandoffHasColumn,
 	type RelayHandoffLogRow,
 	type RelayHandoffWorkflowFilter,
 } from "../storage/repositories/relay-handoff-repository.js";
@@ -172,8 +174,66 @@ import {
 	type RunCostRow,
 	type WorkflowSummaryRow,
 } from "../storage/repositories/dashboard-repository.js";
+import {
+	findFetchedUnrepliedHandoff,
+	markHandoffReplied,
+	recordHandoffFetch,
+	recordHandoffReplyRefused,
+	upsertSeatTurnDone,
+} from "../storage/repositories/notice-path-repository.js";
 import { createWorkflowControl } from "./workflow-control.js";
 import type { BrokerEventBus } from "../runtime/broker-event-bus.js";
+
+export type NoticeRefusal = {
+	ok: false;
+	reason: "unknown" | "other_collab" | "not_workflow" | "not_accepted" | "superseded" | "wrong_agent";
+	status?: string;
+	targetAgent?: AgentType;
+};
+
+type NoticeHandoff = NonNullable<ReturnType<typeof getHandoffWithWorkflowMetaById>> & {
+	workflowId: string;
+};
+
+// Decides whether `whisper handoff show|reply` may act on a handoff. Callers run
+// this inside the same transaction as the write it guards. `callerAgent` null
+// skips the agent check (show from a seat whose agent is not known).
+function checkNoticeHandoff(
+	db: Database.Database,
+	input: { handoffId: string; collabId: string; callerAgent: AgentType | null },
+): { ok: true; handoff: NoticeHandoff } | NoticeRefusal {
+	const handoff = getHandoffWithWorkflowMetaById(db, input.handoffId);
+	if (!handoff) return { ok: false, reason: "unknown" };
+	if (handoff.collabId !== input.collabId) return { ok: false, reason: "other_collab" };
+	if (!handoff.workflowId) return { ok: false, reason: "not_workflow" };
+	if (handoff.status !== "accepted") {
+		return { ok: false, reason: "not_accepted", status: handoff.status };
+	}
+	const workflowStatus = getWorkflowById(db, handoff.workflowId)?.status;
+	const chainStatus = handoff.chainId
+		? (db.prepare("SELECT status FROM relay_chains WHERE chain_id = ?").get(handoff.chainId) as
+				| { status: string }
+				| undefined)?.status
+		: undefined;
+	const newer = handoff.chainId
+		? db
+				.prepare(
+					"SELECT 1 FROM relay_handoff WHERE chain_id = ? AND created_at > ? LIMIT 1",
+				)
+				.get(handoff.chainId, handoff.createdAt)
+		: undefined;
+	if (
+		(workflowStatus !== "running" && workflowStatus !== "paused") ||
+		chainStatus !== "active" ||
+		newer
+	) {
+		return { ok: false, reason: "superseded", status: handoff.status };
+	}
+	if (input.callerAgent !== null && input.callerAgent !== handoff.targetAgent) {
+		return { ok: false, reason: "wrong_agent", targetAgent: handoff.targetAgent };
+	}
+	return { ok: true, handoff: { ...handoff, workflowId: handoff.workflowId } };
+}
 
 function normalizeTimestampForEventId(timestamp: string): string {
 	return timestamp.replace(/[^0-9]/g, "");
@@ -1318,6 +1378,92 @@ export function createControlService(db: Database.Database, events: BrokerEventB
 				workflowControl.maybeCaptureQuiesceSnapshot({ workflowId: meta.workflowId, now: input.now });
 			}
 			return result;
+		},
+		fetchWorkflowHandoff(input: {
+			handoffId: string;
+			collabId: string;
+			callerAgent: AgentType | null;
+			now: string;
+		}):
+			| {
+					ok: true;
+					handoff: {
+						handoffId: string;
+						workflowId: string;
+						phaseName: string | null;
+						handoffStep: string | null;
+						roundNumber: number | null;
+						senderAgent: AgentType;
+						targetAgent: AgentType;
+						requestText: string;
+					};
+			  }
+			| NoticeRefusal {
+			return db.transaction(() => {
+				const checked = checkNoticeHandoff(db, input);
+				if (!checked.ok) return checked;
+				recordHandoffFetch(db, { handoffId: input.handoffId, now: input.now });
+				const h = checked.handoff;
+				return {
+					ok: true as const,
+					handoff: {
+						handoffId: h.handoffId,
+						workflowId: h.workflowId,
+						phaseName: h.phaseName,
+						handoffStep: h.handoffStep,
+						roundNumber: h.roundNumber,
+						senderAgent: h.senderAgent,
+						targetAgent: h.targetAgent,
+						requestText: h.requestText,
+					},
+				};
+			})();
+		},
+		replyWorkflowHandoff(input: {
+			handoffId: string;
+			collabId: string;
+			callerAgent: AgentType;
+			body: string;
+			now: string;
+		}): { ok: true } | NoticeRefusal {
+			// One transaction: a concurrent capture and reply resolve to exactly one
+			// winner (the loser sees status != accepted, or the replied_at guard).
+			return db.transaction(() => {
+				const checked = checkNoticeHandoff(db, input);
+				if (!checked.ok) return checked;
+				const h = checked.handoff;
+				// Through the control wrapper, not the Txn, to keep its paused-workflow
+				// quiesce snapshot behaviour.
+				this.handoffBackRelay({
+					handoffId: h.handoffId,
+					nextHandoffId: `handoff_${input.now.replace(/[^0-9]/g, "")}`,
+					senderAgent: h.targetAgent,
+					targetAgent: h.senderAgent,
+					requestText: input.body,
+					captureStatus: "ok",
+					now: input.now,
+				});
+				markHandoffReplied(db, { handoffId: h.handoffId, now: input.now });
+				return { ok: true as const };
+			})();
+		},
+		recordWorkflowReplyRefused(input: { handoffId: string; collabId: string; now: string }): void {
+			// An older broker's DB lacks the column; the refusal is diagnostic only.
+			if (!relayHandoffHasColumn(db, "reply_refused_at")) return;
+			const current = queryRelayHandoff(db, input.handoffId);
+			if (!current || current.collabId !== input.collabId || current.status !== "accepted") return;
+			recordHandoffReplyRefused(db, { handoffId: input.handoffId, now: input.now });
+		},
+		recordSeatTurnDone(input: { collabId: string; agent: AgentType; now: string }): {
+			fetchedUnrepliedHandoffId: string | null;
+		} {
+			upsertSeatTurnDone(db, input);
+			return {
+				fetchedUnrepliedHandoffId: findFetchedUnrepliedHandoff(db, {
+					collabId: input.collabId,
+					agent: input.agent,
+				}),
+			};
 		},
 		failRelayHandoffOnDisconnect(input: { handoffId: string; now: string }) {
 			return failRelayHandoffOnDisconnectTxn(db, input);
