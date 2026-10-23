@@ -176,6 +176,7 @@ import {
 } from "../storage/repositories/dashboard-repository.js";
 import {
 	findFetchedUnrepliedHandoff,
+	getNoticePathFields,
 	markHandoffReplied,
 	recordHandoffFetch,
 	markSessionBindingTurnDone,
@@ -189,6 +190,8 @@ export type NoticeRefusal = {
 	reason: "unknown" | "other_collab" | "not_workflow" | "not_accepted" | "superseded" | "wrong_agent";
 	status?: string;
 	targetAgent?: AgentType;
+	/** Set on not_accepted: 'reply' means the agent's own earlier reply stands. */
+	capturePath?: string | null;
 };
 
 type NoticeHandoff = NonNullable<ReturnType<typeof getHandoffWithWorkflowMetaById>> & {
@@ -207,7 +210,12 @@ function checkNoticeHandoff(
 	if (handoff.collabId !== input.collabId) return { ok: false, reason: "other_collab" };
 	if (!handoff.workflowId) return { ok: false, reason: "not_workflow" };
 	if (handoff.status !== "accepted") {
-		return { ok: false, reason: "not_accepted", status: handoff.status };
+		return {
+			ok: false,
+			reason: "not_accepted",
+			status: handoff.status,
+			capturePath: getNoticePathFields(db, handoff.handoffId)?.capturePath ?? null,
+		};
 	}
 	const workflowStatus = getWorkflowById(db, handoff.workflowId)?.status;
 	const chainStatus = handoff.chainId
@@ -215,6 +223,8 @@ function checkNoticeHandoff(
 				| { status: string }
 				| undefined)?.status
 		: undefined;
+	// Lexicographic `created_at > ?` is only a correct time comparison while every
+	// relay_handoff writer stores `toISOString()` timestamps (fixed width, UTC, Z).
 	const newer = handoff.chainId
 		? db
 				.prepare(
@@ -1384,6 +1394,8 @@ export function createControlService(db: Database.Database, events: BrokerEventB
 			collabId: string;
 			callerAgent: AgentType | null;
 			now: string;
+			/** false = peek: run every check but do not record the fetch. Default true. */
+			record?: boolean;
 		}):
 			| {
 					ok: true;
@@ -1402,7 +1414,9 @@ export function createControlService(db: Database.Database, events: BrokerEventB
 			return db.transaction(() => {
 				const checked = checkNoticeHandoff(db, input);
 				if (!checked.ok) return checked;
-				recordHandoffFetch(db, { handoffId: input.handoffId, now: input.now });
+				if (input.record !== false) {
+					recordHandoffFetch(db, { handoffId: input.handoffId, now: input.now });
+				}
 				const h = checked.handoff;
 				return {
 					ok: true as const,

@@ -110,6 +110,25 @@ describe("notice-path control methods", () => {
 		await broker.stop();
 	});
 
+	it("show with record false returns the handoff without recording the fetch", async () => {
+		const broker = boot();
+		const { handoff } = await startWorkflow(broker);
+		const result = broker.control.fetchWorkflowHandoff({
+			handoffId: handoff.handoffId,
+			collabId: "collab_c1",
+			callerAgent: null,
+			now: "2026-04-21T00:00:02Z",
+			record: false,
+		});
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error("unreachable");
+		expect(result.handoff.requestText).toBe(rawRow(broker, handoff.handoffId).request_text);
+		const fields = getNoticePathFields(broker.db, handoff.handoffId);
+		expect(fields?.fetchedAt).toBeNull();
+		expect(fields?.fetchCount).toBe(0);
+		await broker.stop();
+	});
+
 	it("show refuses unknown, pending and non-workflow handoffs with the right reason", async () => {
 		const broker = boot();
 		const { handoff } = await startWorkflow(broker, { accept: false });
@@ -208,7 +227,12 @@ describe("notice-path control methods", () => {
 			body: "SECOND",
 			now: "2026-04-21T00:00:06Z",
 		});
-		expect(second).toEqual({ ok: false, reason: "not_accepted", status: "handed_back" });
+		expect(second).toEqual({
+			ok: false,
+			reason: "not_accepted",
+			status: "handed_back",
+			capturePath: "reply",
+		});
 		expect(rawRow(broker, handoff.handoffId).handback_text).toBe("FIRST");
 		await broker.stop();
 	});
@@ -231,7 +255,12 @@ describe("notice-path control methods", () => {
 			body: "REPLY",
 			now: "2026-04-21T00:00:05Z",
 		});
-		expect(result).toMatchObject({ ok: false, reason: "not_accepted", status: "handed_back" });
+		expect(result).toEqual({
+			ok: false,
+			reason: "not_accepted",
+			status: "handed_back",
+			capturePath: null,
+		});
 		expect(rawRow(broker, handoff.handoffId).handback_text).toBe("CAPTURED");
 		expect(getNoticePathFields(broker.db, handoff.handoffId)?.capturePath).toBeNull();
 		await broker.stop();
