@@ -1,6 +1,8 @@
 import type { CaptureHandbackResult } from "./capture-handback-text.js";
 import type { AgentType } from "@ai-whisper/shared";
 import { isMidCompositionShape } from "./mid-composition-shape.js";
+import type { NoticePathState } from "@ai-whisper/broker";
+import { buildQueuedLine, createNoticePathDriver } from "./notice-path-driver.js";
 
 type RelayTurnState = {
 	collabId: string;
@@ -36,9 +38,21 @@ type BrokerLike = {
 			targetAgent: AgentType;
 			requestText: string;
 			captureStatus?: "ok" | "no_response_captured_confidently" | "no_response_captured" | null;
+			capturePath?: "copy" | "turn_event" | "native";
 			now: string;
 		}): void;
-		getHandoffWithWorkflowMeta?(handoffId: string): { workflowId: string | null; chainId: string | null } | null;
+		getHandoffWithWorkflowMeta?(handoffId: string): {
+			workflowId: string | null;
+			chainId: string | null;
+			phaseName?: string | null;
+			handoffStep?: string | null;
+			roundNumber?: number | null;
+		} | null;
+		getNoticePathState?(handoffId: string): NoticePathState | null;
+		claimWorkflowNotice?(input: { handoffId: string; now: string }): { claimed: boolean };
+		claimNoticeStep?(input: { handoffId: string; kind: "reminder" | "nudge"; now: string }): boolean;
+		markHandoffDeliveryPath?(input: { handoffId: string; path: "paste" | "native" }): void;
+		countWorkflowFallbacks?(workflowId: string): number;
 		recordCaptureDiagnostic?(input: {
 			handoffId: string;
 			collabId: string;
@@ -84,7 +98,8 @@ type BrokerLike = {
 				| "deferred_rearmed"
 				| "rejected_mid_composition"
 				| "fallback_indeterminate"
-				| "fallback_exhausted";
+				| "fallback_exhausted"
+				| "notice_path_ignored";
 			messageLen: number;
 			messageSample: string | null;
 		}): { eventId: string };
@@ -352,6 +367,14 @@ export function createMountedTurnOwnedRelay(input: {
 	 *  (claude/codex). Gates the /copy fallback in the suppressed idle branch so
 	 *  protocol-native ezio (suppress + no event path) keeps today's hard-return. */
 	eventPathEnabled?: boolean;
+	/** How a workflow request reaches the agent. "notice" types a one-line
+	 *  notice and the agent fetches the request itself; "paste" (default) and
+	 *  "native" keep today's paste-the-request path. */
+	deliveryMode?: "notice" | "native" | "paste";
+	/** Strict mode (D10): notice-path paste/copy fallbacks escalate instead. */
+	noticeStrict?: boolean;
+	/** Extended idle cap (ms) before an unreplied notice-path handoff is nudged. */
+	noticeCapMs?: number;
 }) {
 	function resolveCols(): number {
 		const c = input.getTerminalCols?.() ?? process.stdout.columns;
@@ -390,6 +413,35 @@ export function createMountedTurnOwnedRelay(input: {
 	let renderedOwnerCardLines = 0;
 	let autoAcceptFiredFor: string | null = null;
 	let autoHandbackFiredFor: string | null = null;
+
+	const noticeMode = input.deliveryMode === "notice";
+	const noticeDriver = createNoticePathDriver({
+		broker: input.broker,
+		currentAgent: input.currentAgent,
+		strict: input.noticeStrict ?? false,
+		capMs: input.noticeCapMs ?? 900_000,
+		writeLocalMessage: input.writeLocalMessage,
+		submitUserInput: async (text) => {
+			if (input.submitUserInput) {
+				await input.submitUserInput(text);
+			} else {
+				submitInjectedInput(input.writeUserInput, text);
+			}
+		},
+		// Task 5 supplies the paste and /copy fallbacks.
+		pasteFallback: () => Promise.reject(new Error("notice paste fallback: not implemented")),
+		copyFallback: () => Promise.reject(new Error("notice copy fallback: not implemented")),
+		now: () => new Date(),
+		// The broker claim already accepted the handoff; mirror the relay-side
+		// bookkeeping of acceptPendingHandoff, minus the paste and capture seeding.
+		onNoticeClaimed: (handoffId) => {
+			autoAcceptFiredFor = handoffId;
+			clearOwnerCard();
+			lastOwnerCardKey = null;
+			autoHandbackFiredFor = null;
+			input.onHandoffAccepted?.();
+		},
+	});
 
 	// ----- Turn-event gate state (push-based handback, §4.1-4.3) -----------------
 	// Per-handoff defer count (fidelity gate): bumped on each rejected/superseded
@@ -840,6 +892,14 @@ export function createMountedTurnOwnedRelay(input: {
 
 		refreshOwnerView() {
 			const handoff = getPendingHandoff();
+			if (handoff && noticeMode && noticeDriver.usesNoticePath(handoff.handoffId)) {
+				const meta = input.broker.control.getHandoffWithWorkflowMeta?.(handoff.handoffId) ?? null;
+				renderOwnerCard(
+					buildQueuedLine(handoff.handoffId, meta),
+					`${handoff.handoffId}|${handoff.status}|notice`,
+				);
+				return;
+			}
 			if (handoff) {
 				const label = handoff.status === "deferred" ? "Deferred handoff" : "Pending handoff";
 				const autonomous = isAutonomousHandoff(handoff.handoffId, input.broker);
@@ -1051,6 +1111,19 @@ export function createMountedTurnOwnedRelay(input: {
 				});
 				return;
 			}
+			// Notice path: the agent hands back with `whisper handoff reply`; a turn
+			// event must never capture, arm /copy, or seed a held candidate.
+			if (noticeDriver.isNoticeHandoff(accepted.handoffId)) {
+				logTurnEvent(event, "notice_path_ignored", {
+					workflowActive: true,
+					handoffId: accepted.handoffId,
+					inputCorrelated: null,
+					containmentScore: null,
+					fidelityVerdict: "n/a",
+					deferCount: 0,
+				});
+				return;
+			}
 			// §4.2 relevance gate (+ §4.3 fidelity gate inside acceptCandidate).
 			await routeRelevance(accepted, event);
 		},
@@ -1129,6 +1202,20 @@ export function createMountedTurnOwnedRelay(input: {
 		},
 
 		async checkIdleActions(idleElapsedMs = 0) {
+			// Notice path: a pending workflow handoff gets a claimed one-line notice
+			// and an accepted notice handoff runs the ladder. The mount only calls
+			// this once its idle gate passes, so the gate is passing here.
+			if (noticeMode && !(input.isPausedInput?.() ?? false)) {
+				const noticePending = getPendingHandoff();
+				const owned = await noticeDriver.onIdleTick({
+					pending: noticePending?.status === "pending" ? noticePending : null,
+					accepted: noticePending ? null : getAcceptedHandoff(),
+					idleElapsedMs,
+					gatePassing: true,
+				});
+				if (owned) return;
+			}
+
 			// Auto-accept: pending (not deferred) handoff, guard not set, not paused.
 			// Autonomous handoffs (workflow=running, chain=active) also flow through
 			// this path: the broker has no PTY handle, so the mount pane is the only
@@ -1156,6 +1243,8 @@ export function createMountedTurnOwnedRelay(input: {
 			) {
 				return;
 			}
+			// Never capture a notice-path handoff through the legacy /copy ladder.
+			if (noticeDriver.isNoticeHandoff(accepted.handoffId)) return;
 
 			if (input.suppressQuiescenceHandback) {
 				// Protocol-native sessions (ezio) suppress AND have no clipboard fallback —
