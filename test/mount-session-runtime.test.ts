@@ -432,6 +432,129 @@ describe("mount session runtime — turn-event production wiring", () => {
 	});
 });
 
+describe("mount session runtime — notice-path relay options", () => {
+	async function relayInputFor(
+		target: "claude" | "ezio",
+		env: Record<string, string | undefined>,
+	): Promise<Record<string, unknown> | undefined> {
+		const saved: Record<string, string | undefined> = {};
+		for (const [key, value] of Object.entries(env)) {
+			saved[key] = process.env[key];
+			if (value === undefined) delete process.env[key];
+			else process.env[key] = value;
+		}
+		const prevRoot = process.env["AI_WHISPER_STATE_ROOT"];
+		process.env["AI_WHISPER_STATE_ROOT"] = mkdtempSync(join(tmpdir(), "aiw-mount-notice-"));
+		const workspaceRoot = mkdtempSync(join(tmpdir(), "aiw-ws-notice-"));
+		vi.useFakeTimers();
+		try {
+			let capturedRelayInput: Record<string, unknown> | undefined;
+			const createTurnRelay: typeof createMountedTurnOwnedRelay = (relayInput) => {
+				capturedRelayInput = relayInput as unknown as Record<string, unknown>;
+				return fakeRelayApi();
+			};
+			const runtime = createMountSessionRuntime({
+				target,
+				ttyPath: "/dev/ttys033",
+				workspaceRoot,
+				claimId: "claim_notice",
+				secret: "secret_notice",
+				broker: {
+					control: {
+						completeAttachClaim: vi.fn(() => ({
+							collabId: "collab_notice",
+							sessionId: "session_notice",
+							agentType: target,
+						})),
+						listSessionBindings: () => [],
+						listSessions: () => [],
+						markSessionDegraded: vi.fn(),
+						getRelayTurnState: () => ({
+							collabId: "collab_notice",
+							turnOwner: "none" as const,
+							waitingAgent: null,
+							unresolvedHandoffId: null,
+							handoffState: "idle" as const,
+							handoffAgeMs: null,
+						}),
+						getRelayHandoff: () => null,
+					},
+					stop: () => Promise.resolve(),
+				} as never,
+				createInteractiveSession: () => ({
+					start: () => Promise.resolve(),
+					stop: () => Promise.resolve(),
+					writeUserInput: vi.fn(),
+					sendLocalMessage: vi.fn(),
+					onProviderOutput: vi.fn(),
+					onExit: vi.fn(),
+				}),
+				createProvider: () =>
+					({
+						getIdentity: () => ({
+							providerId: target,
+							toolFamily: target,
+							providerVersion: "1",
+						}),
+						getCapabilities: () => ({
+							supportsDirectPackets: false,
+							supportsNormalization: false,
+							supportsRelayInterception: false,
+							supportsLocalBuffering: false,
+							supportsLaunchHooks: false,
+							extensions: {},
+						}),
+					}) as never,
+				createLiveSession: () =>
+					({
+						start: () => Promise.resolve(),
+						stop: () => Promise.resolve(),
+						withPausedInput: async <T>(fn: () => Promise<T>) => fn(),
+						isPaused: () => false,
+					}) as never,
+				runLoop: () => Promise.resolve(() => Promise.resolve()),
+				createTurnRelay,
+			});
+			void runtime.start();
+			await vi.advanceTimersByTimeAsync(1_000);
+			return capturedRelayInput;
+		} finally {
+			vi.useRealTimers();
+			if (prevRoot === undefined) delete process.env["AI_WHISPER_STATE_ROOT"];
+			else process.env["AI_WHISPER_STATE_ROOT"] = prevRoot;
+			for (const [key, value] of Object.entries(saved)) {
+				if (value === undefined) delete process.env[key];
+				else process.env[key] = value;
+			}
+		}
+	}
+
+	it("forwards deliveryMode, noticeStrict and noticeCapMs from the environment", async () => {
+		const relayInput = await relayInputFor("claude", {
+			AI_WHISPER_NOTICE_PATH: "off",
+			AI_WHISPER_NOTICE_STRICT: "1",
+			AI_WHISPER_NOTICE_IDLE_CAP_MS: "120000",
+		});
+		expect(relayInput?.["deliveryMode"]).toBe("paste");
+		expect(relayInput?.["noticeStrict"]).toBe(true);
+		expect(relayInput?.["noticeCapMs"]).toBe(120_000);
+	});
+
+	it("defaults: notice for claude, native for ezio, not strict, 15 min cap", async () => {
+		const unset = {
+			AI_WHISPER_NOTICE_PATH: undefined,
+			AI_WHISPER_NOTICE_STRICT: undefined,
+			AI_WHISPER_NOTICE_IDLE_CAP_MS: undefined,
+		};
+		const claude = await relayInputFor("claude", unset);
+		expect(claude?.["deliveryMode"]).toBe("notice");
+		expect(claude?.["noticeStrict"]).toBe(false);
+		expect(claude?.["noticeCapMs"]).toBe(900_000);
+		const ezio = await relayInputFor("ezio", unset);
+		expect(ezio?.["deliveryMode"]).toBe("native");
+	});
+});
+
 describe("cli mount wiring", () => {
 	it("registers the collab mount command", () => {
 		const collab = createCli().commands.find((command) => command.name() === "collab");
