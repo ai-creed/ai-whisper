@@ -254,7 +254,7 @@ describe("notice claims", () => {
 		await broker.stop();
 	});
 
-	it("countWorkflowFallbacks counts paste and copy rows for the workflow only", async () => {
+	it("countWorkflowFallbacks counts ladder paste and copy rows for the workflow only", async () => {
 		const broker = boot();
 		const a = await startPendingWorkflow(broker);
 		startCollab(broker, "collab_c2");
@@ -262,8 +262,14 @@ describe("notice claims", () => {
 		expect(broker.control.countWorkflowFallbacks(a.workflowId)).toBe(0);
 		const set = (id: string, col: string, v: string) =>
 			broker.db.prepare(`UPDATE relay_handoff SET ${col} = ? WHERE handoff_id = ?`).run(v, id);
+		// A kill-switch paste (no notice was ever sent) is not a ladder fallback.
 		set(a.handoff.handoffId, "delivery_path", "paste");
 		set(b.handoff.handoffId, "delivery_path", "paste");
+		expect(broker.control.countWorkflowFallbacks(a.workflowId)).toBe(0);
+		expect(broker.control.countWorkflowFallbacks(b.workflowId)).toBe(0);
+		// A paste after a notice is the ladder's request-side fallback.
+		set(a.handoff.handoffId, "notice_sent_at", T2);
+		set(b.handoff.handoffId, "notice_sent_at", T2);
 		expect(broker.control.countWorkflowFallbacks(a.workflowId)).toBe(1);
 		set(a.handoff.handoffId, "capture_path", "copy");
 		expect(broker.control.countWorkflowFallbacks(a.workflowId)).toBe(1); // same row counted once

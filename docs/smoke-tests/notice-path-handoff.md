@@ -19,7 +19,7 @@ real tokens and is operator-run, not CI.
 - Use macOS with real `claude` and `codex` mounts (`whisper collab mount`).
 - Start the workflow with `whisper workflow start` (SDD on a small approved
   spec) unless a run says otherwise.
-- `<n>` in a pane line is the workflow's running fallback count.
+- `<n>` in a pane line is the workflow's running fallback count: its handoffs pasted after a notice was sent, plus its handoffs captured via `/copy`.
 - `whisper collab inspect` shows the `notice path: <n> fallback(s)` line only
   while the workflow is running or paused. Run it mid-run (between handoffs,
   before the final phase completes); the line disappears once the workflow
@@ -120,7 +120,7 @@ Steps:
 Expected:
 - [ ] Today's behavior: the full request is pasted, no one-line notice is typed, and capture works as before.
 - [ ] No `fetched ✓` / `handed back ✓ (reply)` lines.
-- [ ] Evidence rows show `via paste/...`; while the workflow is running, `collab inspect` shows a fallback count equal to the number of handoffs delivered so far. Paste-mode handoffs (`delivery_path='paste'`) count as fallbacks by definition.
+- [ ] Evidence rows show `via paste/...`; while the workflow is running, `collab inspect` shows `notice path: 0 fallback(s)`. Kill-switch pastes are today's delivery path, not ladder fallbacks: only a paste after a notice was sent, or a `/copy` capture, counts.
 
 ## Cleanup
 

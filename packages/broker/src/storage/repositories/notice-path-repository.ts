@@ -232,14 +232,21 @@ export function markHandoffDeliveryPath(
 	);
 }
 
+// Ladder fallbacks only: a paste after a notice was sent, or a /copy capture.
+// A kill-switch paste (no notice ever sent) is today's path, not a fallback.
 export function countWorkflowFallbacks(db: Database.Database, workflowId: string): number {
-	if (!relayHandoffHasColumn(db, "delivery_path") || !relayHandoffHasColumn(db, "capture_path")) {
+	if (
+		!relayHandoffHasColumn(db, "delivery_path") ||
+		!relayHandoffHasColumn(db, "capture_path") ||
+		!relayHandoffHasColumn(db, "notice_sent_at")
+	) {
 		return 0;
 	}
 	const row = db
 		.prepare(
 			`SELECT COUNT(*) AS n FROM relay_handoff
-			  WHERE workflow_id = ? AND (delivery_path = 'paste' OR capture_path = 'copy')`,
+			  WHERE workflow_id = ?
+			    AND ((delivery_path = 'paste' AND notice_sent_at IS NOT NULL) OR capture_path = 'copy')`,
 		)
 		.get(workflowId) as { n: number };
 	return row.n;
