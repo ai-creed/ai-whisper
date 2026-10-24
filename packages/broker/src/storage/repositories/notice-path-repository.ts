@@ -122,3 +122,118 @@ export function getNoticePathFields(
 		replyRefusedAt: row.reply_refused_at,
 	};
 }
+
+export type NoticePathState = {
+	deliveryPath: string | null;
+	noticeSentAt: string | null;
+	reminderSentAt: string | null;
+	nudgeSentAt: string | null;
+	fetchedAt: string | null;
+	capturePath: string | null;
+	repliedAt: string | null;
+	replyRefusedAt: string | null;
+	/** The handoff target seat's session_binding.turn_done_at. */
+	turnDoneAt: string | null;
+};
+
+export function getNoticePathState(
+	db: Database.Database,
+	handoffId: string,
+): NoticePathState | null {
+	const col = (name: string) => (relayHandoffHasColumn(db, name) ? name : `NULL AS ${name}`);
+	const row = db
+		.prepare(
+			`SELECT collab_id, target_agent, ${col("delivery_path")}, ${col("notice_sent_at")},
+			        ${col("reminder_sent_at")}, ${col("nudge_sent_at")}, ${col("fetched_at")},
+			        ${col("capture_path")}, ${col("replied_at")}, ${col("reply_refused_at")}
+			   FROM relay_handoff WHERE handoff_id = ?`,
+		)
+		.get(handoffId) as
+		| {
+				collab_id: string;
+				target_agent: AgentType;
+				delivery_path: string | null;
+				notice_sent_at: string | null;
+				reminder_sent_at: string | null;
+				nudge_sent_at: string | null;
+				fetched_at: string | null;
+				capture_path: string | null;
+				replied_at: string | null;
+				reply_refused_at: string | null;
+		  }
+		| undefined;
+	if (!row) return null;
+	return {
+		deliveryPath: row.delivery_path,
+		noticeSentAt: row.notice_sent_at,
+		reminderSentAt: row.reminder_sent_at,
+		nudgeSentAt: row.nudge_sent_at,
+		fetchedAt: row.fetched_at,
+		capturePath: row.capture_path,
+		repliedAt: row.replied_at,
+		replyRefusedAt: row.reply_refused_at,
+		turnDoneAt: getSessionBindingTurnDone(db, {
+			collabId: row.collab_id,
+			agent: row.target_agent,
+		}),
+	};
+}
+
+// Caller owns the transaction and has already verified the claim preconditions.
+// Returns false (writing nothing) on a DB that predates the columns.
+export function markHandoffNoticeSent(
+	db: Database.Database,
+	input: { handoffId: string; now: string },
+): boolean {
+	if (!relayHandoffHasColumn(db, "notice_sent_at") || !relayHandoffHasColumn(db, "delivery_path")) {
+		return false;
+	}
+	return (
+		db
+			.prepare(
+				`UPDATE relay_handoff SET notice_sent_at = ?, delivery_path = 'notice'
+				  WHERE handoff_id = ? AND notice_sent_at IS NULL`,
+			)
+			.run(input.now, input.handoffId).changes > 0
+	);
+}
+
+export function claimNoticeStep(
+	db: Database.Database,
+	input: { handoffId: string; kind: "reminder" | "nudge"; now: string },
+): boolean {
+	const column = input.kind === "reminder" ? "reminder_sent_at" : "nudge_sent_at";
+	if (!relayHandoffHasColumn(db, column)) return false;
+	return (
+		db
+			.prepare(`UPDATE relay_handoff SET ${column} = ? WHERE handoff_id = ? AND ${column} IS NULL`)
+			.run(input.now, input.handoffId).changes > 0
+	);
+}
+
+// First writer wins, except that a handoff already on the notice path may switch
+// to paste when the ladder falls back.
+export function markHandoffDeliveryPath(
+	db: Database.Database,
+	input: { handoffId: string; path: "paste" | "native" },
+): void {
+	if (!relayHandoffHasColumn(db, "delivery_path")) return;
+	db.prepare(
+		`UPDATE relay_handoff SET delivery_path = ?
+		  WHERE handoff_id = ?
+		    AND (delivery_path IS NULL OR (delivery_path = 'notice' AND ? = 'paste'))`,
+	).run(input.path, input.handoffId, input.path);
+}
+
+export function countWorkflowFallbacks(db: Database.Database, workflowId: string): number {
+	if (!relayHandoffHasColumn(db, "delivery_path") || !relayHandoffHasColumn(db, "capture_path")) {
+		return 0;
+	}
+	const row = db
+		.prepare(
+			`SELECT COUNT(*) AS n FROM relay_handoff
+			  WHERE workflow_id = ? AND (delivery_path = 'paste' OR capture_path = 'copy')`,
+		)
+		.get(workflowId) as { n: number };
+	return row.n;
+}

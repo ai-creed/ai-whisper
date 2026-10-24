@@ -316,6 +316,7 @@ export function handoffBackRelayTxn(
 		targetAgent: AgentType;
 		requestText: string;
 		captureStatus?: "ok" | "no_response_captured_confidently" | "no_response_captured" | null;
+		capturePath?: "copy" | "turn_event" | "native";
 		now: string;
 	},
 ): RelayHandoffRecord {
@@ -334,6 +335,13 @@ export function handoffBackRelayTxn(
 			if (replied?.replied_at) {
 				return current;
 			}
+		}
+
+		if (input.capturePath && relayHandoffHasColumn(db, "capture_path")) {
+			db.prepare("UPDATE relay_handoff SET capture_path = ? WHERE handoff_id = ?").run(
+				input.capturePath,
+				input.handoffId,
+			);
 		}
 
 		const collab = getCollab(db, current.collabId);
