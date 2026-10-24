@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AgentType } from "@ai-whisper/shared";
 import type Database from "better-sqlite3";
+import { withHandbackFragment } from "./handback-fragment.js";
 import { getCollab } from "../storage/repositories/collab-repository.js";
 import { listSessionBindingsForCollab } from "../storage/repositories/session-binding-repository.js";
 import {
@@ -362,7 +363,7 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 				collabId: workflow.collabId,
 				senderAgent: input.sender,
 				targetAgent: input.target,
-				requestText: kickoffText,
+				requestText: withHandbackFragment(kickoffText, handoffId),
 				chainId,
 				roundNumber: 1,
 				maxRounds: input.maxRounds,
@@ -554,7 +555,10 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 			targetAgent: input.target,
 			// Prepend the one-time resume notice (if any) to the FIRST outgoing request
 			// after a resume, then it is cleared — so the agent re-reads changed files.
-			requestText: withResumeNotice(input.workflow.workflowId, input.requestText, input.now),
+			requestText: withHandbackFragment(
+				withResumeNotice(input.workflow.workflowId, input.requestText, input.now),
+				handoffId,
+			),
 			chainId: input.chain.chainId,
 			roundNumber: input.incrementRound
 				? input.chain.currentRound + 1
@@ -647,7 +651,10 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 			targetAgent: target,
 			// Prepend a pending resume notice (consumed once) so a phase-advance kickoff
 			// after a resume also carries the operator's change notice.
-			requestText: withResumeNotice(input.workflow.workflowId, kickoffText, input.now),
+			requestText: withHandbackFragment(
+				withResumeNotice(input.workflow.workflowId, kickoffText, input.now),
+				handoffId,
+			),
 			chainId,
 			roundNumber: 1,
 			maxRounds: phase.maxRounds,
