@@ -463,11 +463,12 @@ export function createMountedTurnOwnedRelay(input: {
 		// capture (cursor's transcript freshness floor) must measure from the paste.
 		promptDeliveredAt.set(handoffId, Date.now());
 		await pasteRequest(handoff);
+		input.onHandoffAccepted?.();
 	}
 
 	// Fetched but unreplied after an explicit signal: capture through /copy.
 	const copyFallbackAnnounced = new Set<string>();
-	async function copyNoticeFallback(handoffId: string): Promise<void> {
+	async function copyNoticeFallback(handoffId: string, expectedPrompt: string): Promise<void> {
 		const accepted = getAcceptedHandoff();
 		if (!accepted || accepted.handoffId !== handoffId) return;
 		if (autoHandbackFiredFor === handoffId) return;
@@ -479,7 +480,8 @@ export function createMountedTurnOwnedRelay(input: {
 				`[ai-whisper] ⚠ ${handoffId} no reply after nudge — capturing via /copy${fallbackCountLine(handoffId, true)}\r\n`,
 			);
 		}
-		await runCopyCaptureLadder(accepted);
+		// The agent's last prompt was a typed notice line, not the request.
+		await runCopyCaptureLadder(accepted, expectedPrompt);
 	}
 
 	const noticeMode = input.deliveryMode === "notice";
@@ -488,6 +490,7 @@ export function createMountedTurnOwnedRelay(input: {
 		currentAgent: input.currentAgent,
 		strict: input.noticeStrict ?? false,
 		capMs: input.noticeCapMs ?? 900_000,
+		deliveryMode: input.deliveryMode ?? "paste",
 		writeLocalMessage: input.writeLocalMessage,
 		submitUserInput: submitText,
 		pasteFallback: pasteNoticeFallback,
@@ -502,6 +505,9 @@ export function createMountedTurnOwnedRelay(input: {
 			autoHandbackFiredFor = null;
 			input.onHandoffAccepted?.();
 		},
+		// A typed ladder line is mount activity: restart the idle clock, as an
+		// accept does (onHandoffAccepted is the mount's idle-clock reset).
+		onLineTyped: () => input.onHandoffAccepted?.(),
 	});
 
 	// ----- Turn-event gate state (push-based handback, §4.1-4.3) -----------------
@@ -931,7 +937,12 @@ export function createMountedTurnOwnedRelay(input: {
 	// The proven /copy capture ladder for an accepted handoff. Reached from the
 	// legacy auto-handback in checkIdleActions and from the notice-path /copy
 	// fallback; it always records capture_path "copy".
-	async function runCopyCaptureLadder(accepted: RelayHandoff): Promise<void> {
+	// expectedPrompt: the text the agent last received for this handoff (cursor
+	// anchors its transcript on it); defaults to the pasted request.
+	async function runCopyCaptureLadder(
+		accepted: RelayHandoff,
+		expectedPrompt: string = accepted.requestText,
+	): Promise<void> {
 		// Retry-on-empty ladder (Mode C fix, 2026-06-03). The auto-handback used
 		// to fire exactly once (autoHandbackFiredFor set here, before the capture
 		// result was known), so a single transient empty /copy on a long claude
@@ -994,7 +1005,7 @@ export function createMountedTurnOwnedRelay(input: {
 			const captureResult = await raceCaptureAgainstWatchdog(
 				() =>
 					input.captureHandbackText?.(turnResult.text ?? "", {
-						expectedPrompt: accepted.requestText,
+						expectedPrompt,
 						promptDeliveredAtMs,
 					}),
 				captureWatchdogMs,
@@ -1584,7 +1595,20 @@ export function createMountedTurnOwnedRelay(input: {
 				return;
 			}
 			// Never capture a notice-path handoff through the legacy /copy ladder.
-			if (noticeDriver.isNoticeHandoff(accepted.handoffId)) return;
+			// Outside notice mode (kill switch, or ezio by misconfiguration) a notice
+			// handoff left by an earlier notice-mode mount is still driven by the
+			// ladder here, so it is never stranded.
+			if (noticeDriver.isNoticeHandoff(accepted.handoffId)) {
+				if (!noticeMode) {
+					await noticeDriver.onIdleTick({
+						pending: null,
+						accepted,
+						idleElapsedMs,
+						gatePassing: true,
+					});
+				}
+				return;
+			}
 
 			if (input.suppressQuiescenceHandback) {
 				// Protocol-native sessions (ezio) suppress AND have no clipboard fallback —

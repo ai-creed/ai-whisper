@@ -20,7 +20,7 @@ export async function stopBrokers(): Promise<void> {
 }
 
 /** A real `:memory:` broker with an orchestrated collab and both seats bound. */
-export function bootBroker(): Broker {
+export function bootBroker(agents: readonly AgentType[] = ["claude", "codex"]): Broker {
 	const broker = createBrokerRuntime({ sqlitePath: ":memory:", host: "127.0.0.1", port: 4321 });
 	brokers.push(broker);
 	broker.control.startCollab({
@@ -31,7 +31,7 @@ export function bootBroker(): Broker {
 		orchestratorMaxRounds: 3,
 		now: T0,
 	});
-	for (const agent of ["claude", "codex"] as const) {
+	for (const agent of agents) {
 		broker.control.setSessionBinding({
 			collabId: COLLAB,
 			agentType: agent,
@@ -43,14 +43,20 @@ export function bootBroker(): Broker {
 	return broker;
 }
 
-export async function startPendingWorkflow(broker: Broker) {
+export async function startPendingWorkflow(
+	broker: Broker,
+	roles: { implementer: AgentType; reviewer: AgentType } = {
+		implementer: "claude",
+		reviewer: "codex",
+	},
+) {
 	const { workflowId } = await runWorkflowStart({
 		broker,
 		collabId: COLLAB,
 		workflowType: "spec-driven-development",
 		specPath: "docs/spec.md",
-		implementer: "claude",
-		reviewer: "codex",
+		implementer: roles.implementer,
+		reviewer: roles.reviewer,
 		now: T0,
 	});
 	await new Promise((r) => setImmediate(r));
@@ -60,6 +66,35 @@ export async function startPendingWorkflow(broker: Broker) {
 	const handoff = row ? broker.control.getRelayHandoff(row.handoffId) : null;
 	if (!handoff) throw new Error("driver did not create a workflow handoff");
 	return { workflowId, handoff };
+}
+
+/** Notice claimed and reminded long ago, never fetched: the next idle tick falls back to paste. */
+export async function unfetchedPastReminder(broker: Broker) {
+	const started = await startPendingWorkflow(broker);
+	const id = started.handoff.handoffId;
+	broker.control.claimWorkflowNotice({ handoffId: id, now: isoAgo(5 * 60_000) });
+	broker.control.claimNoticeStep({ handoffId: id, kind: "reminder", now: isoAgo(2 * 60_000) });
+	return started;
+}
+
+/** Fetched, turn done, nudged long ago, no reply: the next idle tick captures via /copy. */
+export async function nudgedAfterTurnDone(
+	broker: Broker,
+	roles?: Parameters<typeof startPendingWorkflow>[1],
+) {
+	const started = await startPendingWorkflow(broker, roles);
+	const id = started.handoff.handoffId;
+	const target = started.handoff.targetAgent;
+	broker.control.claimWorkflowNotice({ handoffId: id, now: isoAgo(10 * 60_000) });
+	broker.control.fetchWorkflowHandoff({
+		handoffId: id,
+		collabId: COLLAB,
+		callerAgent: target,
+		now: isoAgo(8 * 60_000),
+	});
+	broker.control.recordSeatTurnDone({ collabId: COLLAB, agent: target, now: isoAgo(6 * 60_000) });
+	broker.control.claimNoticeStep({ handoffId: id, kind: "nudge", now: isoAgo(4 * 60_000) });
+	return started;
 }
 
 export function makeRelay(
@@ -76,6 +111,8 @@ export function makeRelay(
 			meta?: { expectedPrompt?: string; promptDeliveredAtMs?: number },
 		) => Promise<string | CaptureHandbackResult | null>;
 		onHandoffAccepted?: () => void;
+		/** Called for every submitted line, after it is recorded. */
+		onSubmit?: (text: string) => void;
 	},
 ) {
 	const submitted: string[] = [];
@@ -93,6 +130,7 @@ export function makeRelay(
 		writeUserInput: vi.fn(),
 		submitUserInput: (text) => {
 			submitted.push(text);
+			opts.onSubmit?.(text);
 			return Promise.resolve();
 		},
 		openComposer: vi.fn(() => Promise.resolve(null)),

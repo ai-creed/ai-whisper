@@ -21,18 +21,26 @@ const NONE: NoticeAction = { kind: "none" };
 
 // Pure ladder decision for a notice-path handoff. The first matching row wins.
 export function decideNoticeStep(input: NoticeStepInput): NoticeAction {
-	const action = decideRow(input);
-	if (!input.strict) return action;
+	return applyStrictMode(decideRow(input), input.handoffId, input.strict);
+}
+
+// Strict mode (D10): a paste or /copy fallback escalates instead.
+export function applyStrictMode(
+	action: NoticeAction,
+	handoffId: string,
+	strict: boolean,
+): NoticeAction {
+	if (!strict) return action;
 	if (action.kind === "paste_fallback") {
 		return {
 			kind: "escalate",
-			reason: `strict mode: paste fallback suppressed (handoff ${input.handoffId})`,
+			reason: `strict mode: paste fallback suppressed (handoff ${handoffId})`,
 		};
 	}
 	if (action.kind === "copy_fallback") {
 		return {
 			kind: "escalate",
-			reason: `strict mode: copy fallback suppressed (handoff ${input.handoffId})`,
+			reason: `strict mode: copy fallback suppressed (handoff ${handoffId})`,
 		};
 	}
 	return action;

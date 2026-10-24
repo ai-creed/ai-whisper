@@ -7,9 +7,11 @@ import {
 	bootBroker,
 	isoAgo,
 	makeRelay,
+	nudgedAfterTurnDone,
 	rawRow,
 	startPendingWorkflow,
 	stopBrokers,
+	unfetchedPastReminder,
 } from "./helpers/notice-path-broker.ts";
 
 // The /copy ladder traces every capture with console.warn; keep test output clean.
@@ -39,32 +41,6 @@ function turnEvent(message: string, inputMessages: string[]): TurnEvent {
 		inputMessages,
 		receivedAt: new Date().toISOString(),
 	};
-}
-
-/** Notice claimed and reminded long ago, never fetched: the next idle tick falls back to paste. */
-async function unfetchedPastReminder(broker: Broker) {
-	const started = await startPendingWorkflow(broker);
-	const id = started.handoff.handoffId;
-	broker.control.claimWorkflowNotice({ handoffId: id, now: isoAgo(5 * 60_000) });
-	broker.control.claimNoticeStep({ handoffId: id, kind: "reminder", now: isoAgo(2 * 60_000) });
-	return started;
-}
-
-/** Fetched, turn done, nudged long ago, no reply: the next idle tick captures via /copy. */
-async function nudgedAfterTurnDone(broker: Broker) {
-	const started = await startPendingWorkflow(broker);
-	const id = started.handoff.handoffId;
-	const target = started.handoff.targetAgent;
-	broker.control.claimWorkflowNotice({ handoffId: id, now: isoAgo(10 * 60_000) });
-	broker.control.fetchWorkflowHandoff({
-		handoffId: id,
-		collabId: COLLAB,
-		callerAgent: target,
-		now: isoAgo(8 * 60_000),
-	});
-	broker.control.recordSeatTurnDone({ collabId: COLLAB, agent: target, now: isoAgo(6 * 60_000) });
-	broker.control.claimNoticeStep({ handoffId: id, kind: "nudge", now: isoAgo(4 * 60_000) });
-	return started;
 }
 
 function reply(broker: Broker, handoffId: string, callerAgent: Parameters<

@@ -1,6 +1,6 @@
 import type { NoticePathState } from "@ai-whisper/broker";
 import type { AgentType } from "@ai-whisper/shared";
-import { decideNoticeStep } from "./notice-ladder.js";
+import { applyStrictMode, decideNoticeStep, type NoticeAction } from "./notice-ladder.js";
 import { buildNoticeLine, type NoticeKind } from "./notice-text.js";
 
 export type NoticeRelayHandoff = {
@@ -39,14 +39,21 @@ export type NoticePathDriverDeps = {
 	currentAgent: AgentType;
 	strict: boolean;
 	capMs: number;
+	/** The mount's delivery mode. Only "notice" claims new handoffs; every mode
+	 *  keeps driving an accepted notice handoff, and "paste" (the kill switch)
+	 *  sends an unfetched one straight to the paste fallback. Default "notice". */
+	deliveryMode?: "notice" | "native" | "paste";
 	writeLocalMessage(text: string): void;
 	submitUserInput(text: string): Promise<void>;
 	pasteFallback(handoffId: string): Promise<void>;
-	copyFallback(handoffId: string): Promise<void>;
+	/** expectedPrompt is the last line the mount typed for the handoff. */
+	copyFallback(handoffId: string, expectedPrompt: string): Promise<void>;
 	now(): Date;
 	/** Runs after the broker claims the initial notice and before it is typed,
 	 *  so the relay can keep its accept-time bookkeeping coherent. */
 	onNoticeClaimed?(handoffId: string): void;
+	/** Runs after each notice, reminder or nudge line is typed. */
+	onLineTyped?(handoffId: string): void;
 };
 
 export type NoticeIdleTick = {
@@ -59,6 +66,13 @@ export type NoticeIdleTick = {
 export type NoticePathDriver = ReturnType<typeof createNoticePathDriver>;
 
 const ESCALATION_RETRY_MS = 30_000;
+
+/** The last line the mount typed for a notice handoff, from the broker's claims. */
+function lastTypedKind(state: NoticePathState): NoticeKind {
+	if (state.nudgeSentAt !== null) return "nudge";
+	if (state.reminderSentAt !== null) return "reminder";
+	return "notice";
+}
 
 /** Pane line for the owner card while a notice-path handoff waits for idle. */
 export function buildQueuedLine(handoffId: string, meta: NoticeWorkflowMeta | null): string {
@@ -143,7 +157,35 @@ export function createNoticePathDriver(deps: NoticePathDriverDeps) {
 		watched.add(handoffId);
 		deps.onNoticeClaimed?.(handoffId);
 		await deps.submitUserInput(typedLine("notice", handoffId));
+		deps.onLineTyped?.(handoffId);
 		writeLine(`${handoffId} notice sent`);
+	}
+
+	function decideStep(
+		handoffId: string,
+		state: NoticePathState,
+		tick: NoticeIdleTick,
+		now: Date,
+	): NoticeAction {
+		// Kill switch: an unfetched notice handoff left by a notice-mode mount is
+		// pasted on the next idle tick instead of waiting out the reminder.
+		if (
+			deps.deliveryMode === "paste" &&
+			state.deliveryPath === "notice" &&
+			state.fetchedAt === null &&
+			state.repliedAt === null &&
+			state.capturePath === null
+		) {
+			return applyStrictMode({ kind: "paste_fallback" }, handoffId, deps.strict);
+		}
+		return decideNoticeStep({
+			handoffId,
+			state,
+			idle: { gatePassing: tick.gatePassing, idleElapsedMs: tick.idleElapsedMs },
+			nowMs: now.getTime(),
+			capMs: deps.capMs,
+			strict: deps.strict,
+		});
 	}
 
 	async function runLadder(handoffId: string, tick: NoticeIdleTick): Promise<void> {
@@ -156,14 +198,7 @@ export function createNoticePathDriver(deps: NoticePathDriverDeps) {
 			return;
 		}
 		const now = deps.now();
-		const action = decideNoticeStep({
-			handoffId,
-			state,
-			idle: { gatePassing: tick.gatePassing, idleElapsedMs: tick.idleElapsedMs },
-			nowMs: now.getTime(),
-			capMs: deps.capMs,
-			strict: deps.strict,
-		});
+		const action = decideStep(handoffId, state, tick, now);
 		switch (action.kind) {
 			case "none":
 				return;
@@ -173,14 +208,16 @@ export function createNoticePathDriver(deps: NoticePathDriverDeps) {
 				const claimed =
 					control.claimNoticeStep?.({ handoffId, kind: action.kind, now: now.toISOString() }) ??
 					false;
-				if (claimed) await deps.submitUserInput(typedLine(action.kind, handoffId));
+				if (!claimed) return;
+				await deps.submitUserInput(typedLine(action.kind, handoffId));
+				deps.onLineTyped?.(handoffId);
 				return;
 			}
 			case "paste_fallback":
 				await deps.pasteFallback(handoffId);
 				return;
 			case "copy_fallback":
-				await deps.copyFallback(handoffId);
+				await deps.copyFallback(handoffId, typedLine(lastTypedKind(state), handoffId));
 				return;
 			case "escalate": {
 				const retryAt = escalationRetryAt.get(handoffId);
@@ -232,7 +269,11 @@ export function createNoticePathDriver(deps: NoticePathDriverDeps) {
 		async onIdleTick(tick: NoticeIdleTick): Promise<boolean> {
 			observeWatched();
 			const pending =
-				tick.pending !== null && usesNoticePath(tick.pending.handoffId) ? tick.pending : null;
+				(deps.deliveryMode ?? "notice") === "notice" &&
+				tick.pending !== null &&
+				usesNoticePath(tick.pending.handoffId)
+					? tick.pending
+					: null;
 			const accepted =
 				tick.accepted !== null && isNoticeHandoff(tick.accepted.handoffId) ? tick.accepted : null;
 			if (pending === null && accepted === null) return false;
