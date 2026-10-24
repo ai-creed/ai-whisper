@@ -20,6 +20,11 @@ real tokens and is operator-run, not CI.
 - Start the workflow with `whisper workflow start` (SDD on a small approved
   spec) unless a run says otherwise.
 - `<n>` in a pane line is the workflow's running fallback count.
+- `whisper collab inspect` shows the `notice path: <n> fallback(s)` line only
+  while the workflow is running or paused. Run it mid-run (between handoffs,
+  before the final phase completes); the line disappears once the workflow
+  completes or halts. After a halt, use the dashboard evidence `via ...`
+  labels instead.
 
 Pane lines referenced below (display only):
 
@@ -39,13 +44,13 @@ Setup: scratch state root and workspace; claude and codex mounted.
 
 Steps:
 1. Start an SDD run on a small spec and let it finish end to end.
-2. Run `whisper collab inspect`.
+2. While the workflow is still running (between handoffs, before the final phase completes), run `whisper collab inspect`.
 
 Expected:
 - [ ] Each handoff shows `queued`, `notice sent`, `fetched ✓`, then `handed back ✓ (reply)`.
 - [ ] No line starting `[ai-whisper] ⚠` appears in either pane.
 - [ ] The workflow reaches done.
-- [ ] `collab inspect` shows `notice path: 0 fallback(s)` for the workflow.
+- [ ] Mid-run, `collab inspect` shows `notice path: 0 fallback(s)` for the workflow (the line is absent once the workflow completes).
 - [ ] Dashboard evidence rows show `via notice/reply`.
 
 ## (b) Forced request-side fallback
@@ -62,7 +67,7 @@ Expected:
 - [ ] One reminder line is typed after an idle window (`Reminder: handoff <ho_id> is still unread`).
 - [ ] Then `⚠ <ho_id> not fetched after 2 notices — falling back to paste (fallback 1 in <wf_id>)`.
 - [ ] Today's paste and capture follow; the workflow continues.
-- [ ] `collab inspect` shows `notice path: 1 fallback(s) in <wf_id>`.
+- [ ] While the workflow is still running, `collab inspect` shows `notice path: 1 fallback(s) in <wf_id>`.
 - [ ] The evidence row shows `via paste/...`.
 
 ## (c) Forced reply-side fallback
@@ -78,7 +83,7 @@ Expected:
 - [ ] A nudge is typed (`Handoff <ho_id> has no reply yet`).
 - [ ] If still ignored: `⚠ <ho_id> no reply after nudge — capturing via /copy (fallback <n> in <wf_id>)`.
 - [ ] The `/copy` capture completes and the workflow continues.
-- [ ] The evidence row shows `via notice/copy`; `collab inspect` counts the fallback.
+- [ ] The evidence row shows `via notice/copy`; while the workflow is still running, `collab inspect` counts the fallback.
 
 ## (d) D12: no reply and no turn done
 
@@ -93,6 +98,7 @@ Expected:
 - [ ] Then `⚠ <ho_id> no reply and no turn done — escalating for operator review`.
 - [ ] The workflow halts with reason `no reply and no turn done after 1 min idle (handoff <ho_id>)`.
 - [ ] No `/copy` capture occurs.
+- [ ] The workflow ends halted, so `collab inspect` no longer shows the notice-path line. Check the count before the escalation, or read the dashboard evidence `via ...` labels after the halt.
 
 ## (e) Strict mode with (b)
 
@@ -102,6 +108,7 @@ Expected:
 - [ ] Reminder is typed as in (b).
 - [ ] Instead of a paste, the workflow halts with reason `strict mode: paste fallback suppressed (handoff <ho_id>)`.
 - [ ] No handoff text is pasted into the pane.
+- [ ] The workflow ends halted, so `collab inspect` no longer shows the notice-path line. Check the count before the halt, or read the dashboard evidence `via ...` labels after it.
 
 ## (f) Kill switch
 
@@ -113,7 +120,7 @@ Steps:
 Expected:
 - [ ] Today's behavior: the full request is pasted, no one-line notice is typed, and capture works as before.
 - [ ] No `fetched ✓` / `handed back ✓ (reply)` lines.
-- [ ] Evidence rows show `via paste/...`; `collab inspect` counts no notice-path fallbacks.
+- [ ] Evidence rows show `via paste/...`; while the workflow is running, `collab inspect` shows a fallback count equal to the number of handoffs delivered so far. Paste-mode handoffs (`delivery_path='paste'`) count as fallbacks by definition.
 
 ## Cleanup
 
