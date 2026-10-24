@@ -23,6 +23,34 @@ import { getLiveSessionBrokerTempRoot } from "./paths.js";
 
 export type MountTarget = AgentType;
 
+export type DeliveryMode = "notice" | "native" | "paste";
+
+const NOTICE_CAP_DEFAULT_MS = 900_000;
+const NOTICE_CAP_FLOOR_MS = 60_000;
+
+/** ezio keeps its native path; AI_WHISPER_NOTICE_PATH=off is the paste kill switch. */
+export function getDeliveryModeForTarget(
+	target: MountTarget,
+	env: NodeJS.ProcessEnv = process.env,
+): DeliveryMode {
+	if (target === "ezio") return "native";
+	if (env.AI_WHISPER_NOTICE_PATH === "off") return "paste";
+	return "notice";
+}
+
+/** AI_WHISPER_NOTICE_IDLE_CAP_MS: garbage/empty -> default, below floor -> floor. */
+export function parseNoticeCapMs(env: NodeJS.ProcessEnv = process.env): number {
+	const raw = env.AI_WHISPER_NOTICE_IDLE_CAP_MS;
+	if (raw === undefined || raw.trim() === "") return NOTICE_CAP_DEFAULT_MS;
+	const n = Number(raw);
+	if (!Number.isFinite(n)) return NOTICE_CAP_DEFAULT_MS;
+	return Math.max(NOTICE_CAP_FLOOR_MS, Math.floor(n));
+}
+
+export function parseNoticeStrict(env: NodeJS.ProcessEnv = process.env): boolean {
+	return env.AI_WHISPER_NOTICE_STRICT === "1";
+}
+
 export function getInteractiveSessionExecArgsForTarget(
 	target: MountTarget,
 	turnEvents?: { claudeSettingsFile?: string; codexNotify?: string[] },

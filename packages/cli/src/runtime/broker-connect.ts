@@ -98,7 +98,9 @@ export function connectAgentCommand(input: {
 	context: VersionCheckContext;
 	cliVersion: string;
 	sqlitePath?: string;
+	env?: NodeJS.ProcessEnv;
 }): AgentCommandConnection {
+	const stampedCollab = (input.env ?? process.env).AI_WHISPER_COLLAB;
 	const db = openDatabase(input.sqlitePath ?? getSharedSqlitePath());
 	const close = (): void => {
 		if (db.open) db.close();
@@ -108,6 +110,7 @@ export function connectAgentCommand(input: {
 		resolved = resolveCollab({
 			db,
 			cwd: input.cwd,
+			...(stampedCollab ? { collabIdOverride: stampedCollab } : {}),
 			requireActive: true,
 			requireDaemon: true,
 		});

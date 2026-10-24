@@ -488,6 +488,9 @@ export async function runCollabMount(input: {
 		// no-assignment paths (--no-duo, fallback outcome, claim failure) any
 		// stale stamps inherited from the parent shell are CLEARED for the same
 		// reason — otherwise the child would pick up another mount's character.
+		// Agent commands (`whisper handoff show/reply`, `turn done`) resolve their
+		// collab from this stamp, so they work from any cwd inside the pane.
+		process.env.AI_WHISPER_COLLAB = resolved.collabId;
 		if (duoAssignmentForEnv !== null) {
 			process.env.AI_WHISPER_CHARACTER = duoAssignmentForEnv.characterName;
 			process.env.AI_WHISPER_CHARACTER_ROLE = duoAssignmentForEnv.role;

@@ -6,6 +6,8 @@ import type Database from "better-sqlite3";
 import { applyMigrations } from "../packages/broker/src/storage/apply-migrations.ts";
 import { openDatabase } from "../packages/broker/src/storage/open-database.ts";
 import { insertBrokerDaemon, updateBrokerDaemonPid } from "../packages/broker/src/storage/repositories/broker-daemon-repository.ts";
+import { mkdirSync } from "node:fs";
+import { runAgentCommand } from "../packages/cli/src/commands/agent-command.ts";
 import { connectAgentCommand } from "../packages/cli/src/runtime/broker-connect.ts";
 import { workspaceIdFromPath } from "../packages/cli/src/runtime/workspace-id.ts";
 
@@ -105,5 +107,54 @@ describe("connectAgentCommand", () => {
 		expect(r.reason).toBe("unresolved");
 		expect(r.collabId).toBeNull();
 		expect(r.db).toBeNull();
+	});
+
+	it("resolves via AI_WHISPER_COLLAB from a non-root cwd", () => {
+		const { sqlitePath, cwd } = buildFixture({ cliVersion: "0.17.0", keepCliVersion: true });
+		const sub = join(cwd, "sub", "dir");
+		mkdirSync(sub, { recursive: true });
+		const r = connectAgentCommand({
+			cwd: sub,
+			context: "show",
+			cliVersion: "0.17.0",
+			sqlitePath,
+			env: { AI_WHISPER_COLLAB: "c1" },
+		});
+		expect(r.ok).toBe(true);
+		if (!r.ok) throw new Error("unreachable");
+		expect(r.collabId).toBe("c1");
+		r.close();
+	});
+
+	it("falls back to cwd when AI_WHISPER_COLLAB is unset or empty", () => {
+		const { sqlitePath, cwd } = buildFixture({ cliVersion: "0.17.0", keepCliVersion: true });
+		for (const env of [{}, { AI_WHISPER_COLLAB: "" }]) {
+			const r = connectAgentCommand({ cwd, context: "show", cliVersion: "0.17.0", sqlitePath, env });
+			expect(r.ok).toBe(true);
+			r.close();
+		}
+		const other = mkdtempSync(join(tmpdir(), "ac-other-"));
+		const bad = connectAgentCommand({ cwd: other, context: "show", cliVersion: "0.17.0", sqlitePath, env: {} });
+		expect(bad.ok).toBe(false);
+	});
+
+	it("an AI_WHISPER_COLLAB naming an unknown collab gives the resolver's guidance failure", () => {
+		const { sqlitePath, cwd } = buildFixture({ cliVersion: "0.17.0", keepCliVersion: true });
+		const result = runAgentCommand({
+			context: "show",
+			refuseBeforeConnect: null,
+			connect: () =>
+				connectAgentCommand({
+					cwd,
+					context: "show",
+					cliVersion: "0.17.0",
+					sqlitePath,
+					env: { AI_WHISPER_COLLAB: "nope" },
+				}),
+			run: () => ({ exitCode: 0, stdout: "ran" }),
+		});
+		expect(result.exitCode).toBe(1);
+		expect(result.stdout).toContain("no collab found for id nope");
+		expect(result.stdout).not.toBe("ran");
 	});
 });

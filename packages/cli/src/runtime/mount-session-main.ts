@@ -38,6 +38,9 @@ import { runCompanionAgentLoop } from "./companion-agent-loop.js";
 import {
 	createInteractiveSessionForTarget,
 	createProviderForTarget,
+	getDeliveryModeForTarget,
+	parseNoticeCapMs,
+	parseNoticeStrict,
 } from "./providers.js";
 import { createContextInjector } from "./context-injector.js";
 import { createCliSessionId } from "./id-factory.js";
@@ -868,6 +871,9 @@ export function createMountSessionRuntime(input: {
 						}
 					})(),
 					eventPathEnabled,
+					deliveryMode: getDeliveryModeForTarget(input.target),
+					noticeStrict: parseNoticeStrict(),
+					noticeCapMs: parseNoticeCapMs(),
 					writeLocalMessage: (text) => interactiveSession.sendLocalMessage(text),
 					writeUserInput: (text) => writeInjectedInput("mounted-inject", text),
 					submitUserInput: submitInjectedInput,

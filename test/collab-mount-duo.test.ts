@@ -230,6 +230,37 @@ describe("runCollabMount duo banner (pre-spawn claim)", () => {
 		expect(capturedCharacterRoleEnv).toBe(assignment.role);
 	});
 
+	it("collab mount stamps AI_WHISPER_COLLAB before runtime.start()", async () => {
+		const stateRoot = tempStateRoot();
+		process.env.AI_WHISPER_STATE_ROOT = stateRoot;
+		const prevCollab = process.env.AI_WHISPER_COLLAB;
+		process.env.AI_WHISPER_COLLAB = "stale-collab";
+		try {
+			const workspaceRoot = join(stateRoot, "ws-collab-stamp");
+			mkdirSync(workspaceRoot, { recursive: true });
+			const collabId = seedActiveCollab(workspaceRoot);
+			let capturedCollabEnv: string | undefined;
+			const fakeRuntime = {
+				start: vi.fn(async () => {
+					capturedCollabEnv = process.env.AI_WHISPER_COLLAB;
+				}),
+			};
+			await runCollabMount({
+				workspaceRoot,
+				target: "codex",
+				now: new Date().toISOString(),
+				resolveCurrentTty: () => "/dev/null",
+				createRuntime: () => fakeRuntime as never,
+				assessBroker: okBroker,
+				duoFlag: false,
+			});
+			expect(capturedCollabEnv).toBe(collabId);
+		} finally {
+			if (prevCollab === undefined) delete process.env.AI_WHISPER_COLLAB;
+			else process.env.AI_WHISPER_COLLAB = prevCollab;
+		}
+	});
+
 	it("--no-duo mount writes no banner and claims nothing", async () => {
 		const stateRoot = tempStateRoot();
 		process.env.AI_WHISPER_STATE_ROOT = stateRoot;
