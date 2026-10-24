@@ -522,6 +522,24 @@ describe("buildInspectorState — evidence", () => {
 		expect(s.evidence.diagnostics.some((d) => d.kind === "evaluator")).toBe(true);
 		expect(s.evidence.likelyCause).toMatch(/confidence declining|under-specified|maxRounds/);
 	});
+	it("labels each evidence item with its delivery and capture path", () => {
+		const base = handoffs[0]!;
+		const rows: RelayHandoffLogRow[] = [
+			{ ...base, handoffId: "p1", deliveryPath: "notice", capturePath: "reply" },
+			{ ...base, handoffId: "p2", deliveryPath: "notice", capturePath: null },
+			{ ...base, handoffId: "p3", deliveryPath: null, capturePath: "copy" },
+			{ ...base, handoffId: "p4", deliveryPath: null, capturePath: null },
+			{ ...base, handoffId: "p5" },
+		];
+		const s = buildInspectorState({
+			snapshot: { ...liveSnap }, phaseRuns: [], phaseMaxRounds: {}, costRows: [],
+			workflowCreatedAt: "2026-05-20T00:00:00.000Z", chainId: "ch1",
+			evidenceHandoffs: rows, evaluatorDiags: [], captureDiags: [], focusedPhaseRunId: "pr2",
+		});
+		expect(s.evidence.items.map((i) => i.via)).toEqual([
+			"via notice/reply", "via notice/-", "via -/copy", null, null,
+		]);
+	});
 	it("capture issue drives the likely cause when not escalated", () => {
 		const s = buildInspectorState({
 			snapshot: { ...liveSnap, chain: { currentRound: 2, maxRounds: 5, status: "active" } },

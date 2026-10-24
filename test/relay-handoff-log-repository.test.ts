@@ -221,6 +221,30 @@ describe("listRelayHandoffs", () => {
 	});
 });
 
+describe("listRelayHandoffs notice-path fields", () => {
+	it("carries deliveryPath and capturePath, null when unset", () => {
+		const db = freshDb();
+		insertHandoff(db, { id: "n1", collab: "c1", createdAt: "2026-05-19T00:00:01.000Z" });
+		insertHandoff(db, { id: "n2", collab: "c1", createdAt: "2026-05-19T00:00:02.000Z" });
+		db.prepare(
+			"UPDATE relay_handoff SET delivery_path = 'notice', capture_path = 'reply' WHERE handoff_id = 'n1'",
+		).run();
+		const rows = listRelayHandoffs(db, { collabId: "c1" });
+		expect(rows[0]).toMatchObject({ handoffId: "n1", deliveryPath: "notice", capturePath: "reply" });
+		expect(rows[1]).toMatchObject({ handoffId: "n2", deliveryPath: null, capturePath: null });
+	});
+
+	it("reads both as null on a database without the columns", () => {
+		const db = freshDb();
+		insertHandoff(db, { id: "o1", collab: "c1", createdAt: "2026-05-19T00:00:01.000Z" });
+		db.exec("ALTER TABLE relay_handoff DROP COLUMN delivery_path");
+		db.exec("ALTER TABLE relay_handoff DROP COLUMN capture_path");
+		const rows = listRelayHandoffs(db, { collabId: "c1" });
+		expect(rows).toHaveLength(1);
+		expect(rows[0]).toMatchObject({ deliveryPath: null, capturePath: null });
+	});
+});
+
 describe("control.listRelayHandoffs", () => {
 	it("is exposed on broker.control, collab-scoped, and reflects in-place updates", () => {
 		const dir = mkdtempSync(join(tmpdir(), "rh-ctl-"));

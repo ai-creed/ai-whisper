@@ -642,6 +642,7 @@ export function Inspector(props: {
 								);
 							})()}
 							{` ${it.confidence ?? "-"} ${it.reasonExcerpt}`}
+							{it.via ? ` ${it.via}` : ""}
 						</Text>
 					))}
 					{s.evidence.diagnostics.map((d, i) => (

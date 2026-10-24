@@ -89,6 +89,8 @@ export type EvidenceItem = {
 	confidence: number | null;
 	reasonExcerpt: string;
 	captureStatus: string | null;
+	// `via <delivery>/<capture>`; null for legacy rows with neither path recorded.
+	via: string | null;
 };
 export type DiagItem = { kind: "evaluator" | "capture"; text: string };
 export type CostSummary = {
@@ -485,6 +487,14 @@ function minIso(rows: RunCostRow[]): string | null {
 	return m;
 }
 
+function pathLabel(
+	delivery: string | null | undefined,
+	capture: string | null | undefined,
+): string | null {
+	if (!delivery && !capture) return null;
+	return `via ${delivery ?? "-"}/${capture ?? "-"}`;
+}
+
 export function buildInspectorState(input: {
 	snapshot: RelayViewSnapshot;
 	phaseRuns: PhaseRunRef[];
@@ -581,6 +591,7 @@ export function buildInspectorState(input: {
 		confidence: h.evaluatorConfidence,
 		reasonExcerpt: excerpt(h.evaluatorReason),
 		captureStatus: h.captureStatus,
+		via: pathLabel(h.deliveryPath, h.capturePath),
 	}));
 	const diagnostics: DiagItem[] = [
 		...input.evaluatorDiags.map((d) => ({

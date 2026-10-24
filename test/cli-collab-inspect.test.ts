@@ -650,6 +650,58 @@ describe("lastCaptureStatus in inspect snapshot", () => {
 	});
 });
 
+describe("notice path fallback line in inspect output", () => {
+	const control = (workflows: Array<{ workflowId: string; status: string }>, count: number) => ({
+		listThreads: () => [],
+		listSessionBindings: () => [],
+		listSessions: () => [],
+		getRelayTurnState: () => ({
+			collabId: "collab_np",
+			turnOwner: "none" as const,
+			waitingAgent: null,
+			unresolvedHandoffId: null,
+			handoffState: "idle" as const,
+			handoffAgeMs: null,
+		}),
+		getLatestHandedBackHandoff: () => null,
+		listWorkItems: () => [],
+		listReplies: () => [],
+		listWorkflowsForCollab: () => workflows,
+		countWorkflowFallbacks: (id: string) => (id === "wf_live" ? count : -1),
+	});
+	const render = (workflows: Array<{ workflowId: string; status: string }>, count = 0) =>
+		formatInspectSnapshot({
+			...buildInspectSnapshot({
+				broker: { control: control(workflows, count) } as never,
+				state: minimalState("collab_np"),
+				now: "2026-04-10T00:02:00.000Z",
+			}),
+			watch: false,
+		});
+
+	it("prints the fallback count for the active workflow", () => {
+		const out = render(
+			[
+				{ workflowId: "wf_old", status: "done" },
+				{ workflowId: "wf_live", status: "running" },
+			],
+			2,
+		);
+		expect(out).toContain("notice path: 2 fallback(s) in wf_live\n");
+	});
+
+	it("prints zero fallbacks too", () => {
+		expect(render([{ workflowId: "wf_live", status: "paused" }], 0)).toContain(
+			"notice path: 0 fallback(s) in wf_live",
+		);
+	});
+
+	it("omits the line when no workflow is active", () => {
+		expect(render([{ workflowId: "wf_old", status: "done" }])).not.toContain("notice path:");
+		expect(render([])).not.toContain("notice path:");
+	});
+});
+
 describe("orchestrator fields in inspect output", () => {
 	it("renders orchestrator enabled, chain status, and round in formatted output when orchestratorEnabled is true", () => {
 		const output = formatInspectSnapshot({
