@@ -452,31 +452,60 @@ describe("notice-path fallbacks", () => {
 	});
 
 	describe("escalation bookkeeping", () => {
-		it("a throwing verdict leaves the handoff retryable on a later tick", async () => {
-			const broker = bootBroker();
-			const { handoff, workflowId } = await unfetchedPastReminder(broker);
-			const id = handoff.handoffId;
-			const warn = vi.mocked(console.warn);
-			const verdictSpy = vi.spyOn(broker.control, "escalateNoticeHandoff");
-			verdictSpy.mockImplementationOnce(() => {
-				throw new Error("database is locked");
-			});
-			const { relay, local } = makeRelay(broker, {
-				currentAgent: handoff.targetAgent,
-				deliveryMode: "notice",
-				noticeStrict: true,
-			});
-			const line = `[ai-whisper] ⚠ ${id} strict mode: paste fallback suppressed (handoff ${id})\r\n`;
+		it("a throwing escalation stays retryable, backs off 30 s and warns once per distinct error", async () => {
+			vi.useFakeTimers({ toFake: ["Date"] });
+			try {
+				const broker = bootBroker();
+				const { handoff, workflowId } = await unfetchedPastReminder(broker);
+				const id = handoff.handoffId;
+				const warn = vi.mocked(console.warn);
+				const escalateSpy = vi.spyOn(broker.control, "escalateNoticeHandoff");
+				escalateSpy
+					.mockImplementationOnce(() => {
+						throw new Error("database is locked");
+					})
+					.mockImplementationOnce(() => {
+						throw new Error("database is locked");
+					})
+					.mockImplementationOnce(() => {
+						throw new Error("disk I/O error");
+					});
+				const { relay, local } = makeRelay(broker, {
+					currentAgent: handoff.targetAgent,
+					deliveryMode: "notice",
+					noticeStrict: true,
+				});
+				const line = `[ai-whisper] ⚠ ${id} strict mode: paste fallback suppressed (handoff ${id})\r\n`;
+				const escalationWarns = (needle: string) =>
+					warn.mock.calls.filter((c) => String(c[0]).includes(needle)).length;
 
-			await relay.checkIdleActions(IDLE_MS);
-			expect(local).not.toContain(line);
-			expect(warn).toHaveBeenCalledWith(expect.stringContaining("database is locked"));
+				await relay.checkIdleActions(IDLE_MS); // throws "locked"
+				expect(local).not.toContain(line);
+				expect(escalationWarns("database is locked")).toBe(1);
 
-			await relay.checkIdleActions(IDLE_MS);
-			await relay.checkIdleActions(IDLE_MS);
-			expect(verdictSpy).toHaveBeenCalledTimes(2);
-			expect(local.filter((l) => l === line)).toHaveLength(1);
-			expect(broker.control.getWorkflow(workflowId)?.status).toBe("halted");
+				vi.setSystemTime(Date.now() + 1_000);
+				await relay.checkIdleActions(IDLE_MS); // inside the back-off: not retried
+				expect(escalateSpy).toHaveBeenCalledTimes(1);
+
+				vi.setSystemTime(Date.now() + 30_000);
+				await relay.checkIdleActions(IDLE_MS); // throws "locked" again: no new warn
+				expect(escalateSpy).toHaveBeenCalledTimes(2);
+				expect(escalationWarns("database is locked")).toBe(1);
+
+				vi.setSystemTime(Date.now() + 30_000);
+				await relay.checkIdleActions(IDLE_MS); // a different error warns once
+				expect(escalateSpy).toHaveBeenCalledTimes(3);
+				expect(escalationWarns("disk I/O error")).toBe(1);
+
+				vi.setSystemTime(Date.now() + 30_000);
+				await relay.checkIdleActions(IDLE_MS); // succeeds
+				await relay.checkIdleActions(IDLE_MS);
+				expect(escalateSpy).toHaveBeenCalledTimes(4);
+				expect(local.filter((l) => l === line)).toHaveLength(1);
+				expect(broker.control.getWorkflow(workflowId)?.status).toBe("halted");
+			} finally {
+				vi.useRealTimers();
+			}
 		});
 
 		it("noop-already-applied prints no escalating line and is not retried", async () => {

@@ -58,6 +58,8 @@ export type NoticeIdleTick = {
 
 export type NoticePathDriver = ReturnType<typeof createNoticePathDriver>;
 
+const ESCALATION_RETRY_MS = 30_000;
+
 /** Pane line for the owner card while a notice-path handoff waits for idle. */
 export function buildQueuedLine(handoffId: string, meta: NoticeWorkflowMeta | null): string {
 	const phase = meta?.phaseName ?? "-";
@@ -73,6 +75,10 @@ export function createNoticePathDriver(deps: NoticePathDriverDeps) {
 	const watched = new Set<string>();
 	const fetchedShown = new Set<string>();
 	const escalated = new Set<string>();
+	// A throwing escalation stays retryable, but at most once per back-off
+	// window, and each distinct error is logged once per handoff.
+	const escalationRetryAt = new Map<string, number>();
+	const escalationErrorsLogged = new Map<string, Set<string>>();
 	let inFlight = false;
 
 	function writeLine(text: string): void {
@@ -177,16 +183,35 @@ export function createNoticePathDriver(deps: NoticePathDriverDeps) {
 				await deps.copyFallback(handoffId);
 				return;
 			case "escalate": {
-				// Ends the handoff (terminal status) and halts the workflow in one
-				// broker transaction.
-				const result = control.escalateNoticeHandoff?.({
-					handoffId,
-					reason: action.reason,
-					now: now.toISOString(),
-				});
+				const retryAt = escalationRetryAt.get(handoffId);
+				if (retryAt !== undefined && now.getTime() < retryAt) return;
+				let result: { action: string } | undefined;
+				try {
+					// Ends the handoff (terminal status) and halts the workflow in one
+					// broker transaction.
+					result = control.escalateNoticeHandoff?.({
+						handoffId,
+						reason: action.reason,
+						now: now.toISOString(),
+					});
+				} catch (err) {
+					escalationRetryAt.set(handoffId, now.getTime() + ESCALATION_RETRY_MS);
+					const message = err instanceof Error ? err.message : String(err);
+					const logged = escalationErrorsLogged.get(handoffId) ?? new Set<string>();
+					escalationErrorsLogged.set(handoffId, logged);
+					if (!logged.has(message)) {
+						logged.add(message);
+						console.warn(
+							`[ai-whisper] notice-path escalation failed: target=${deps.currentAgent} handoff=${handoffId}: ${message} (retrying every ${ESCALATION_RETRY_MS / 1000} s)`,
+						);
+					}
+					return;
+				}
 				// Recorded only once the call returns: a throw leaves the handoff
 				// retryable on a later tick.
 				escalated.add(handoffId);
+				escalationRetryAt.delete(handoffId);
+				escalationErrorsLogged.delete(handoffId);
 				if (result === undefined || result.action.startsWith("noop-")) return;
 				writeLine(
 					action.reason.startsWith("strict mode:")
