@@ -414,6 +414,70 @@ export function createMountedTurnOwnedRelay(input: {
 	let autoAcceptFiredFor: string | null = null;
 	let autoHandbackFiredFor: string | null = null;
 
+	async function submitText(text: string): Promise<void> {
+		if (input.submitUserInput) {
+			await input.submitUserInput(text);
+		} else {
+			submitInjectedInput(input.writeUserInput, text);
+		}
+	}
+
+	// Today's paste injection: the request text goes into the prompt and the
+	// turn-event capture machinery is seeded for it.
+	async function pasteRequest(handoff: RelayHandoff): Promise<void> {
+		input.turnCapture?.reset();
+		await submitText(handoff.requestText);
+		// Seed the turn-event sequence backstop: the FIRST post-injection turn-event
+		// for this handoff whose input cannot be read (claude transcript unavailable)
+		// is treated as the response (correlateInput consumes this flag once).
+		sequenceBackstop.add(handoff.handoffId);
+	}
+
+	function fallbackCountLine(handoffId: string, includeThis: boolean): string {
+		const workflowId =
+			input.broker.control.getHandoffWithWorkflowMeta?.(handoffId)?.workflowId ?? null;
+		if (workflowId === null) return "";
+		const counted = input.broker.control.countWorkflowFallbacks?.(workflowId) ?? 0;
+		return ` (fallback ${counted + (includeThis ? 1 : 0)} in ${workflowId})`;
+	}
+
+	// Notice never fetched after the reminder: paste the stored request as today.
+	async function pasteNoticeFallback(handoffId: string): Promise<void> {
+		const control = input.broker.control;
+		// Hard guard: a fetched request is never pasted.
+		const state = control.getNoticePathState?.(handoffId) ?? null;
+		if (state === null || state.fetchedAt !== null || state.deliveryPath !== "notice") return;
+		const handoff = control.getRelayHandoff(handoffId);
+		if (!handoff || handoff.status !== "accepted") return;
+		control.markHandoffDeliveryPath?.({ handoffId, path: "paste" });
+		// Paste only once the broker shows the switch (and still no fetch): a mark
+		// that did not land would leave the ladder free to paste again.
+		const switched = control.getNoticePathState?.(handoffId) ?? null;
+		if (switched?.deliveryPath !== "paste" || switched.fetchedAt !== null) return;
+		input.writeLocalMessage(
+			`[ai-whisper] ⚠ ${handoffId} not fetched after 2 notices — falling back to paste${fallbackCountLine(handoffId, false)}\r\n`,
+		);
+		autoHandbackFiredFor = null;
+		await pasteRequest(handoff);
+	}
+
+	// Fetched but unreplied after an explicit signal: capture through /copy.
+	const copyFallbackAnnounced = new Set<string>();
+	async function copyNoticeFallback(handoffId: string): Promise<void> {
+		const accepted = getAcceptedHandoff();
+		if (!accepted || accepted.handoffId !== handoffId) return;
+		if (autoHandbackFiredFor === handoffId) return;
+		// The ladder may retry an empty capture on later ticks; announce once.
+		if (!copyFallbackAnnounced.has(handoffId)) {
+			copyFallbackAnnounced.add(handoffId);
+			// capture_path is written by the capture itself, so count this one in.
+			input.writeLocalMessage(
+				`[ai-whisper] ⚠ ${handoffId} no reply after nudge — capturing via /copy${fallbackCountLine(handoffId, true)}\r\n`,
+			);
+		}
+		await runCopyCaptureLadder(accepted);
+	}
+
 	const noticeMode = input.deliveryMode === "notice";
 	const noticeDriver = createNoticePathDriver({
 		broker: input.broker,
@@ -421,16 +485,9 @@ export function createMountedTurnOwnedRelay(input: {
 		strict: input.noticeStrict ?? false,
 		capMs: input.noticeCapMs ?? 900_000,
 		writeLocalMessage: input.writeLocalMessage,
-		submitUserInput: async (text) => {
-			if (input.submitUserInput) {
-				await input.submitUserInput(text);
-			} else {
-				submitInjectedInput(input.writeUserInput, text);
-			}
-		},
-		// Task 5 supplies the paste and /copy fallbacks.
-		pasteFallback: () => Promise.reject(new Error("notice paste fallback: not implemented")),
-		copyFallback: () => Promise.reject(new Error("notice copy fallback: not implemented")),
+		submitUserInput: submitText,
+		pasteFallback: pasteNoticeFallback,
+		copyFallback: copyNoticeFallback,
 		now: () => new Date(),
 		// The broker claim already accepted the handoff; mirror the relay-side
 		// bookkeeping of acceptPendingHandoff, minus the paste and capture seeding.
@@ -672,6 +729,7 @@ export function createMountedTurnOwnedRelay(input: {
 			targetAgent: accepted.senderAgent,
 			requestText: event.message,
 			captureStatus: "ok",
+			capturePath: "turn_event",
 			now,
 		});
 		input.turnCapture?.reset();
@@ -866,6 +924,278 @@ export function createMountedTurnOwnedRelay(input: {
 		return false;
 	}
 
+	// The proven /copy capture ladder for an accepted handoff. Reached from the
+	// legacy auto-handback in checkIdleActions and from the notice-path /copy
+	// fallback; it always records capture_path "copy".
+	async function runCopyCaptureLadder(accepted: RelayHandoff): Promise<void> {
+		// Retry-on-empty ladder (Mode C fix, 2026-06-03). The auto-handback used
+		// to fire exactly once (autoHandbackFiredFor set here, before the capture
+		// result was known), so a single transient empty /copy on a long claude
+		// step delivered an empty handback and permanently halted the workflow.
+		// We now spread up to autoHandbackMaxAttempts captures across idle ticks,
+		// spaced by autoHandbackRetryMs, and only burn the one-shot guard once we
+		// either capture a real handback or exhaust the budget (escalate floor).
+		const retryState = autoHandbackAttempts.get(accepted.handoffId) ?? {
+			attempts: 0,
+			nextEligibleAt: 0,
+		};
+		if (Date.now() < retryState.nextEligibleAt) {
+			return; // within spacing window — don't hammer /copy on the 1s poll
+		}
+
+		// Record when this turn's instruction reached the mounted agent (≈ accept
+		// time, from the turn's current age) once, so re-polls reuse a stable
+		// freshness floor for cursor's transcript selection.
+		let promptDeliveredAtMs = promptDeliveredAt.get(accepted.handoffId);
+		if (promptDeliveredAtMs === undefined) {
+			promptDeliveredAtMs = Date.now() - (refreshTurnState().handoffAgeMs ?? 0);
+			promptDeliveredAt.set(accepted.handoffId, promptDeliveredAtMs);
+		}
+
+		// Reserve synchronously BEFORE the awaited capture so a concurrent 1s
+		// timer tick cannot start a second /copy for this in-flight handoff.
+		// (retryState is only updated after the await, so the checks above do not
+		// protect against overlap on their own.) try/finally guarantees release
+		// on every exit — retry return, race-guard abort, delivery, or a throw.
+		if (autoHandbackInFlight) return;
+		autoHandbackInFlight = true;
+		try {
+
+		// Always extract turn text before attempting clipboard capture — must run even if clipboard throws.
+		// finishAssistantTurn clears the streaming flag so extractLatestAssistantTurn
+		// can return high-confidence text; without this call it always returns low/null.
+		input.turnCapture?.finishAssistantTurn();
+		const turnResult: { confidence: "high" | "low"; text: string | null } =
+			input.turnCapture?.extractLatestAssistantTurn() ?? { confidence: "low", text: null };
+
+		// Diagnostic: trace every auto-handback entry so the operator can see in the
+		// mount pane WHEN the capture pipeline fires, on which handoff, and what
+		// turn state it has to work with. Pairs with the lease-degrade / swallowed-
+		// exception warns below to expose the silent-exit bug observed 2026-05-29.
+		console.warn(
+			`[ai-whisper] auto-handback fire: target=${input.currentAgent} handoff=${accepted.handoffId} turnLen=${(turnResult.text ?? "").length} turnConf=${turnResult.confidence}`,
+		);
+
+		let clipboardText: string | null = null;
+		let leaseDegraded = false;
+		let interferenceDetected = false;
+		// True only for a CLEAN captured result whose clip was empty (the
+		// read-before-write race signature — bug 2026-06-08). Deliberately NOT set
+		// for a lease degrade (which delivers the PTY fallback), an exception, or a
+		// null short-circuit — those have their own established handling and must
+		// not be folded into the empty-clip retry.
+		let cleanCaptureEmpty = false;
+		let captureTimedOut = false;
+		try {
+			const captureResult = await raceCaptureAgainstWatchdog(
+				() =>
+					input.captureHandbackText?.(turnResult.text ?? "", {
+						expectedPrompt: accepted.requestText,
+						promptDeliveredAtMs,
+					}),
+				captureWatchdogMs,
+				scheduleWatchdog,
+			);
+			if (captureResult === CAPTURE_WATCHDOG_TIMEOUT) {
+				// The capture never settled within the deadline. Abandon it (the
+				// orphan settles later harmlessly) and retry; the finally releases
+				// autoHandbackInFlight regardless of the wedged capture.
+				captureTimedOut = true;
+				console.warn(
+					`[ai-whisper] capture watchdog fired (${captureWatchdogMs}ms): target=${input.currentAgent} handoff=${accepted.handoffId} — abandoning capture, will retry`,
+				);
+			} else if (typeof captureResult === "string") {
+				clipboardText = captureResult; // legacy / direct text
+			} else if (captureResult !== null) {
+				interferenceDetected = captureResult.interferenceDetected;
+				if (captureResult.status === "captured") {
+					clipboardText = captureResult.text;
+					cleanCaptureEmpty = (captureResult.text ?? "").trim().length === 0;
+				} else if (
+					captureResult.status === "timed_out" ||
+					captureResult.status === "lease_unavailable"
+				) {
+					// Timeout or lease contention → retry ladder, NOT a PTY fallback.
+					captureTimedOut = true;
+					console.warn(
+						`[ai-whisper] capture ${captureResult.status}: target=${input.currentAgent} handoff=${accepted.handoffId} — will retry (no PTY fallback)`,
+					);
+				} else {
+					leaseDegraded = true; // degraded_pty_only (interference exhaustion)
+					console.warn(
+						`[ai-whisper] capture lease degraded: target=${input.currentAgent} handoff=${accepted.handoffId} interference=${interferenceDetected} — /copy was NOT executed; PTY fallback only`,
+					);
+				}
+			} else {
+				// captureHandbackText returned null (e.g. mount-session-main's
+				// !resolvedClaim early-return). Surface it explicitly — otherwise
+				// looks identical to "no clipboard change" downstream.
+				console.warn(
+					`[ai-whisper] capture pipeline returned null: target=${input.currentAgent} handoff=${accepted.handoffId} — captureHandbackText short-circuited (likely no session claim)`,
+				);
+			}
+		} catch (err) {
+			// Surface the swallowed error — silent-swallow here was the root cause
+			// of the 2026-05-29 halts where codex produced a real review but the
+			// orchestrator received an empty handback with no diagnostic clue why.
+			clipboardText = null;
+			const msg = err instanceof Error ? `${err.message}\n${err.stack ?? ""}` : String(err);
+			console.warn(
+				`[ai-whisper] capture pipeline threw (swallowed): target=${input.currentAgent} handoff=${accepted.handoffId}\n${msg}`,
+			);
+		}
+
+		// Cursor's handback is read from its on-disk transcript, already validated
+		// by prompt-anchor + freshness in captureCursorHandback. Cursor is a
+		// full-screen TUI, so re-validating that text against the noisy PTY scrape
+		// via classifyCapture would reject a valid deliverable as a confident-miss
+		// (and poison the retry ladder). Treat a non-empty cursor capture as
+		// authoritative and skip the PTY-similarity check. An EMPTY cursor capture
+		// still flows through classifyCapture (no-response / retry handling).
+		const cursorAuthoritative =
+			input.currentAgent === "cursor" && (clipboardText ?? "").trim().length > 0;
+		const classification: CaptureClassification = cursorAuthoritative
+			? { status: "ok", jaccardScore: null, containmentScore: null }
+			: classifyCapture(turnResult, clipboardText);
+		const captureStatus = classification.status;
+		let requestText = captureStatus === "ok" ? (clipboardText ?? "") : "";
+
+		// Spec: a lease degrade (acquire timeout or persistent human interference)
+		// falls back to the PTY turn text rather than delivering an empty handback.
+		if (leaseDegraded && (turnResult.text ?? "").trim().length > 0) {
+			requestText = turnResult.text as string;
+		}
+
+		// Retry-on-empty (Mode C): if we captured *nothing* — neither clipboard
+		// nor a PTY fallback (captureStatus === "no_response_captured") — and the
+		// attempt budget is not yet spent, schedule another attempt on a later
+		// idle tick instead of delivering an empty (workflow-halting) handback.
+		// Leaving autoHandbackFiredFor unset lets the next tick re-fire;
+		// nextEligibleAt spaces the retries. The final attempt falls through to
+		// deliver an empty handback (the genuine-failure escalate floor).
+		const capturedNothing = captureStatus === "no_response_captured";
+		// Bug 2026-06-06: a confident no-match against HIGH-confidence current-phase
+		// turn text means the captured clip is stale/prior-turn content — the agent
+		// is still echoing this phase's request and has not yet produced its
+		// response. Re-running /copy on a later tick will capture different
+		// (matching) content, so retry rather than burning the one-shot guard on
+		// stale content. classifyCapture only populates jaccardScore on this
+		// high-confidence similarity path; a null-score confident-miss is the Mode A
+		// claude-TUI case (agent already replied but PTY can't validate it) and must
+		// NOT retry — re-/copy would just re-capture the identical reply.
+		const staleAgainstCurrentTurn =
+			captureStatus === "no_response_captured_confidently" &&
+			classification.jaccardScore !== null;
+		// Bug 2026-06-08 (wf_292cb0933def440b): a CLEAN captured result whose clip was
+		// EMPTY, paired with non-empty HIGH-confidence turn chrome, classifies as
+		// no_response_captured_confidently (jaccardScore null — there is no clip to
+		// score), landing in the same bucket as the Mode A no-retry case. But an empty
+		// clip from a clean capture is a read-before-write race (the /copy had not landed
+		// yet), not a definitive no-response: retry rather than burning the one-shot guard
+		// on an empty handback that escalates/halts the gate. Scoped to cleanCaptureEmpty
+		// so it stays distinct from (a) Mode A, which has a PRESENT short clip — re-/copy
+		// would just re-capture the identical reply; (b) a lease degrade, which already
+		// delivers the PTY fallback; and (c) an exception/null short-circuit.
+		const emptyClipConfidentMiss =
+			captureStatus === "no_response_captured_confidently" &&
+			cleanCaptureEmpty;
+		if (
+			(capturedNothing ||
+				staleAgainstCurrentTurn ||
+				emptyClipConfidentMiss ||
+				captureTimedOut) &&
+			retryState.attempts + 1 < autoHandbackMaxAttempts
+		) {
+			retryState.attempts += 1;
+			retryState.nextEligibleAt = Date.now() + autoHandbackRetryMs;
+			autoHandbackAttempts.set(accepted.handoffId, retryState);
+			console.warn(
+				`[ai-whisper] auto-handback empty capture — retrying: target=${input.currentAgent} handoff=${accepted.handoffId} attempt=${retryState.attempts}/${autoHandbackMaxAttempts}`,
+			);
+			return;
+		}
+
+		// Terminal: we have a real handback, or the retry budget is exhausted.
+		// Burn the one-shot guard and stop tracking retries for this handoff.
+		autoHandbackFiredFor = accepted.handoffId;
+		autoHandbackAttempts.delete(accepted.handoffId);
+		promptDeliveredAt.delete(accepted.handoffId);
+
+		// Evaluate race guard synchronously so the diagnostic row carries the correct flag.
+		const currentAcceptedId = getAcceptedHandoff()?.handoffId;
+		const abortedByRaceGuard = currentAcceptedId !== accepted.handoffId;
+
+		// Pull workflow/chain context for diagnostics (best-effort; nullable in the row).
+		const handoffMeta = input.broker.control.getHandoffWithWorkflowMeta?.(accepted.handoffId) ?? null;
+		const samplesAllowed = process.env["AI_WHISPER_NO_CAPTURE_SAMPLES"] !== "1";
+		const sampleOf = (text: string | null): string | null => {
+			if (text === null) return null;
+			if (!samplesAllowed) return null;
+			return text.slice(0, 200);
+		};
+
+		const now = new Date().toISOString();
+		try {
+			input.broker.control.recordCaptureDiagnostic?.({
+				handoffId: accepted.handoffId,
+				collabId: input.collabId,
+				chainId: handoffMeta?.chainId ?? null,
+				workflowId: handoffMeta?.workflowId ?? null,
+				targetProvider: input.currentAgent,
+				captureStatus,
+				clipLen: (clipboardText ?? "").length,
+				turnLen: (turnResult.text ?? "").length,
+				turnConfidence: turnResult.confidence,
+				jaccardScore: classification.jaccardScore,
+				containmentScore: classification.containmentScore,
+				clipSample: sampleOf(clipboardText),
+				turnSample: sampleOf(turnResult.text),
+				abortedByRaceGuard,
+				interferenceDetected,
+				now,
+			});
+		} catch (err) {
+			// Diagnostics are observability — never block the relay path.
+			console.warn(
+				`[ai-whisper] capture diagnostic write failed: ${err instanceof Error ? err.message : String(err)}`,
+			);
+		}
+
+		if (process.env["AI_WHISPER_DEBUG_CAPTURE"]) {
+			const { writeFileSync } = await import("node:fs");
+			writeFileSync(
+				process.env["AI_WHISPER_DEBUG_CAPTURE"],
+				JSON.stringify({
+					captureStatus,
+					jaccardScore: classification.jaccardScore,
+					containmentScore: classification.containmentScore,
+					turnTextLen: (turnResult.text ?? "").length,
+					clipLen: (clipboardText ?? "").length,
+					turnText: turnResult.text,
+					clipText: clipboardText,
+				}, null, 2),
+				"utf8",
+			);
+		}
+
+		if (abortedByRaceGuard) return;
+
+		input.broker.control.handoffBackRelay?.({
+			handoffId: accepted.handoffId,
+			nextHandoffId: `handoff_${now.replace(/[^0-9]/g, "")}`,
+			senderAgent: input.currentAgent,
+			targetAgent: accepted.senderAgent,
+			requestText,
+			captureStatus,
+			capturePath: "copy",
+			now,
+		});
+		input.turnCapture?.reset();
+		} finally {
+			autoHandbackInFlight = false;
+		}
+	}
+
 	const api = {
 		getWaitingGate() {
 			return {
@@ -939,21 +1269,19 @@ export function createMountedTurnOwnedRelay(input: {
 			if (!handoff) return;
 			clearOwnerCard();
 			lastOwnerCardKey = null;
-			input.turnCapture?.reset();
 			autoHandbackFiredFor = null;
-			if (input.submitUserInput) {
-				await input.submitUserInput(handoff.requestText);
-			} else {
-				submitInjectedInput(input.writeUserInput, handoff.requestText);
-			}
-			// Seed the turn-event sequence backstop: the FIRST post-injection turn-event
-			// for this handoff whose input cannot be read (claude transcript unavailable)
-			// is treated as the response (correlateInput consumes this flag once).
-			sequenceBackstop.add(handoff.handoffId);
+			await pasteRequest(handoff);
 			input.broker.control.acceptRelayHandoff({
 				handoffId: handoff.handoffId,
 				acceptedAt: new Date().toISOString(),
 			});
+			// Record how a workflow request reached the agent; manual handoffs stay unmarked.
+			if (input.broker.control.getHandoffWithWorkflowMeta?.(handoff.handoffId)?.workflowId) {
+				input.broker.control.markHandoffDeliveryPath?.({
+					handoffId: handoff.handoffId,
+					path: input.deliveryMode === "native" ? "native" : "paste",
+				});
+			}
 			input.onHandoffAccepted?.();
 		},
 
@@ -1084,6 +1412,7 @@ export function createMountedTurnOwnedRelay(input: {
 				targetAgent: accepted.senderAgent,
 				requestText: content,
 				captureStatus: "ok",
+				capturePath: "native",
 				now,
 			});
 			input.turnCapture?.reset();
@@ -1269,271 +1598,7 @@ export function createMountedTurnOwnedRelay(input: {
 				// else: FALL THROUGH to the existing /copy auto-handback path below.
 			}
 
-			// Retry-on-empty ladder (Mode C fix, 2026-06-03). The auto-handback used
-			// to fire exactly once (autoHandbackFiredFor set here, before the capture
-			// result was known), so a single transient empty /copy on a long claude
-			// step delivered an empty handback and permanently halted the workflow.
-			// We now spread up to autoHandbackMaxAttempts captures across idle ticks,
-			// spaced by autoHandbackRetryMs, and only burn the one-shot guard once we
-			// either capture a real handback or exhaust the budget (escalate floor).
-			const retryState = autoHandbackAttempts.get(accepted.handoffId) ?? {
-				attempts: 0,
-				nextEligibleAt: 0,
-			};
-			if (Date.now() < retryState.nextEligibleAt) {
-				return; // within spacing window — don't hammer /copy on the 1s poll
-			}
-
-			// Record when this turn's instruction reached the mounted agent (≈ accept
-			// time, from the turn's current age) once, so re-polls reuse a stable
-			// freshness floor for cursor's transcript selection.
-			let promptDeliveredAtMs = promptDeliveredAt.get(accepted.handoffId);
-			if (promptDeliveredAtMs === undefined) {
-				promptDeliveredAtMs = Date.now() - (refreshTurnState().handoffAgeMs ?? 0);
-				promptDeliveredAt.set(accepted.handoffId, promptDeliveredAtMs);
-			}
-
-			// Reserve synchronously BEFORE the awaited capture so a concurrent 1s
-			// timer tick cannot start a second /copy for this in-flight handoff.
-			// (retryState is only updated after the await, so the checks above do not
-			// protect against overlap on their own.) try/finally guarantees release
-			// on every exit — retry return, race-guard abort, delivery, or a throw.
-			if (autoHandbackInFlight) return;
-			autoHandbackInFlight = true;
-			try {
-
-			// Always extract turn text before attempting clipboard capture — must run even if clipboard throws.
-			// finishAssistantTurn clears the streaming flag so extractLatestAssistantTurn
-			// can return high-confidence text; without this call it always returns low/null.
-			input.turnCapture?.finishAssistantTurn();
-			const turnResult: { confidence: "high" | "low"; text: string | null } =
-				input.turnCapture?.extractLatestAssistantTurn() ?? { confidence: "low", text: null };
-
-			// Diagnostic: trace every auto-handback entry so the operator can see in the
-			// mount pane WHEN the capture pipeline fires, on which handoff, and what
-			// turn state it has to work with. Pairs with the lease-degrade / swallowed-
-			// exception warns below to expose the silent-exit bug observed 2026-05-29.
-			console.warn(
-				`[ai-whisper] auto-handback fire: target=${input.currentAgent} handoff=${accepted.handoffId} turnLen=${(turnResult.text ?? "").length} turnConf=${turnResult.confidence}`,
-			);
-
-			let clipboardText: string | null = null;
-			let leaseDegraded = false;
-			let interferenceDetected = false;
-			// True only for a CLEAN captured result whose clip was empty (the
-			// read-before-write race signature — bug 2026-06-08). Deliberately NOT set
-			// for a lease degrade (which delivers the PTY fallback), an exception, or a
-			// null short-circuit — those have their own established handling and must
-			// not be folded into the empty-clip retry.
-			let cleanCaptureEmpty = false;
-			let captureTimedOut = false;
-			try {
-				const captureResult = await raceCaptureAgainstWatchdog(
-					() =>
-						input.captureHandbackText?.(turnResult.text ?? "", {
-							expectedPrompt: accepted.requestText,
-							promptDeliveredAtMs,
-						}),
-					captureWatchdogMs,
-					scheduleWatchdog,
-				);
-				if (captureResult === CAPTURE_WATCHDOG_TIMEOUT) {
-					// The capture never settled within the deadline. Abandon it (the
-					// orphan settles later harmlessly) and retry; the finally releases
-					// autoHandbackInFlight regardless of the wedged capture.
-					captureTimedOut = true;
-					console.warn(
-						`[ai-whisper] capture watchdog fired (${captureWatchdogMs}ms): target=${input.currentAgent} handoff=${accepted.handoffId} — abandoning capture, will retry`,
-					);
-				} else if (typeof captureResult === "string") {
-					clipboardText = captureResult; // legacy / direct text
-				} else if (captureResult !== null) {
-					interferenceDetected = captureResult.interferenceDetected;
-					if (captureResult.status === "captured") {
-						clipboardText = captureResult.text;
-						cleanCaptureEmpty = (captureResult.text ?? "").trim().length === 0;
-					} else if (
-						captureResult.status === "timed_out" ||
-						captureResult.status === "lease_unavailable"
-					) {
-						// Timeout or lease contention → retry ladder, NOT a PTY fallback.
-						captureTimedOut = true;
-						console.warn(
-							`[ai-whisper] capture ${captureResult.status}: target=${input.currentAgent} handoff=${accepted.handoffId} — will retry (no PTY fallback)`,
-						);
-					} else {
-						leaseDegraded = true; // degraded_pty_only (interference exhaustion)
-						console.warn(
-							`[ai-whisper] capture lease degraded: target=${input.currentAgent} handoff=${accepted.handoffId} interference=${interferenceDetected} — /copy was NOT executed; PTY fallback only`,
-						);
-					}
-				} else {
-					// captureHandbackText returned null (e.g. mount-session-main's
-					// !resolvedClaim early-return). Surface it explicitly — otherwise
-					// looks identical to "no clipboard change" downstream.
-					console.warn(
-						`[ai-whisper] capture pipeline returned null: target=${input.currentAgent} handoff=${accepted.handoffId} — captureHandbackText short-circuited (likely no session claim)`,
-					);
-				}
-			} catch (err) {
-				// Surface the swallowed error — silent-swallow here was the root cause
-				// of the 2026-05-29 halts where codex produced a real review but the
-				// orchestrator received an empty handback with no diagnostic clue why.
-				clipboardText = null;
-				const msg = err instanceof Error ? `${err.message}\n${err.stack ?? ""}` : String(err);
-				console.warn(
-					`[ai-whisper] capture pipeline threw (swallowed): target=${input.currentAgent} handoff=${accepted.handoffId}\n${msg}`,
-				);
-			}
-
-			// Cursor's handback is read from its on-disk transcript, already validated
-			// by prompt-anchor + freshness in captureCursorHandback. Cursor is a
-			// full-screen TUI, so re-validating that text against the noisy PTY scrape
-			// via classifyCapture would reject a valid deliverable as a confident-miss
-			// (and poison the retry ladder). Treat a non-empty cursor capture as
-			// authoritative and skip the PTY-similarity check. An EMPTY cursor capture
-			// still flows through classifyCapture (no-response / retry handling).
-			const cursorAuthoritative =
-				input.currentAgent === "cursor" && (clipboardText ?? "").trim().length > 0;
-			const classification: CaptureClassification = cursorAuthoritative
-				? { status: "ok", jaccardScore: null, containmentScore: null }
-				: classifyCapture(turnResult, clipboardText);
-			const captureStatus = classification.status;
-			let requestText = captureStatus === "ok" ? (clipboardText ?? "") : "";
-
-			// Spec: a lease degrade (acquire timeout or persistent human interference)
-			// falls back to the PTY turn text rather than delivering an empty handback.
-			if (leaseDegraded && (turnResult.text ?? "").trim().length > 0) {
-				requestText = turnResult.text as string;
-			}
-
-			// Retry-on-empty (Mode C): if we captured *nothing* — neither clipboard
-			// nor a PTY fallback (captureStatus === "no_response_captured") — and the
-			// attempt budget is not yet spent, schedule another attempt on a later
-			// idle tick instead of delivering an empty (workflow-halting) handback.
-			// Leaving autoHandbackFiredFor unset lets the next tick re-fire;
-			// nextEligibleAt spaces the retries. The final attempt falls through to
-			// deliver an empty handback (the genuine-failure escalate floor).
-			const capturedNothing = captureStatus === "no_response_captured";
-			// Bug 2026-06-06: a confident no-match against HIGH-confidence current-phase
-			// turn text means the captured clip is stale/prior-turn content — the agent
-			// is still echoing this phase's request and has not yet produced its
-			// response. Re-running /copy on a later tick will capture different
-			// (matching) content, so retry rather than burning the one-shot guard on
-			// stale content. classifyCapture only populates jaccardScore on this
-			// high-confidence similarity path; a null-score confident-miss is the Mode A
-			// claude-TUI case (agent already replied but PTY can't validate it) and must
-			// NOT retry — re-/copy would just re-capture the identical reply.
-			const staleAgainstCurrentTurn =
-				captureStatus === "no_response_captured_confidently" &&
-				classification.jaccardScore !== null;
-			// Bug 2026-06-08 (wf_292cb0933def440b): a CLEAN captured result whose clip was
-			// EMPTY, paired with non-empty HIGH-confidence turn chrome, classifies as
-			// no_response_captured_confidently (jaccardScore null — there is no clip to
-			// score), landing in the same bucket as the Mode A no-retry case. But an empty
-			// clip from a clean capture is a read-before-write race (the /copy had not landed
-			// yet), not a definitive no-response: retry rather than burning the one-shot guard
-			// on an empty handback that escalates/halts the gate. Scoped to cleanCaptureEmpty
-			// so it stays distinct from (a) Mode A, which has a PRESENT short clip — re-/copy
-			// would just re-capture the identical reply; (b) a lease degrade, which already
-			// delivers the PTY fallback; and (c) an exception/null short-circuit.
-			const emptyClipConfidentMiss =
-				captureStatus === "no_response_captured_confidently" &&
-				cleanCaptureEmpty;
-			if (
-				(capturedNothing ||
-					staleAgainstCurrentTurn ||
-					emptyClipConfidentMiss ||
-					captureTimedOut) &&
-				retryState.attempts + 1 < autoHandbackMaxAttempts
-			) {
-				retryState.attempts += 1;
-				retryState.nextEligibleAt = Date.now() + autoHandbackRetryMs;
-				autoHandbackAttempts.set(accepted.handoffId, retryState);
-				console.warn(
-					`[ai-whisper] auto-handback empty capture — retrying: target=${input.currentAgent} handoff=${accepted.handoffId} attempt=${retryState.attempts}/${autoHandbackMaxAttempts}`,
-				);
-				return;
-			}
-
-			// Terminal: we have a real handback, or the retry budget is exhausted.
-			// Burn the one-shot guard and stop tracking retries for this handoff.
-			autoHandbackFiredFor = accepted.handoffId;
-			autoHandbackAttempts.delete(accepted.handoffId);
-			promptDeliveredAt.delete(accepted.handoffId);
-
-			// Evaluate race guard synchronously so the diagnostic row carries the correct flag.
-			const currentAcceptedId = getAcceptedHandoff()?.handoffId;
-			const abortedByRaceGuard = currentAcceptedId !== accepted.handoffId;
-
-			// Pull workflow/chain context for diagnostics (best-effort; nullable in the row).
-			const handoffMeta = input.broker.control.getHandoffWithWorkflowMeta?.(accepted.handoffId) ?? null;
-			const samplesAllowed = process.env["AI_WHISPER_NO_CAPTURE_SAMPLES"] !== "1";
-			const sampleOf = (text: string | null): string | null => {
-				if (text === null) return null;
-				if (!samplesAllowed) return null;
-				return text.slice(0, 200);
-			};
-
-			const now = new Date().toISOString();
-			try {
-				input.broker.control.recordCaptureDiagnostic?.({
-					handoffId: accepted.handoffId,
-					collabId: input.collabId,
-					chainId: handoffMeta?.chainId ?? null,
-					workflowId: handoffMeta?.workflowId ?? null,
-					targetProvider: input.currentAgent,
-					captureStatus,
-					clipLen: (clipboardText ?? "").length,
-					turnLen: (turnResult.text ?? "").length,
-					turnConfidence: turnResult.confidence,
-					jaccardScore: classification.jaccardScore,
-					containmentScore: classification.containmentScore,
-					clipSample: sampleOf(clipboardText),
-					turnSample: sampleOf(turnResult.text),
-					abortedByRaceGuard,
-					interferenceDetected,
-					now,
-				});
-			} catch (err) {
-				// Diagnostics are observability — never block the relay path.
-				console.warn(
-					`[ai-whisper] capture diagnostic write failed: ${err instanceof Error ? err.message : String(err)}`,
-				);
-			}
-
-			if (process.env["AI_WHISPER_DEBUG_CAPTURE"]) {
-				const { writeFileSync } = await import("node:fs");
-				writeFileSync(
-					process.env["AI_WHISPER_DEBUG_CAPTURE"],
-					JSON.stringify({
-						captureStatus,
-						jaccardScore: classification.jaccardScore,
-						containmentScore: classification.containmentScore,
-						turnTextLen: (turnResult.text ?? "").length,
-						clipLen: (clipboardText ?? "").length,
-						turnText: turnResult.text,
-						clipText: clipboardText,
-					}, null, 2),
-					"utf8",
-				);
-			}
-
-			if (abortedByRaceGuard) return;
-
-			input.broker.control.handoffBackRelay?.({
-				handoffId: accepted.handoffId,
-				nextHandoffId: `handoff_${now.replace(/[^0-9]/g, "")}`,
-				senderAgent: input.currentAgent,
-				targetAgent: accepted.senderAgent,
-				requestText,
-				captureStatus,
-				now,
-			});
-			input.turnCapture?.reset();
-			} finally {
-				autoHandbackInFlight = false;
-			}
+			await runCopyCaptureLadder(accepted);
 		},
 
 		handleOwnerDisconnect() {

@@ -181,14 +181,19 @@ export function createNoticePathDriver(deps: NoticePathDriverDeps) {
 				await deps.copyFallback(handoffId);
 				return;
 			case "escalate": {
-				escalated.add(handoffId);
-				control.applyOrchestratorVerdict?.({
+				const result = control.applyOrchestratorVerdict?.({
 					handoffId,
 					verdict: "escalate",
 					confidence: 1,
 					reason: action.reason,
 					now: now.toISOString(),
 				});
+				// Recorded only once the verdict call returns: a throw leaves the
+				// handoff retryable on a later tick.
+				escalated.add(handoffId);
+				if ((result as { action?: string } | undefined)?.action === "noop-already-applied") {
+					return;
+				}
 				writeLine(
 					action.reason.startsWith("strict mode:")
 						? `⚠ ${handoffId} ${action.reason}`

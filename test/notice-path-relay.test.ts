@@ -1,123 +1,21 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createBrokerRuntime } from "../packages/broker/src/index.ts";
-import { runWorkflowStart } from "../packages/cli/src/commands/workflow/start.ts";
-import { createMountedTurnOwnedRelay } from "../packages/cli/src/runtime/mounted-turn-owned-relay.ts";
-import { buildNoticeLine } from "../packages/cli/src/runtime/notice-text.ts";
-import type { AgentType } from "@ai-whisper/shared";
 import type { TurnEvent } from "../packages/cli/src/runtime/turn-event.ts";
-
-type Broker = ReturnType<typeof createBrokerRuntime>;
-
-const T0 = "2026-04-21T00:00:00Z";
-const COLLAB = "collab_np";
-const IDLE_MS = 30_000;
-
-const brokers: Broker[] = [];
+import {
+	COLLAB,
+	IDLE_MS,
+	bootBroker,
+	isoAgo,
+	makeRelay,
+	noticeLine,
+	rawRow,
+	startPendingWorkflow,
+	stopBrokers,
+} from "./helpers/notice-path-broker.ts";
 
 afterEach(async () => {
 	vi.restoreAllMocks();
-	while (brokers.length > 0) await brokers.pop()!.stop();
+	await stopBrokers();
 });
-
-function bootBroker(): Broker {
-	const broker = createBrokerRuntime({ sqlitePath: ":memory:", host: "127.0.0.1", port: 4321 });
-	brokers.push(broker);
-	broker.control.startCollab({
-		collabId: COLLAB,
-		workspaceRoot: "/tmp",
-		displayName: COLLAB,
-		orchestratorEnabled: true,
-		orchestratorMaxRounds: 3,
-		now: T0,
-	});
-	for (const agent of ["claude", "codex"] as const) {
-		broker.control.setSessionBinding({
-			collabId: COLLAB,
-			agentType: agent,
-			sessionId: `session_${agent}`,
-			bindingSource: "adopted",
-			now: T0,
-		});
-	}
-	return broker;
-}
-
-async function startPendingWorkflow(broker: Broker) {
-	const { workflowId } = await runWorkflowStart({
-		broker,
-		collabId: COLLAB,
-		workflowType: "spec-driven-development",
-		specPath: "docs/spec.md",
-		implementer: "claude",
-		reviewer: "codex",
-		now: T0,
-	});
-	await new Promise((r) => setImmediate(r));
-	const row = broker.control
-		.listRelayHandoffs(COLLAB)
-		.find((r) => r.workflowId === workflowId && r.status === "pending");
-	const handoff = row ? broker.control.getRelayHandoff(row.handoffId) : null;
-	if (!handoff) throw new Error("driver did not create a workflow handoff");
-	return { workflowId, handoff };
-}
-
-function makeRelay(
-	broker: Broker,
-	opts: {
-		currentAgent: AgentType;
-		deliveryMode?: "notice" | "native" | "paste";
-		eventPathEnabled?: boolean;
-	},
-) {
-	const submitted: string[] = [];
-	const local: string[] = [];
-	const captureHandbackText = vi.fn(() => Promise.resolve("CAPTURED VIA /copy"));
-	const relay = createMountedTurnOwnedRelay({
-		broker,
-		collabId: COLLAB,
-		currentAgent: opts.currentAgent,
-		writeLocalMessage: (text) => {
-			local.push(text);
-		},
-		writeUserInput: vi.fn(),
-		submitUserInput: (text) => {
-			submitted.push(text);
-			return Promise.resolve();
-		},
-		openComposer: vi.fn(() => Promise.resolve(null)),
-		captureHandbackText,
-		...(opts.eventPathEnabled
-			? { suppressQuiescenceHandback: true, eventPathEnabled: true }
-			: {}),
-		...(opts.deliveryMode ? { deliveryMode: opts.deliveryMode } : {}),
-	});
-	return { relay, submitted, local, captureHandbackText };
-}
-
-function rawRow(broker: Broker, handoffId: string) {
-	return broker.db
-		.prepare("SELECT * FROM relay_handoff WHERE handoff_id = ?")
-		.get(handoffId) as Record<string, unknown>;
-}
-
-function isoAgo(ms: number): string {
-	return new Date(Date.now() - ms).toISOString();
-}
-
-function noticeLine(
-	broker: Broker,
-	kind: "notice" | "reminder" | "nudge",
-	handoffId: string,
-): string {
-	const meta = broker.control.getHandoffWithWorkflowMeta(handoffId)!;
-	return buildNoticeLine({
-		kind,
-		handoffId,
-		workflowId: meta.workflowId!,
-		phaseName: meta.phaseName,
-		roundNumber: meta.roundNumber,
-	});
-}
 
 function turnEvent(provider: "claude" | "codex", inputMessages: string[]): TurnEvent {
 	return {
