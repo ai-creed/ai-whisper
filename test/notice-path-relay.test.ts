@@ -183,7 +183,7 @@ describe("notice-path relay", () => {
 		const { handoff, workflowId } = await startPendingWorkflow(broker);
 		const id = handoff.handoffId;
 		const target = handoff.targetAgent;
-		const verdictSpy = vi.spyOn(broker.control, "applyOrchestratorVerdict");
+		const verdictSpy = vi.spyOn(broker.control, "escalateNoticeHandoff");
 		broker.control.claimWorkflowNotice({ handoffId: id, now: isoAgo(40 * 60_000) });
 		broker.control.fetchWorkflowHandoff({
 			handoffId: id,
@@ -208,7 +208,7 @@ describe("notice-path relay", () => {
 		const reason = `no reply and no turn done after 15 min idle (handoff ${id})`;
 		expect(verdictSpy).toHaveBeenCalledTimes(1);
 		expect(verdictSpy).toHaveBeenCalledWith(
-			expect.objectContaining({ handoffId: id, verdict: "escalate", confidence: 1, reason }),
+			expect.objectContaining({ handoffId: id, reason }),
 		);
 		expect(local).toContain(
 			`[ai-whisper] ⚠ ${id} no reply and no turn done — escalating for operator review\r\n`,

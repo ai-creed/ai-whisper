@@ -74,6 +74,9 @@ type BrokerLike = {
 		getWorkflow?(id: string): { status: string } | null;
 		getRelayChain?(id: string): { status: string } | null;
 		applyOrchestratorVerdict?(input: { handoffId: string; verdict: string; confidence: number; reason: string; now: string }): void;
+		escalateNoticeHandoff?(input: { handoffId: string; reason: string; now: string }): {
+			action: string;
+		};
 		isWorkflowDeliverySuspended?(handoffId: string): boolean;
 		recordTurnEventDiagnostic?(input: {
 			receivedAt: string;

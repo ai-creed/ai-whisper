@@ -28,13 +28,9 @@ export type NoticeBrokerLike = {
 			kind: "reminder" | "nudge";
 			now: string;
 		}): boolean;
-		applyOrchestratorVerdict?(input: {
-			handoffId: string;
-			verdict: string;
-			confidence: number;
-			reason: string;
-			now: string;
-		}): unknown;
+		escalateNoticeHandoff?(input: { handoffId: string; reason: string; now: string }): {
+			action: string;
+		};
 	};
 };
 
@@ -181,19 +177,17 @@ export function createNoticePathDriver(deps: NoticePathDriverDeps) {
 				await deps.copyFallback(handoffId);
 				return;
 			case "escalate": {
-				const result = control.applyOrchestratorVerdict?.({
+				// Ends the handoff (terminal status) and halts the workflow in one
+				// broker transaction.
+				const result = control.escalateNoticeHandoff?.({
 					handoffId,
-					verdict: "escalate",
-					confidence: 1,
 					reason: action.reason,
 					now: now.toISOString(),
 				});
-				// Recorded only once the verdict call returns: a throw leaves the
-				// handoff retryable on a later tick.
+				// Recorded only once the call returns: a throw leaves the handoff
+				// retryable on a later tick.
 				escalated.add(handoffId);
-				if ((result as { action?: string } | undefined)?.action === "noop-already-applied") {
-					return;
-				}
+				if (result === undefined || result.action.startsWith("noop-")) return;
 				writeLine(
 					action.reason.startsWith("strict mode:")
 						? `⚠ ${handoffId} ${action.reason}`

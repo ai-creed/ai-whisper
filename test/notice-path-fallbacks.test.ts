@@ -457,7 +457,7 @@ describe("notice-path fallbacks", () => {
 			const { handoff, workflowId } = await unfetchedPastReminder(broker);
 			const id = handoff.handoffId;
 			const warn = vi.mocked(console.warn);
-			const verdictSpy = vi.spyOn(broker.control, "applyOrchestratorVerdict");
+			const verdictSpy = vi.spyOn(broker.control, "escalateNoticeHandoff");
 			verdictSpy.mockImplementationOnce(() => {
 				throw new Error("database is locked");
 			});
@@ -484,7 +484,7 @@ describe("notice-path fallbacks", () => {
 			const { handoff } = await unfetchedPastReminder(broker);
 			const id = handoff.handoffId;
 			const verdictSpy = vi
-				.spyOn(broker.control, "applyOrchestratorVerdict")
+				.spyOn(broker.control, "escalateNoticeHandoff")
 				.mockReturnValue({ action: "noop-already-applied", chainId: "" });
 			const { relay, local, submitted } = makeRelay(broker, {
 				currentAgent: handoff.targetAgent,

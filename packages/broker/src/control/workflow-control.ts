@@ -704,7 +704,7 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 		return { phaseRunId, chainId, handoffId, emissions };
 	}
 
-	function applyOrchestratorVerdict(input: {
+	type VerdictInput = {
 		handoffId: string;
 		verdict: NormalizedVerdict;
 		confidence: number;
@@ -713,17 +713,60 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 		extractedCommitShas?: string[];
 		workspaceHeadSha?: string;
 		now: string;
-	}): {
-		action:
-			| "chain-continued"
-			| "phase-advanced"
-			| "workflow-done"
-			| "workflow-halted"
-			| "noop-already-applied";
+	};
+	type VerdictAction =
+		| "chain-continued"
+		| "phase-advanced"
+		| "workflow-done"
+		| "workflow-halted"
+		| "noop-already-applied";
+	type VerdictResult<A extends string = VerdictAction> = {
+		action: A;
 		chainId: string;
 		nextHandoffId?: string;
 		nextPhaseRunId?: string;
-	} {
+	};
+
+	function applyOrchestratorVerdict(input: VerdictInput): VerdictResult {
+		return applyVerdict(input) as VerdictResult;
+	}
+
+	/**
+	 * Ends an accepted notice-path handoff the mount escalates (D12 or strict mode):
+	 * in one IMMEDIATE transaction the row moves to the terminal `failed` status
+	 * (the status a handoff abandoned mid-turn already gets on disconnect) and the
+	 * escalate verdict halts the workflow. A handoff no longer `accepted` (for
+	 * example, replied meanwhile) is left untouched.
+	 */
+	function escalateNoticeHandoff(input: {
+		handoffId: string;
+		reason: string;
+		now: string;
+	}): VerdictResult<VerdictAction | "noop-not-in-flight"> {
+		return applyVerdict(
+			{
+				handoffId: input.handoffId,
+				verdict: "escalate",
+				confidence: 1,
+				reason: input.reason,
+				now: input.now,
+			},
+			() =>
+				db
+					.prepare(
+						`UPDATE relay_handoff SET status = 'failed', resolved_at = ?, last_activity_at = ?
+						  WHERE handoff_id = ? AND status = 'accepted'`,
+					)
+					.run(input.now, input.now, input.handoffId).changes > 0,
+		);
+	}
+
+	// beforeApply runs inside the verdict transaction, after the idempotency
+	// guard; returning false rolls nothing forward and reports noop-not-in-flight.
+	function applyVerdict(
+		input: VerdictInput,
+		beforeApply?: () => boolean,
+	): VerdictResult<VerdictAction | "noop-not-in-flight"> {
 		const handoff = getHandoffWithWorkflowMetaById(db, input.handoffId);
 		if (!handoff || !handoff.workflowId || !handoff.handoffStep || !handoff.phaseRunId) {
 			throw new Error(
@@ -775,12 +818,7 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 			);
 		}
 
-		let action:
-			| "chain-continued"
-			| "phase-advanced"
-			| "workflow-done"
-			| "workflow-halted"
-			| "noop-already-applied" = "chain-continued";
+		let action: VerdictAction | "noop-not-in-flight" = "chain-continued";
 		let nextHandoffId: string | undefined;
 		let nextPhaseRunId: string | undefined;
 
@@ -798,6 +836,10 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 				.get(input.handoffId) as { evaluator_verdict: string | null } | undefined;
 			if (currentVerdict?.evaluator_verdict) {
 				action = "noop-already-applied";
+				return;
+			}
+			if (beforeApply && !beforeApply()) {
+				action = "noop-not-in-flight";
 				return;
 			}
 
@@ -1717,6 +1759,7 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 		getRelayChain,
 		beginPhaseRun,
 		applyOrchestratorVerdict,
+		escalateNoticeHandoff,
 		haltWorkflow,
 		pauseWorkflow,
 		maybeCaptureQuiesceSnapshot,
