@@ -71,7 +71,11 @@ export function makeRelay(
 		suppressQuiescenceHandback?: boolean;
 		noticeStrict?: boolean;
 		autoHandbackRetryMs?: number;
-		captureHandbackText?: () => Promise<string | CaptureHandbackResult | null>;
+		captureHandbackText?: (
+			turnText: string,
+			meta?: { expectedPrompt?: string; promptDeliveredAtMs?: number },
+		) => Promise<string | CaptureHandbackResult | null>;
+		onHandoffAccepted?: () => void;
 	},
 ) {
 	const submitted: string[] = [];
@@ -99,6 +103,7 @@ export function makeRelay(
 		...(opts.suppressQuiescenceHandback ? { suppressQuiescenceHandback: true } : {}),
 		...(opts.deliveryMode ? { deliveryMode: opts.deliveryMode } : {}),
 		...(opts.noticeStrict ? { noticeStrict: true } : {}),
+		...(opts.onHandoffAccepted ? { onHandoffAccepted: opts.onHandoffAccepted } : {}),
 		...(opts.autoHandbackRetryMs !== undefined
 			? { autoHandbackRetryMs: opts.autoHandbackRetryMs }
 			: {}),

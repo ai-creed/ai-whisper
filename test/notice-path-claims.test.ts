@@ -214,15 +214,43 @@ describe("notice claims", () => {
 		const broker = boot();
 		const { handoff } = await startPendingWorkflow(broker);
 		const id = handoff.handoffId;
-		broker.control.markHandoffDeliveryPath({ handoffId: id, path: "native" });
-		broker.control.markHandoffDeliveryPath({ handoffId: id, path: "paste" });
+		expect(broker.control.markHandoffDeliveryPath({ handoffId: id, path: "native" })).toBe(true);
+		expect(broker.control.markHandoffDeliveryPath({ handoffId: id, path: "paste" })).toBe(false);
 		expect(rawRow(broker, id).delivery_path).toBe("native");
 
 		startCollab(broker, "collab_c2");
 		const b = await startPendingWorkflow(broker, "collab_c2");
 		broker.control.claimWorkflowNotice({ handoffId: b.handoff.handoffId, now: T1 });
-		broker.control.markHandoffDeliveryPath({ handoffId: b.handoff.handoffId, path: "paste" });
+		expect(
+			broker.control.markHandoffDeliveryPath({ handoffId: b.handoff.handoffId, path: "native" }),
+		).toBe(false);
+		expect(
+			broker.control.markHandoffDeliveryPath({ handoffId: b.handoff.handoffId, path: "paste" }),
+		).toBe(true);
 		expect(rawRow(broker, b.handoff.handoffId).delivery_path).toBe("paste");
+
+		startCollab(broker, "collab_c3");
+		const c = await startPendingWorkflow(broker, "collab_c3");
+		expect(
+			broker.control.markHandoffDeliveryPath({ handoffId: c.handoff.handoffId, path: "paste" }),
+		).toBe(true);
+		expect(rawRow(broker, c.handoff.handoffId).delivery_path).toBe("paste");
+		await broker.stop();
+	});
+
+	it("markHandoffDeliveryPath never switches a fetched notice handoff to paste", async () => {
+		const broker = boot();
+		const { handoff } = await startPendingWorkflow(broker);
+		const id = handoff.handoffId;
+		broker.control.claimWorkflowNotice({ handoffId: id, now: T1 });
+		broker.control.fetchWorkflowHandoff({
+			handoffId: id,
+			collabId: handoff.collabId,
+			callerAgent: handoff.targetAgent,
+			now: T2,
+		});
+		expect(broker.control.markHandoffDeliveryPath({ handoffId: id, path: "paste" })).toBe(false);
+		expect(rawRow(broker, id).delivery_path).toBe("notice");
 		await broker.stop();
 	});
 

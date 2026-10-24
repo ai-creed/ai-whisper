@@ -166,6 +166,68 @@ describe("notice-path fallbacks", () => {
 		});
 	});
 
+	it("paste fallback does not switch a handoff fetched just before the switch", async () => {
+		const broker = bootBroker();
+		const { handoff } = await unfetchedPastReminder(broker);
+		const id = handoff.handoffId;
+		const target = handoff.targetAgent;
+		const markSpy = vi.spyOn(broker.control, "markHandoffDeliveryPath");
+		// The fallback's own read (the 3rd) still sees an unfetched state, but the
+		// fetch is recorded before the broker switch runs.
+		const original = broker.control.getNoticePathState.bind(broker.control);
+		let reads = 0;
+		vi.spyOn(broker.control, "getNoticePathState").mockImplementation((handoffId) => {
+			const state = original(handoffId);
+			reads += 1;
+			if (reads === 3) {
+				broker.control.fetchWorkflowHandoff({
+					handoffId: id,
+					collabId: COLLAB,
+					callerAgent: target,
+					now: new Date().toISOString(),
+				});
+			}
+			return state;
+		});
+		const { relay, submitted, local } = makeRelay(broker, {
+			currentAgent: target,
+			deliveryMode: "notice",
+		});
+
+		await relay.checkIdleActions(IDLE_MS);
+
+		expect(markSpy).toHaveBeenCalledTimes(1);
+		expect(markSpy.mock.results[0]?.value).toBe(false);
+		expect(rawRow(broker, id).delivery_path).toBe("notice");
+		expect(rawRow(broker, id).fetched_at).not.toBeNull();
+		expect(submitted).toEqual([]);
+		expect(local.some((l) => l.includes("falling back to paste"))).toBe(false);
+	});
+
+	it("a /copy capture after the paste fallback measures freshness from the paste", async () => {
+		const broker = bootBroker();
+		const { handoff } = await unfetchedPastReminder(broker);
+		// Without the paste-time seed the floor would derive from the handoff's age
+		// (created 2 min ago), well before the paste.
+		broker.db
+			.prepare("UPDATE relay_handoff SET created_at = ? WHERE handoff_id = ?")
+			.run(isoAgo(2 * 60_000), handoff.handoffId);
+		const { relay, submitted, captureHandbackText } = makeRelay(broker, {
+			currentAgent: handoff.targetAgent,
+			deliveryMode: "notice",
+			captureHandbackText: () => Promise.resolve(COPIED),
+		});
+		const beforePaste = Date.now();
+		await relay.checkIdleActions(IDLE_MS); // paste fallback
+		expect(submitted).toEqual([handoff.requestText]);
+		await relay.checkIdleActions(IDLE_MS); // today's /copy ladder
+
+		expect(captureHandbackText).toHaveBeenCalledTimes(1);
+		const meta = captureHandbackText.mock.calls[0]?.[1];
+		expect(meta?.promptDeliveredAtMs).toBeGreaterThanOrEqual(beforePaste);
+		expect(rawRow(broker, handoff.handoffId).capture_path).toBe("copy");
+	});
+
 	it("copy fallback captures with capture_path copy and prints the ⚠ line with the fallback count", async () => {
 		const broker = bootBroker();
 		const { handoff, workflowId } = await nudgedAfterTurnDone(broker);
@@ -307,6 +369,24 @@ describe("notice-path fallbacks", () => {
 			await relay.handbackResolvedContent("ezio handback content");
 			expect(rawRow(broker, id).capture_path).toBe("native");
 			expect(rawRow(broker, id).handback_text).toBe("ezio handback content");
+		});
+
+		it("a failing delivery-path record still completes the accept", async () => {
+			const broker = bootBroker();
+			const { handoff } = await startPendingWorkflow(broker);
+			vi.spyOn(broker.control, "markHandoffDeliveryPath").mockImplementation(() => {
+				throw new Error("disk I/O error");
+			});
+			const onHandoffAccepted = vi.fn();
+			const { relay, submitted } = makeRelay(broker, {
+				currentAgent: handoff.targetAgent,
+				onHandoffAccepted,
+			});
+			await relay.checkIdleActions(IDLE_MS);
+			expect(submitted).toEqual([handoff.requestText]);
+			expect(rawRow(broker, handoff.handoffId).status).toBe("accepted");
+			expect(onHandoffAccepted).toHaveBeenCalledTimes(1);
+			expect(console.warn).toHaveBeenCalledWith(expect.stringContaining("disk I/O error"));
 		});
 
 		it("manual handoffs get no delivery_path", async () => {

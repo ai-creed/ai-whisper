@@ -212,17 +212,24 @@ export function claimNoticeStep(
 }
 
 // First writer wins, except that a handoff already on the notice path may switch
-// to paste when the ladder falls back.
+// to paste when the ladder falls back, and only while it is unfetched: a fetched
+// request is never pasted. Returns whether the row changed.
 export function markHandoffDeliveryPath(
 	db: Database.Database,
 	input: { handoffId: string; path: "paste" | "native" },
-): void {
-	if (!relayHandoffHasColumn(db, "delivery_path")) return;
-	db.prepare(
-		`UPDATE relay_handoff SET delivery_path = ?
-		  WHERE handoff_id = ?
-		    AND (delivery_path IS NULL OR (delivery_path = 'notice' AND ? = 'paste'))`,
-	).run(input.path, input.handoffId, input.path);
+): boolean {
+	if (!relayHandoffHasColumn(db, "delivery_path")) return false;
+	const unfetched = relayHandoffHasColumn(db, "fetched_at") ? "fetched_at IS NULL" : "1";
+	return (
+		db
+			.prepare(
+				`UPDATE relay_handoff SET delivery_path = ?
+				  WHERE handoff_id = ?
+				    AND (delivery_path IS NULL
+				         OR (delivery_path = 'notice' AND ? = 'paste' AND ${unfetched}))`,
+			)
+			.run(input.path, input.handoffId, input.path).changes > 0
+	);
 }
 
 export function countWorkflowFallbacks(db: Database.Database, workflowId: string): number {

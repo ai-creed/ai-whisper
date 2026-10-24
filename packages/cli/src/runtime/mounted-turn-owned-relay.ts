@@ -51,7 +51,7 @@ type BrokerLike = {
 		getNoticePathState?(handoffId: string): NoticePathState | null;
 		claimWorkflowNotice?(input: { handoffId: string; now: string }): { claimed: boolean };
 		claimNoticeStep?(input: { handoffId: string; kind: "reminder" | "nudge"; now: string }): boolean;
-		markHandoffDeliveryPath?(input: { handoffId: string; path: "paste" | "native" }): void;
+		markHandoffDeliveryPath?(input: { handoffId: string; path: "paste" | "native" }): boolean;
 		countWorkflowFallbacks?(workflowId: string): number;
 		recordCaptureDiagnostic?(input: {
 			handoffId: string;
@@ -449,15 +449,16 @@ export function createMountedTurnOwnedRelay(input: {
 		if (state === null || state.fetchedAt !== null || state.deliveryPath !== "notice") return;
 		const handoff = control.getRelayHandoff(handoffId);
 		if (!handoff || handoff.status !== "accepted") return;
-		control.markHandoffDeliveryPath?.({ handoffId, path: "paste" });
-		// Paste only once the broker shows the switch (and still no fetch): a mark
-		// that did not land would leave the ladder free to paste again.
-		const switched = control.getNoticePathState?.(handoffId) ?? null;
-		if (switched?.deliveryPath !== "paste" || switched.fetchedAt !== null) return;
+		// The broker switches notice→paste only while the request is unfetched, in
+		// the same UPDATE; paste only when that switch landed.
+		if (!(control.markHandoffDeliveryPath?.({ handoffId, path: "paste" }) ?? false)) return;
 		input.writeLocalMessage(
 			`[ai-whisper] ⚠ ${handoffId} not fetched after 2 notices — falling back to paste${fallbackCountLine(handoffId, false)}\r\n`,
 		);
 		autoHandbackFiredFor = null;
+		// The request reaches the agent now, not at the notice claim: a later /copy
+		// capture (cursor's transcript freshness floor) must measure from the paste.
+		promptDeliveredAt.set(handoffId, Date.now());
 		await pasteRequest(handoff);
 	}
 
@@ -1275,12 +1276,19 @@ export function createMountedTurnOwnedRelay(input: {
 				handoffId: handoff.handoffId,
 				acceptedAt: new Date().toISOString(),
 			});
-			// Record how a workflow request reached the agent; manual handoffs stay unmarked.
-			if (input.broker.control.getHandoffWithWorkflowMeta?.(handoff.handoffId)?.workflowId) {
-				input.broker.control.markHandoffDeliveryPath?.({
-					handoffId: handoff.handoffId,
-					path: input.deliveryMode === "native" ? "native" : "paste",
-				});
+			// Record how a workflow request reached the agent; manual handoffs stay
+			// unmarked. Bookkeeping only: a failure must not change the accept path.
+			try {
+				if (input.broker.control.getHandoffWithWorkflowMeta?.(handoff.handoffId)?.workflowId) {
+					input.broker.control.markHandoffDeliveryPath?.({
+						handoffId: handoff.handoffId,
+						path: input.deliveryMode === "native" ? "native" : "paste",
+					});
+				}
+			} catch (err) {
+				console.warn(
+					`[ai-whisper] delivery-path record failed: handoff=${handoff.handoffId}: ${err instanceof Error ? err.message : String(err)}`,
+				);
 			}
 			input.onHandoffAccepted?.();
 		},

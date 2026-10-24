@@ -1525,8 +1525,8 @@ export function createControlService(db: Database.Database, events: BrokerEventB
 		}): boolean {
 			return claimNoticeStep(db, input);
 		},
-		markHandoffDeliveryPath(input: { handoffId: string; path: "paste" | "native" }): void {
-			markHandoffDeliveryPath(db, input);
+		markHandoffDeliveryPath(input: { handoffId: string; path: "paste" | "native" }): boolean {
+			return markHandoffDeliveryPath(db, input);
 		},
 		countWorkflowFallbacks(workflowId: string): number {
 			return countWorkflowFallbacks(db, workflowId);
