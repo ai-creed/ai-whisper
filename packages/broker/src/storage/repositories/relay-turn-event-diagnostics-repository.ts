@@ -8,7 +8,8 @@ export type TurnEventAction =
 	| "deferred_rearmed"
 	| "rejected_mid_composition"
 	| "fallback_indeterminate"
-	| "fallback_exhausted";
+	| "fallback_exhausted"
+	| "notice_path_ignored";
 
 export type TurnEventFidelityVerdict =
 	| "clean"

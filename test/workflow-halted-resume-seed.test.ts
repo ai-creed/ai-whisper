@@ -155,7 +155,7 @@ describe("beginPhaseRun — seed consumption (spec §2, D1)", () => {
 		expect(text).toContain("Halt reason: max-rounds-reached (1/1)");
 		expect(text).toContain("final round handback: still failing on X");
 		expect(text).toContain("check the fixture");
-		expect(text.endsWith("Review the spec.")).toBe(true); // normal kickoff appended last
+		expect(text).toContain("Review the spec."); // normal kickoff follows the seed, before the handback fragment
 	});
 
 	it("seed consumed after one kickoff; a later re-halt + re-resume seeds anew", () => {
@@ -184,7 +184,7 @@ describe("beginPhaseRun — seed consumption (spec §2, D1)", () => {
 			sender: "codex", target: "claude", maxRounds: 1, now: "2026-07-23T00:04:00Z",
 		});
 		const text = requestTextOf(s, handoffId);
-		expect(text).toBe("Write the plan.");
+		expect(text.startsWith("Write the plan.\n\n--- ai-whisper handback ---")).toBe(true);
 		expect(readResumeSeedMarker(s.broker.control.getWorkflow(s.workflowId)!.workflowContext)).toBeNull();
 	});
 

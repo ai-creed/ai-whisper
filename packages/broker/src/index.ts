@@ -163,6 +163,7 @@ export {
 	type HandsOffStats,
 	type HandsOffStatusBucket,
 } from "./storage/repositories/workflow-repository.js";
+export type { NoticePathState } from "./storage/repositories/notice-path-repository.js";
 export type {
 	RelayHandoffLogRow,
 	RelayHandoffWorkflowFilter,

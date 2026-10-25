@@ -316,6 +316,7 @@ export function handoffBackRelayTxn(
 		targetAgent: AgentType;
 		requestText: string;
 		captureStatus?: "ok" | "no_response_captured_confidently" | "no_response_captured" | null;
+		capturePath?: "copy" | "turn_event" | "native";
 		now: string;
 	},
 ): RelayHandoffRecord {
@@ -334,6 +335,13 @@ export function handoffBackRelayTxn(
 			if (replied?.replied_at) {
 				return current;
 			}
+		}
+
+		if (input.capturePath && relayHandoffHasColumn(db, "capture_path")) {
+			db.prepare("UPDATE relay_handoff SET capture_path = ? WHERE handoff_id = ?").run(
+				input.capturePath,
+				input.handoffId,
+			);
 		}
 
 		const collab = getCollab(db, current.collabId);
@@ -976,6 +984,10 @@ export type RelayHandoffLogRow = {
 	// Real activity timestamp (bumped by accept/defer/handback/…); the feed
 	// surfaces it so liveness reflects actual progress, not row insert time.
 	lastActivityAt: string | null;
+	// Notice-path columns; null for legacy rows and on a DB that predates them.
+	// Optional so older fixtures and consumers keep compiling.
+	deliveryPath?: string | null;
+	capturePath?: string | null;
 };
 
 type LogDbRow = {
@@ -996,6 +1008,8 @@ type LogDbRow = {
 	evaluator_confidence: number | null;
 	evaluator_reason: string | null;
 	last_activity_at: string | null;
+	delivery_path: string | null;
+	capture_path: string | null;
 };
 
 // IMPORTANT: relay_handoff rows mutate IN PLACE after insert (pending →
@@ -1025,7 +1039,9 @@ export function listRelayHandoffs(
 	const cols = `handoff_id, created_at, collab_id, sender_agent, target_agent, status,
 		capture_status, chain_id, round_number, handoff_step, workflow_id,
 		phase_run_id, handback_text, evaluator_verdict, evaluator_confidence,
-		evaluator_reason, last_activity_at`;
+		evaluator_reason, last_activity_at,
+		${relayHandoffHasColumn(db, "delivery_path") ? "delivery_path" : "NULL AS delivery_path"},
+		${relayHandoffHasColumn(db, "capture_path") ? "capture_path" : "NULL AS capture_path"}`;
 	const limit =
 		typeof input.limit === "number" && input.limit > 0
 			? Math.floor(input.limit)
@@ -1076,6 +1092,8 @@ export function listRelayHandoffs(
 		evaluatorConfidence: r.evaluator_confidence,
 		evaluatorReason: r.evaluator_reason,
 		lastActivityAt: r.last_activity_at,
+		deliveryPath: r.delivery_path,
+		capturePath: r.capture_path,
 	}));
 }
 

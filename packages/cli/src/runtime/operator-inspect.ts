@@ -25,6 +25,18 @@ export function buildInspectSnapshot(input: {
 		input.state.collabId,
 	);
 	const lastCaptureStatus = lastHandedBack?.captureStatus ?? null;
+	// Optional-called: older/partial control surfaces don't expose these.
+	const activeWorkflow =
+		input.broker.control
+			.listWorkflowsForCollab?.(input.state.collabId)
+			.find((wf) => wf.status === "running" || wf.status === "paused") ?? null;
+	const noticePath = activeWorkflow
+		? {
+				workflowId: activeWorkflow.workflowId,
+				fallbackCount:
+					input.broker.control.countWorkflowFallbacks?.(activeWorkflow.workflowId) ?? 0,
+			}
+		: null;
 
 	// Always show the codex/claude baseline pair; additionally surface any other
 	// agent (ezio, agy) that has a binding in this collab.
@@ -58,6 +70,7 @@ export function buildInspectSnapshot(input: {
 			replies: [],
 			flaggedItems: [],
 			refreshedAt: input.now,
+			noticePath,
 			turnOwner: turn.turnOwner,
 			waitingAgent: turn.waitingAgent,
 			handoffState: turn.handoffState,
@@ -129,6 +142,7 @@ export function buildInspectSnapshot(input: {
 		replies,
 		flaggedItems,
 		refreshedAt: input.now,
+		noticePath,
 		turnOwner: turn.turnOwner,
 		waitingAgent: turn.waitingAgent,
 		handoffState: turn.handoffState,
@@ -177,6 +191,7 @@ export function formatInspectSnapshot(input: {
 	flaggedItems: Array<{ workItemId: string; deliveryState: string; instructionPreview: string }>;
 	watch: boolean;
 	refreshedAt: string;
+	noticePath?: { workflowId: string; fallbackCount: number } | null;
 	turnOwner: AgentType | "none";
 	waitingAgent: AgentType | null;
 	handoffState: "idle" | "pending" | "deferred" | "accepted" | "stale_handoff" | "failed";
@@ -205,6 +220,11 @@ export function formatInspectSnapshot(input: {
 		`Orchestrator: ${input.orchestratorEnabled ? "yes" : "no"}`,
 		...(input.orchestratorEnabled ? [`Chain status: ${input.chainStatus ?? "done"}`] : []),
 		...(input.orchestratorEnabled ? [`Round: ${input.currentRound ?? 0}/${input.maxRounds ?? 3}`] : []),
+		...(input.noticePath
+			? [
+					`notice path: ${input.noticePath.fallbackCount} fallback(s) in ${input.noticePath.workflowId}`,
+				]
+			: []),
 	];
 
 	if (!input.activeThread) {

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AgentType } from "@ai-whisper/shared";
 import type Database from "better-sqlite3";
+import { withHandbackFragment } from "./handback-fragment.js";
 import { getCollab } from "../storage/repositories/collab-repository.js";
 import { listSessionBindingsForCollab } from "../storage/repositories/session-binding-repository.js";
 import {
@@ -362,7 +363,7 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 				collabId: workflow.collabId,
 				senderAgent: input.sender,
 				targetAgent: input.target,
-				requestText: kickoffText,
+				requestText: withHandbackFragment(kickoffText, handoffId),
 				chainId,
 				roundNumber: 1,
 				maxRounds: input.maxRounds,
@@ -554,7 +555,10 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 			targetAgent: input.target,
 			// Prepend the one-time resume notice (if any) to the FIRST outgoing request
 			// after a resume, then it is cleared — so the agent re-reads changed files.
-			requestText: withResumeNotice(input.workflow.workflowId, input.requestText, input.now),
+			requestText: withHandbackFragment(
+				withResumeNotice(input.workflow.workflowId, input.requestText, input.now),
+				handoffId,
+			),
 			chainId: input.chain.chainId,
 			roundNumber: input.incrementRound
 				? input.chain.currentRound + 1
@@ -647,7 +651,10 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 			targetAgent: target,
 			// Prepend a pending resume notice (consumed once) so a phase-advance kickoff
 			// after a resume also carries the operator's change notice.
-			requestText: withResumeNotice(input.workflow.workflowId, kickoffText, input.now),
+			requestText: withHandbackFragment(
+				withResumeNotice(input.workflow.workflowId, kickoffText, input.now),
+				handoffId,
+			),
 			chainId,
 			roundNumber: 1,
 			maxRounds: phase.maxRounds,
@@ -697,7 +704,7 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 		return { phaseRunId, chainId, handoffId, emissions };
 	}
 
-	function applyOrchestratorVerdict(input: {
+	type VerdictInput = {
 		handoffId: string;
 		verdict: NormalizedVerdict;
 		confidence: number;
@@ -706,17 +713,60 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 		extractedCommitShas?: string[];
 		workspaceHeadSha?: string;
 		now: string;
-	}): {
-		action:
-			| "chain-continued"
-			| "phase-advanced"
-			| "workflow-done"
-			| "workflow-halted"
-			| "noop-already-applied";
+	};
+	type VerdictAction =
+		| "chain-continued"
+		| "phase-advanced"
+		| "workflow-done"
+		| "workflow-halted"
+		| "noop-already-applied";
+	type VerdictResult<A extends string = VerdictAction> = {
+		action: A;
 		chainId: string;
 		nextHandoffId?: string;
 		nextPhaseRunId?: string;
-	} {
+	};
+
+	function applyOrchestratorVerdict(input: VerdictInput): VerdictResult {
+		return applyVerdict(input) as VerdictResult;
+	}
+
+	/**
+	 * Ends an accepted notice-path handoff the mount escalates (D12 or strict mode):
+	 * in one IMMEDIATE transaction the row moves to the terminal `failed` status
+	 * (the status a handoff abandoned mid-turn already gets on disconnect) and the
+	 * escalate verdict halts the workflow. A handoff no longer `accepted` (for
+	 * example, replied meanwhile) is left untouched.
+	 */
+	function escalateNoticeHandoff(input: {
+		handoffId: string;
+		reason: string;
+		now: string;
+	}): VerdictResult<VerdictAction | "noop-not-in-flight"> {
+		return applyVerdict(
+			{
+				handoffId: input.handoffId,
+				verdict: "escalate",
+				confidence: 1,
+				reason: input.reason,
+				now: input.now,
+			},
+			() =>
+				db
+					.prepare(
+						`UPDATE relay_handoff SET status = 'failed', resolved_at = ?, last_activity_at = ?
+						  WHERE handoff_id = ? AND status = 'accepted'`,
+					)
+					.run(input.now, input.now, input.handoffId).changes > 0,
+		);
+	}
+
+	// beforeApply runs inside the verdict transaction, after the idempotency
+	// guard; returning false rolls nothing forward and reports noop-not-in-flight.
+	function applyVerdict(
+		input: VerdictInput,
+		beforeApply?: () => boolean,
+	): VerdictResult<VerdictAction | "noop-not-in-flight"> {
 		const handoff = getHandoffWithWorkflowMetaById(db, input.handoffId);
 		if (!handoff || !handoff.workflowId || !handoff.handoffStep || !handoff.phaseRunId) {
 			throw new Error(
@@ -768,12 +818,7 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 			);
 		}
 
-		let action:
-			| "chain-continued"
-			| "phase-advanced"
-			| "workflow-done"
-			| "workflow-halted"
-			| "noop-already-applied" = "chain-continued";
+		let action: VerdictAction | "noop-not-in-flight" = "chain-continued";
 		let nextHandoffId: string | undefined;
 		let nextPhaseRunId: string | undefined;
 
@@ -791,6 +836,10 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 				.get(input.handoffId) as { evaluator_verdict: string | null } | undefined;
 			if (currentVerdict?.evaluator_verdict) {
 				action = "noop-already-applied";
+				return;
+			}
+			if (beforeApply && !beforeApply()) {
+				action = "noop-not-in-flight";
 				return;
 			}
 
@@ -1710,6 +1759,7 @@ export function createWorkflowControl(deps: WorkflowControlDeps) {
 		getRelayChain,
 		beginPhaseRun,
 		applyOrchestratorVerdict,
+		escalateNoticeHandoff,
 		haltWorkflow,
 		pauseWorkflow,
 		maybeCaptureQuiesceSnapshot,

@@ -175,8 +175,14 @@ import {
 	type WorkflowSummaryRow,
 } from "../storage/repositories/dashboard-repository.js";
 import {
+	claimNoticeStep,
+	countWorkflowFallbacks,
 	findFetchedUnrepliedHandoff,
 	getNoticePathFields,
+	getNoticePathState,
+	markHandoffDeliveryPath,
+	markHandoffNoticeSent,
+	type NoticePathState,
 	markHandoffReplied,
 	recordHandoffFetch,
 	markSessionBindingTurnDone,
@@ -1371,6 +1377,7 @@ export function createControlService(db: Database.Database, events: BrokerEventB
 			targetAgent: AgentType;
 			requestText: string;
 			captureStatus?: "ok" | "no_response_captured_confidently" | "no_response_captured" | null;
+			capturePath?: "copy" | "turn_event" | "native";
 			now: string;
 		}) {
 			// Recording ALWAYS proceeds (spec §3): an in-flight turn's handback must be
@@ -1488,6 +1495,41 @@ export function createControlService(db: Database.Database, events: BrokerEventB
 					agent: input.agent,
 				}),
 			};
+		},
+		getNoticePathState(handoffId: string): NoticePathState | null {
+			return getNoticePathState(db, handoffId);
+		},
+		claimWorkflowNotice(input: { handoffId: string; now: string }): { claimed: boolean } {
+			// IMMEDIATE: take the write lock before reading, so two mounts cannot
+			// both pass the checks and double-claim.
+			return db
+				.transaction(() => {
+					const meta = workflowControl.getHandoffWithWorkflowMeta(input.handoffId);
+					if (!meta?.workflowId) return { claimed: false };
+					const handoff = queryRelayHandoff(db, input.handoffId);
+					if (!handoff || handoff.status !== "pending") return { claimed: false };
+					if (workflowControl.getWorkflow(meta.workflowId)?.status !== "running") {
+						return { claimed: false };
+					}
+					if (isWorkflowDeliverySuspended(input.handoffId)) return { claimed: false };
+					if (!markHandoffNoticeSent(db, input)) return { claimed: false };
+					acceptRelayHandoffTxn(db, { handoffId: input.handoffId, acceptedAt: input.now });
+					return { claimed: true };
+				})
+				.immediate();
+		},
+		claimNoticeStep(input: {
+			handoffId: string;
+			kind: "reminder" | "nudge";
+			now: string;
+		}): boolean {
+			return claimNoticeStep(db, input);
+		},
+		markHandoffDeliveryPath(input: { handoffId: string; path: "paste" | "native" }): boolean {
+			return markHandoffDeliveryPath(db, input);
+		},
+		countWorkflowFallbacks(workflowId: string): number {
+			return countWorkflowFallbacks(db, workflowId);
 		},
 		failRelayHandoffOnDisconnect(input: { handoffId: string; now: string }) {
 			return failRelayHandoffOnDisconnectTxn(db, input);
