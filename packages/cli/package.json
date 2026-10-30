@@ -32,7 +32,7 @@
 	},
 	"dependencies": {
 		"@anthropic-ai/sdk": "^0.91.1",
-		"@modelcontextprotocol/sdk": "^1.0.0",
+		"@modelcontextprotocol/sdk": "^1.32.2",
 		"better-sqlite3": "^12.10.0",
 		"cli-table3": "^0.6",
 		"commander": "^13.1.0",
