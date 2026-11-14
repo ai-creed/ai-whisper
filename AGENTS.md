@@ -20,6 +20,9 @@
 - `packages/companion-core`: companion runtime.
 - `packages/adapter-codex`: Codex provider integration.
 - `packages/adapter-claude`: Claude provider integration.
+- `packages/adapter-cursor`: Cursor provider integration.
+- `packages/adapter-antigravity`: Antigravity provider integration.
+- `packages/adapter-ai-ezio`: ai-ezio provider integration.
 
 ## Workflow Rules
 
@@ -30,18 +33,6 @@
 - Work from approved specs first, then an approved local phase plan, then implementation.
 - Do not skip ahead into later phases without review and approval.
 - When executing an approved implementation plan with subagents, follow the bundled `ai-whisper-plan-execution` skill (`packages/cli/skills/ai-whisper-plan-execution/SKILL.md`) for fan-out structure and model allocation.
-
-## Preferred Sequence
-
-1. Review current repo state.
-2. Read the relevant tracked spec documents.
-3. Read or write the local phase plan.
-4. Create a worktree.
-5. Implement in small scoped commits.
-6. Verify with repo commands.
-7. Ask before merging into `master`.
-8. Wait for code review before pushing to remote.
-9. Review the current phase before planning the next one.
 
 ## Branch And Merge Policy
 
